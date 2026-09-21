@@ -22,3 +22,18 @@ src/lib/auth/proxy-rules.test.ts
 src/lib/auth/return-to.test.ts
 src/lib/auth/service-menu-cookie.test.ts
 src/lib/auth/service-menu-wiring.test.ts
+
+# ── 조각 1 — 작업 비용(A/S 에서 옮겨 옴) ────────────────────────────────
+# 🔴 A/S 의 통합 시험(db/mutations/repair-labor.integration.test.ts, 1,871줄)은
+#    여기 없다. 그것은 **진짜 DB 에 쓰는** 시험이고, 이 저장소에는 시험용 DB 를
+#    세우는 장치(TEST_DATABASE_URL · 안전장치 · 부트스트랩)가 아직 없다.
+#    이 사이트의 DB 는 A/S 와 같은 dss_as 라, 장치 없이 붙이면 시험이 실제 업무
+#    자료를 건드린다. A/S 가 그 시험을 그대로 갖고 있고 저장 코드는 같은 벌이다.
+src/lib/auth/repair-labor-permission.test.ts
+src/lib/navigation.test.ts
+src/lib/domain/save-popup.test.ts
+src/lib/domain/quote-labor-cost.test.ts
+src/lib/domain/quote-repair-task-selection.test.ts
+src/lib/validation/repair-task-input.test.ts
+src/components/repair-labor/base-cost-display.test.ts
+src/components/repair-labor/repair-labor-screen-source.test.ts

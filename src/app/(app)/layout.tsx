@@ -4,10 +4,14 @@ import type { ReactNode } from "react";
 import { ServiceMenuBar } from "@dss/ui";
 
 import { AppHeader } from "@/components/AppHeader";
+import { AppNav } from "@/components/AppNav";
+import SavePopupHost from "@/components/common/SavePopup";
 import { requireSession } from "@/lib/auth/guards";
 import { portalAppsUrl, thisServiceId } from "@/lib/auth/oidc";
+import { listAccessibleAreaKeys } from "@/lib/auth/permission-resolver";
 import { RETURN_TO_HEADER } from "@/lib/auth/proxy-rules";
 import { readServiceMenu } from "@/lib/auth/service-menu-cookie";
+import { filterNavItemsForAccess, navItems } from "@/lib/navigation";
 
 /**
  * 사내 구간. 여기 아래는 전부 세션이 있어야 볼 수 있다.
@@ -42,6 +46,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // 「지금 여기」로 눌러 그릴 칸을 고르는 열쇠 — 이 시스템의 client_id 다.
   // 목록이 있을 때만 읽는다(없으면 그릴 칸 자체가 없어 물어볼 것도 없다).
   const currentServiceId = services.length > 0 ? thisServiceId() : null;
+
+  // 화면 메뉴. 🔴 **들어갈 수 있는 것만** 세운다 — 권한 판정은 화면마다의 가드
+  // (auth/area-guard.ts)가 따로 하고, 여기서는 같은 창구로 보이는 것을 맞춘다.
+  // 둘이 갈리면 「메뉴에 있는데 누르면 막힌다」가 되고, 사용자는 고장으로 여긴다.
+  const accessibleNavItems = filterNavItemsForAccess(
+    navItems,
+    await listAccessibleAreaKeys(user)
+  );
 
   return (
     <div className="flex min-h-full flex-col">
@@ -82,7 +94,15 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           />
         }
       />
+      <AppNav items={accessibleNavItems} />
       <main className="mx-auto w-full max-w-[1100px] flex-1 px-4 py-6">{children}</main>
+      {/*
+        저장이 끝났다고 알리는 팝업이 서는 자리. 🔴 **여기 한 번만** 붙인다 —
+        레이아웃은 화면을 옮겨도 다시 만들어지지 않으므로, 저장한 폼이 사라져도
+        팝업은 다음 화면이 그려질 때까지 남는다(lib/domain/save-popup.ts 머리말).
+        폼 쪽에 두면 폼이 사라지는 순간 팝업도 함께 사라진다.
+      */}
+      <SavePopupHost />
     </div>
   );
 }

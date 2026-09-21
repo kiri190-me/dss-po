@@ -1,11 +1,57 @@
 @import "tailwindcss";
 
 /*
+ * 🔴 `dark:` 는 **조상에 `.dark` 가 있을 때만** 켜진다 — 기기의 다크 모드를 보지
+ * 않는다. A/S 관리 시스템의 globals.css 와 **같은 한 줄**이다.
+ *
+ * 이 줄이 없으면 Tailwind 의 기본 `dark:` 가 `prefers-color-scheme: dark` 를 보게
+ * 되고, A/S 에서 그대로 옮겨 온 화면들(`dark:bg-zinc-900` 이 줄줄이 붙어 있다)이
+ * **다크 모드를 켜 둔 PC 에서만 저 혼자 어두워진다.** 이 사이트의 나머지는 아래
+ * `color-scheme: light` 로 밝게 고정이라, 한 화면만 검게 뜨는 모양이 된다.
+ *
+ * 이 사이트는 `.dark` 를 어디에도 붙이지 않으므로 결국 `dark:` 는 전부 잠잔다 —
+ * 그러면서도 옮겨 온 화면의 클래스를 **한 글자도 고치지 않아도 된다.** 지우는
+ * 편이 깔끔해 보이지만, 조각 2·3 이 옮겨 올 수만 줄에서 같은 일을 반복하게 되고
+ * 그때마다 A/S 와의 diff 가 벌어진다(조각 4 에서 저쪽을 걷어낼 때 대조해야 한다).
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
  * 사무실 PC 에서 표를 읽고 적는 화면이다. 밝은 배경 하나로 고정한다.
  * (기기마다 색이 달라지면 "내 화면에서는 이렇게 보인다" 를 맞춰 보기 어렵다)
  */
 :root {
   color-scheme: light;
+}
+
+/*
+ * 강조색(primary) — 주 단추가 쓰는 램프.
+ *
+ * 🔴 A/S 관리 시스템의 globals.css 와 **값이 글자 하나까지 같다.** 옮겨 온 화면의
+ * 저장 단추가 `bg-primary-900` 이라, 이 열한 줄이 없으면 그 단추가 **배경 없이 흰
+ * 글씨만** 남아 사실상 보이지 않는다.
+ *
+ * 🔴 `var(--color-zinc-*)` 로 가리키지 않고 hex 를 그대로 적는다 — 저쪽이 그렇게
+ * 한 까닭은 중립(zinc)과 강조색을 처음부터 끊어 두기 위해서다. 가리키면 중립을
+ * 바꾸는 날 강조색이 딸려 움직여 다시 "따로 고를 수 있는 값"이 아니게 된다.
+ *
+ * ⚠️ `@theme inline` 이 아니라 `@theme` 이다. inline 은 값을 var() 로 그대로
+ * 통과시키는 특수 모드라, hex 상수에는 보통 `@theme` 이어야
+ * `.bg-primary-900 { background-color: var(--color-primary-900) }` 유틸리티가
+ * 제대로 만들어진다.
+ */
+@theme {
+  --color-primary-50: #fafafa;
+  --color-primary-100: #f4f4f5;
+  --color-primary-200: #e4e4e7;
+  --color-primary-300: #d4d4d8;
+  --color-primary-400: #9f9fa9;
+  --color-primary-500: #71717b;
+  --color-primary-600: #52525c;
+  --color-primary-700: #3f3f46;
+  --color-primary-800: #27272a;
+  --color-primary-900: #18181b;
+  --color-primary-950: #09090b;
 }
 
 @theme inline {
