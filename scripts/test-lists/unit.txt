@@ -95,3 +95,24 @@ src/components/domestic-orders/domestic-order-trash.test.ts
 src/lib/auth/quote-permission.test.ts
 src/lib/validation/quote-kind.test.ts
 src/components/quotes/quote-list-screen-source.test.ts
+
+# ── 조각 3b-1 — 견적서 편집 폼(A/S 에서 옮겨 옴) ────────────────────────
+# 🔴 **DB 에 쓰는 시험 하나는 db.txt 에 있다** — mutations/quotes.integration.test.ts
+#    (1,044줄). 조각 1·2·3a 때는 그런 시험을 아예 못 옮겼는데, 방금 생긴 시험 DB
+#    장치(docs/DB_TESTS.md) 덕에 이번에 옮겨 올 수 있었다.
+#
+# 🔴 A/S 에서 **함께 옮기지 못한 시험들**(그쪽 경로 · 줄 수 · 기다리는 조각):
+#      components/quotes/quote-edit-cable.test.ts        433  3c
+#        └ `lib/xlsx/cable-quote-template` 을 읽는다(엑셀 사슬 7,800여 줄).
+#          케이블 견적서에서 작업 구역이 접히고 값 일곱이 비워져 나가는지를 본다.
+#      domain/quote-new-link.test.ts · quote-new-start.test.ts   3b-2
+#      components/quotes/quote-part-picker.test.tsx             3b-3
+#
+# 🔴 옮겨 온 둘은 **단언 몇 줄을 덜어 냈다.** 어느 줄을 왜 덜었고 어느 조각이
+#    되돌려 놓아야 하는지는 각 파일 머리말에 적어 두었다:
+#      quote-document-support.test.ts          — ㉡ 묶음(다섯 자리 원본 읽기) → 3c·3f
+#      quote-edit-work-scope-suppression.test.ts — 미리보기를 보는 단언 넷 → 3f
+src/lib/validation/quote-input.test.ts
+src/lib/domain/quote-subject.test.ts
+src/lib/domain/quote-document-support.test.ts
+src/components/quotes/quote-edit-work-scope-suppression.test.ts

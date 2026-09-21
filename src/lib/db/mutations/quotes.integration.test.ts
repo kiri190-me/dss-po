@@ -1,0 +1,1108 @@
+import { after, before, describe, test } from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { and, asc, eq, inArray, like } from "drizzle-orm";
+
+import {
+  customers,
+  products,
+  quoteItems,
+  quoteRepairTasks,
+  quoteWorkScopeLines,
+  quotes,
+  repairCases,
+  repairTaskCatalog,
+  users,
+  workflowSteps,
+  workflowVersions,
+} from "@dss/core/schema";
+import { db, pgClient } from "@/lib/db";
+import { createQuote, updateQuote } from "./quotes";
+import { getQuoteForEdit } from "../queries/quotes";
+import {
+  expandRepairTaskLines,
+  restoreRepairTaskQuantities,
+} from "@/lib/domain/quote-repair-task-selection";
+import { quoteSupplyAmountOf } from "@/lib/domain/quote-list";
+import { validateQuoteFields, type QuoteFields } from "@/lib/validation/quote-input";
+
+/**
+ * ============================================================================
+ * 🔴 A/S 관리 시스템의 같은 이름 시험을 옮겨 왔다 (조각 3b-1)
+ * ============================================================================
+ * 저쪽 1,044줄에서 **단언은 한 줄도 바꾸지 않았다.** 다른 것은 셋뿐이다:
+ *
+ *  ① **환경 불러오기와 import 경로** — 이 저장소는 부트스트랩을 명령줄에서 싣고
+ *     (`--import ./scripts/test-db-bootstrap.ts`, docs/DB_TESTS.md) 스키마는
+ *     서브모듈에 있다(`@dss/core/schema`). 그래서 저쪽 첫 줄
+ *     `import "../../../../scripts/load-env"` 이 없다.
+ *  ② 🔴 **수리 건 하나를 `createRepairCase` 대신 직접 넣는다**(아래 before).
+ *     저쪽 그 함수는 접수 등록 사슬(인수번호 채번 · 워크플로 해석 · 제품 해석)을
+ *     통째로 끌고 오는데, 이 저장소에는 수리 건 화면이 없어 그 사슬을 옮기지
+ *     않았다(설계서 「A/S 에 남길 것」). 이 시험이 그 건으로 하는 일은 **견적서의
+ *     `repair_case_id` 가 실재하는 행을 가리키는가** 하나라, 표에 직접 한 줄
+ *     넣으면 충분하다. 실제 접수 등록 규칙은 A/S 쪽 시험이 그대로 지킨다.
+ *  ③ 🔴 **격리 접두사를 저쪽과 다르게 두었다**(아래 상수). 두 저장소가 **같은
+ *     `dss_as_test`** 를 쓰므로(docs/DB_TESTS.md), 접두사가 같으면 한쪽의 after()
+ *     가 다른 쪽이 만든 줄을 치운다.
+ * ============================================================================
+ */
+
+/**
+ * ============================================================================
+ * 견적서 — 실제로 저장되고, 겹치는 번호와 동시 수정이 막히는가
+ * ============================================================================
+ * 확인하는 것은 여섯 가지다.
+ *
+ *  1. **만들기와 고치기가 같은 칸들을 쓴다** — 새로 만들면 들어가는데 고치면
+ *     안 들어가는 칸이 없어야 한다.
+ *  2. **발행번호가 겹치면 거절한다** — 같은 번호의 견적서 두 장은 어느 쪽이
+ *     고객사에 간 것인지 말할 수 없게 만든다.
+ *  3. **지운 장의 번호는 다시 쓸 수 있다** — 인덱스가 `is_deleted = false` 로
+ *     좁혀져 있으므로, 검사도 같은 조건이어야 "DB 는 허락하는데 화면이 거절하는"
+ *     번호가 생기지 않는다.
+ *  4. **version 이 낙관적 잠금으로 실제로 동작한다** — 낡은 version 으로 온
+ *     저장은 CONFLICT 이고, 그때 **부품 줄까지 한 줄도 바뀌지 않는다.**
+ *  5. **부품 줄은 통째로 갈아 끼워진다** — 폼에서 지운 줄이 남아 있으면 안 된다.
+ *  6. **지워진 장은 고칠 수 없다** — NOT_FOUND.
+ *
+ * 인가는 여기서 시험하지 않는다. 세션·역할 판정은 서버 액션의 몫이고
+ * (mutations/quotes.ts 헤더의 계층 구분), 역할 정책은 navigation.test.ts 와
+ * permission-areas.test.ts 가 따로 본다.
+ *
+ * ── 격리 규약 ────────────────────────────────────────────────────────────
+ * 이 스위트만 쓰는 접수 월 "9602", 고객사 접두사 "AS-TEST-QUOTE-",
+ * 제품 모델 접두사 "QUOTE-TEST-", 발행번호 접두사 "QUOTE-TEST-",
+ * 수리 작업 카탈로그 건명 접두사 "QUOTE-TEST-TASK-".
+ * 인수번호의 연월은 receivedAt 에서 나오므로 TEST_YEAR_MONTH 와
+ * TEST_RECEIVED_AT 은 언제나 같은 달을 가리켜야 한다.
+ *
+ * after() 는 FK 순서대로 지운다 — quotes 를 먼저 지운다(quote_items 는
+ * CASCADE 로 함께 사라진다). 그 표가 repair_cases 와 customers 를 가리키고
+ * 있어서, 순서를 바꾸면 customers 의 RESTRICT 에 걸려 정리가 통째로 실패한다.
+ * ============================================================================
+ */
+
+/**
+ * 🔴 **A/S 쪽 같은 시험과 접두사가 겹치지 않게 `PO-` 를 붙였다**(머리말 ③). 두
+ * 저장소가 같은 `dss_as_test` 를 쓰므로, 겹치면 한쪽 after() 가 다른 쪽 줄을 치운다.
+ * 접수 월도 다르다(저쪽 9602 · 여기 9603).
+ */
+const TEST_CUSTOMER_NAME_PREFIX = "PO-TEST-QUOTE-";
+const TEST_MODEL_PREFIX = "PO-QUOTE-TEST-";
+const TEST_QUOTE_NUMBER_PREFIX = "PO-QUOTE-TEST-";
+const TEST_YEAR_MONTH = "9603";
+const TEST_RECEIVED_AT = "2096-03-05";
+/** 이 스위트가 만드는 수리 작업 카탈로그 줄의 건명 접두사. after() 가 이것으로만 지운다. */
+const TEST_TASK_NAME_PREFIX = "PO-QUOTE-TEST-TASK-";
+
+let actorUserId: string;
+let engineerId: string;
+let customerId: string;
+let linkedRepairCaseId: string;
+const createdQuoteIds: string[] = [];
+
+/** 필수 넷만 채운 한 장. 나머지는 전부 비어 있어도 된다. */
+function fields(overrides: Partial<QuoteFields> = {}): QuoteFields {
+  return {
+    quoteNumber: `${TEST_QUOTE_NUMBER_PREFIX}${randomUUID().slice(0, 8)}`,
+    // 종류(2026-08-28). 기본은 내자다.
+    kind: "DOMESTIC",
+    quoteDate: "2096-02-10",
+    repairCaseId: null,
+    intakeNumberText: null,
+    customerId: null,
+    customerNameText: "테스트 공급처",
+    modelNameText: null,
+    lotNumberText: null,
+    serialNumberText: null,
+    faultDescriptionText: null,
+    subject: "테스트 견적",
+    validity: null,
+    delivery: null,
+    payment: null,
+    // 특이사항 — 케이블 견적서 양식 10번(2026-09-16). 내자 · OH 는 늘 비어 있다.
+    remarks: null,
+    workCost: "0",
+    // 작업비의 근거(2026-08-31). 기본은 "작업을 골라 본 적 없음" — 이 기능이
+    // 생기기 전에 만든 견적서와 같은 상태다.
+    laborEquipmentKind: null,
+    laborBaseCost: null,
+    // 조사작업 뺌(2026-09-15). 기본은 "빼지 않음" — 옛 견적서와 같은 상태다.
+    investigationExcluded: false,
+    // 통전작업 제외(2026-09-04). 기본은 "빼지 않음" — 이 기능이 생기기 전에 만든
+    // 견적서와 같은 상태다.
+    powerTestExcluded: false,
+    laborPowerTestDeduction: null,
+    // 서류작업 제외(2026-09-16). 기본은 "빼지 않음" — 옛 견적서와 같은 상태다.
+    documentExcluded: false,
+    // 엑셀 전용(2026-09-15 Q2). 기본은 "일반 견적서" — 옛 견적서와 같은 상태다.
+    isExcelOnly: false,
+    manualSupplyAmount: null,
+    repairTasks: [],
+    // 작업 내역(2026-08-31). 기본은 "안 적음" — 제너레이터 양식에는 이 구역이 없다.
+    workScopeLines: [],
+    items: [],
+    ...overrides,
+  };
+}
+
+async function create(overrides: Partial<QuoteFields> = {}) {
+  const result = await createQuote({ fields: fields(overrides), actorUserId });
+  if (result.ok) createdQuoteIds.push(result.id);
+  return result;
+}
+
+async function readQuote(id: string) {
+  const [row] = await db.select().from(quotes).where(eq(quotes.id, id));
+  return row;
+}
+
+/** 그 장의 부품 줄을 **차례대로**. 조회가 쓰는 것과 같은 순서다. */
+async function readItems(quoteId: string) {
+  return db
+    .select({
+      lineNo: quoteItems.lineNo,
+      partNameText: quoteItems.partNameText,
+      quantity: quoteItems.quantity,
+      unitPrice: quoteItems.unitPrice,
+      partId: quoteItems.partId,
+    })
+    .from(quoteItems)
+    .where(eq(quoteItems.quoteId, quoteId))
+    .orderBy(asc(quoteItems.lineNo));
+}
+
+/**
+ * 🔴 **수리 건 한 줄을 직접 넣는다**(파일 머리말 ②). A/S 는 `createRepairCase` 를
+ * 부르지만 그 사슬(인수번호 채번 · 워크플로 해석 · 제품 해석)은 이 저장소에 없다.
+ * 이 시험이 그 건으로 하는 일은 **견적서의 `repair_case_id` 가 실재하는 행을
+ * 가리키는가** 하나다.
+ *
+ * `repair_cases` 의 NOT NULL 여섯을 채운다 — 인수번호 · 고객사 · 제품 · 워크플로 판 ·
+ * 지금 단계 · 접수일. 워크플로 판과 단계는 **시험 DB 에 이미 있는 것을 골라 쓴다**
+ * (시드가 넣어 둔다 — docs/DB_TESTS.md 의 `db:test:prepare`). 만들지 않는다:
+ * 그 표는 이 시험의 것이 아니고, 만들면 지울 책임이 생긴다.
+ *
+ * 🔴 **인수번호를 uuid 로 지을 수 없다** — DB CHECK `repair_cases_intake_number_format`
+ * 가 `^D[0-9]{2}(0[1-9]|1[0-2])[0-9]{2}$`(D + 연2 + 월2 + 순번2)만 받는다. 그래서
+ * 한 달에 100개뿐이고, 채번을 흉내 내 **지금 이 접두사에서 안 쓰인 다음 번호**를
+ * 고른다. `repair_cases_intake_number_unique` 가 최종 관문이라 겹치면 터진다.
+ * 접두사(D9603…)는 A/S 쪽 시험(D9602…)과 달라 서로를 밟지 않는다(머리말 ③).
+ */
+async function nextTestIntakeNumber(): Promise<string> {
+  const taken = await db
+    .select({ intakeNumber: repairCases.intakeNumber })
+    .from(repairCases)
+    .where(like(repairCases.intakeNumber, `D${TEST_YEAR_MONTH}%`));
+  const used = new Set(taken.map((row) => row.intakeNumber));
+  for (let seq = 0; seq < 100; seq += 1) {
+    const candidate = `D${TEST_YEAR_MONTH}${String(seq).padStart(2, "0")}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  assert.fail(
+    `D${TEST_YEAR_MONTH}00~99 가 전부 쓰였다 — 앞선 실행의 after() 가 치우지 못한 줄이 남아 있다.`
+  );
+}
+
+async function insertLinkedRepairCase(): Promise<string> {
+  const suffix = randomUUID().slice(0, 8);
+
+  const [version] = await db
+    .select({ id: workflowVersions.id })
+    .from(workflowVersions)
+    .limit(1);
+  assert.ok(version, "expected at least one workflow_versions row in the test DB");
+
+  const [step] = await db
+    .select({ id: workflowSteps.id })
+    .from(workflowSteps)
+    .where(eq(workflowSteps.workflowVersionId, version.id))
+    .limit(1);
+  assert.ok(step, "expected at least one workflow_steps row for that version in the test DB");
+
+  const [product] = await db
+    .insert(products)
+    .values({
+      modelName: `${TEST_MODEL_PREFIX}${suffix}`,
+      lotNumber: `LOT-${suffix}`,
+      serialNumber: `SN-${suffix}`,
+    })
+    .returning({ id: products.id });
+
+  const [row] = await db
+    .insert(repairCases)
+    .values({
+      intakeNumber: await nextTestIntakeNumber(),
+      customerId,
+      productId: product.id,
+      workflowVersionId: version.id,
+      currentWorkflowStepId: step.id,
+      assignedEngineerId: engineerId,
+      receivedAt: TEST_RECEIVED_AT,
+    })
+    .returning({ id: repairCases.id });
+  return row.id;
+}
+
+before(async () => {
+  const [engineer] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(
+      and(eq(users.role, "AS_ENGINEER"), eq(users.approvalStatus, "APPROVED"), eq(users.isDeleted, false))
+    )
+    .limit(1);
+  assert.ok(engineer, "expected at least one approved AS_ENGINEER in the test DB");
+  engineerId = engineer.id;
+  // created_by/updated_by 는 users 를 RESTRICT 로 가리킨다 — 실재하는 계정이어야
+  // 한다. 역할은 상관없다(인가는 서버 액션의 몫이다).
+  actorUserId = engineer.id;
+
+  const [customer] = await db
+    .insert(customers)
+    .values({ name: `${TEST_CUSTOMER_NAME_PREFIX}${randomUUID().slice(0, 8)}` })
+    .returning({ id: customers.id });
+  customerId = customer.id;
+
+  linkedRepairCaseId = await insertLinkedRepairCase();
+});
+
+after(async () => {
+  // quotes 가 먼저다 — customers 를 RESTRICT 로 가리키고 있다.
+  // quote_items 는 CASCADE 라 함께 사라진다.
+  if (createdQuoteIds.length > 0) {
+    await db.delete(quotes).where(inArray(quotes.id, createdQuoteIds));
+  }
+  // 이 스위트가 만든 수리 작업 카탈로그 줄. quotes 뒤다 — quote_repair_tasks 가
+  // 이 줄을 RESTRICT 로 가리키고, 그 줄은 quotes 를 지울 때 CASCADE 로 사라진다.
+  // 이름 접두사로만 지운다 — 수리 작업 비용 시험(repair-labor.integration)이 같은
+  // 표를 종류째 비우고 쓰므로, 여기서 종류째 지우면 그쪽 자리를 건드린다.
+  await db.delete(repairTaskCatalog).where(like(repairTaskCatalog.taskName, `${TEST_TASK_NAME_PREFIX}%`));
+  await db.delete(repairCases).where(like(repairCases.intakeNumber, `D${TEST_YEAR_MONTH}%`));
+  await db.delete(products).where(like(products.modelName, `${TEST_MODEL_PREFIX}%`));
+  // 🔴 `repair_case_intake_sequences` 는 지우지 않는다 — 인수번호를 채번하지 않고
+  // 직접 지어 넣으므로(insertLinkedRepairCase) 이 스위트는 그 표에 줄을 만들지 않는다.
+  await db.delete(customers).where(like(customers.name, `${TEST_CUSTOMER_NAME_PREFIX}%`));
+  await pgClient.end({ timeout: 5 });
+});
+
+describe("createQuote", () => {
+  test("새 장은 version 1로 시작하고 만든 사람이 기록된다", async () => {
+    const result = await create({ subject: "첫 장" });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.version, 1);
+
+    const row = await readQuote(result.id);
+    assert.equal(row.version, 1);
+    assert.equal(row.subject, "첫 장");
+    assert.equal(row.createdBy, actorUserId);
+    // 만든 사람이 곧 마지막으로 고친 사람이다.
+    assert.equal(row.updatedBy, actorUserId);
+    assert.equal(row.isDeleted, false);
+  });
+
+  test("모든 칸이 그대로 들어가고 부품 줄에 차례가 매겨진다", async () => {
+    const result = await create({
+      repairCaseId: linkedRepairCaseId,
+      intakeNumberText: "손으로 적은 인수번호",
+      customerId,
+      customerNameText: "ICD Co.,Ltd",
+      modelNameText: "CFK300FH-IC2",
+      lotNumberText: "WU8042",
+      serialNumberText: "1612027",
+      faultDescriptionText: "Bias Fwd Drop 발생",
+      subject: "전 칸 확인",
+      validity: "발행일로부터 8주",
+      delivery: "발주일로부터 4주",
+      payment: "현금 결제",
+      workCost: "1200000.00",
+      items: [
+        { partId: null, isOverhaulPart: false, partNameText: "Bias Board ASSY", quantity: 1, unitPrice: "1850000.00" },
+        { partId: null, isOverhaulPart: false, partNameText: "냉각 팬", quantity: 3, unitPrice: "45000.00" },
+      ],
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+
+    const row = await readQuote(result.id);
+    assert.equal(row.repairCaseId, linkedRepairCaseId);
+    assert.equal(row.intakeNumberText, "손으로 적은 인수번호");
+    assert.equal(row.customerId, customerId);
+    assert.equal(row.customerNameText, "ICD Co.,Ltd");
+    assert.equal(row.modelNameText, "CFK300FH-IC2");
+    // L/N 과 S/N 이 서로 바뀌어 들어가지 않는다 — 실제로 한 번 헷갈렸던 자리다.
+    assert.equal(row.lotNumberText, "WU8042");
+    assert.equal(row.serialNumberText, "1612027");
+    assert.equal(row.faultDescriptionText, "Bias Fwd Drop 발생");
+    assert.equal(row.validity, "발행일로부터 8주");
+    assert.equal(row.delivery, "발주일로부터 4주");
+    assert.equal(row.payment, "현금 결제");
+    assert.equal(row.workCost, "1200000.00");
+
+    // 차례는 폼에 늘어놓은 순서 그대로 1부터다.
+    assert.deepEqual(
+      (await readItems(result.id)).map((item) => [item.lineNo, item.partNameText, item.quantity]),
+      [
+        [1, "Bias Board ASSY", 1],
+        [2, "냉각 팬", 3],
+      ]
+    );
+  });
+
+  test("부품 다섯 줄을 넘겨도 전부 저장된다 — 합산은 xlsx 를 만들 때만 일어난다", async () => {
+    const items = Array.from({ length: 7 }, (_, i) => ({
+      partId: null,
+      isOverhaulPart: false,
+      partNameText: `부품 ${i + 1}`,
+      quantity: 1,
+      unitPrice: "10000.00",
+    }));
+    const result = await create({ items });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal((await readItems(result.id)).length, 7);
+  });
+
+  test("발행번호가 겹치면 거절한다", async () => {
+    const shared = `${TEST_QUOTE_NUMBER_PREFIX}DUP-${randomUUID().slice(0, 6)}`;
+    const first = await create({ quoteNumber: shared });
+    assert.equal(first.ok, true);
+
+    const second = await create({ quoteNumber: shared });
+    assert.equal(second.ok, false);
+    if (second.ok) return;
+    assert.equal(second.code, "VALIDATION_ERROR");
+    assert.ok(second.fieldErrors?.quoteNumber, "발행번호 칸에 오류가 붙어야 한다");
+  });
+
+  test("지운 장의 번호는 다시 쓸 수 있다 — 부분 unique 인덱스와 같은 규칙", async () => {
+    const shared = `${TEST_QUOTE_NUMBER_PREFIX}REUSE-${randomUUID().slice(0, 6)}`;
+    const first = await create({ quoteNumber: shared });
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+
+    await db.update(quotes).set({ isDeleted: true }).where(eq(quotes.id, first.id));
+
+    const second = await create({ quoteNumber: shared });
+    assert.equal(second.ok, true, "지운 번호를 다시 쓸 수 있어야 한다");
+  });
+
+  test("없는 수리 건을 가리키면 칸 오류로 답한다 — FK 오류는 아무것도 설명하지 못한다", async () => {
+    const result = await create({ repairCaseId: randomUUID() });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "VALIDATION_ERROR");
+    assert.ok(result.fieldErrors?.repairCaseId);
+  });
+});
+
+describe("updateQuote", () => {
+  test("저장할 때마다 version 이 1씩 오른다", async () => {
+    const created = await create();
+    assert.ok(created.ok);
+    if (!created.ok) return;
+
+    const first = await updateQuote({
+      id: created.id,
+      expectedVersion: 1,
+      fields: fields({ quoteNumber: (await readQuote(created.id)).quoteNumber, subject: "한 번 고침" }),
+      actorUserId,
+    });
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    assert.equal(first.version, 2);
+    assert.equal((await readQuote(created.id)).subject, "한 번 고침");
+  });
+
+  test("낡은 version 으로 온 저장은 CONFLICT — 부품 줄까지 한 줄도 바뀌지 않는다", async () => {
+    const created = await create({
+      subject: "원래 품명",
+      items: [{ partId: null, isOverhaulPart: false, partNameText: "원래 부품", quantity: 2, unitPrice: "1000.00" }],
+    });
+    assert.ok(created.ok);
+    if (!created.ok) return;
+    const quoteNumber = (await readQuote(created.id)).quoteNumber;
+
+    const stale = await updateQuote({
+      id: created.id,
+      expectedVersion: 99,
+      fields: fields({
+        quoteNumber,
+        subject: "덮어쓰려던 품명",
+        items: [{ partId: null, isOverhaulPart: false, partNameText: "덮어쓰려던 부품", quantity: 9, unitPrice: "2.00" }],
+      }),
+      actorUserId,
+    });
+    assert.equal(stale.ok, false);
+    if (stale.ok) return;
+    assert.equal(stale.code, "CONFLICT");
+
+    const row = await readQuote(created.id);
+    assert.equal(row.subject, "원래 품명", "본문이 바뀌면 안 된다");
+    assert.equal(row.version, 1, "version 도 오르면 안 된다");
+    // 여기가 요점이다 — CONFLICT 로 끝난 저장이 부품을 먼저 지워 버리면, 실패한
+    // 저장이 자료를 지우고 간 셈이 된다.
+    assert.deepEqual(
+      (await readItems(created.id)).map((item) => [item.partNameText, item.quantity]),
+      [["원래 부품", 2]]
+    );
+  });
+
+  test("부품 줄은 통째로 갈아 끼워진다 — 폼에서 지운 줄이 남지 않는다", async () => {
+    const created = await create({
+      items: [
+        { partId: null, isOverhaulPart: false, partNameText: "A", quantity: 1, unitPrice: "100.00" },
+        { partId: null, isOverhaulPart: false, partNameText: "B", quantity: 1, unitPrice: "200.00" },
+        { partId: null, isOverhaulPart: false, partNameText: "C", quantity: 1, unitPrice: "300.00" },
+      ],
+    });
+    assert.ok(created.ok);
+    if (!created.ok) return;
+    const quoteNumber = (await readQuote(created.id)).quoteNumber;
+
+    const updated = await updateQuote({
+      id: created.id,
+      expectedVersion: 1,
+      fields: fields({
+        quoteNumber,
+        items: [{ partId: null, isOverhaulPart: false, partNameText: "C 만 남김", quantity: 5, unitPrice: "300.00" }],
+      }),
+      actorUserId,
+    });
+    assert.equal(updated.ok, true);
+
+    assert.deepEqual(
+      (await readItems(created.id)).map((item) => [item.lineNo, item.partNameText, item.quantity]),
+      [[1, "C 만 남김", 5]]
+    );
+  });
+
+  test("부품을 전부 지우면 한 줄도 남지 않는다", async () => {
+    const created = await create({
+      items: [{ partId: null, isOverhaulPart: false, partNameText: "지울 것", quantity: 1, unitPrice: "1.00" }],
+    });
+    assert.ok(created.ok);
+    if (!created.ok) return;
+    const quoteNumber = (await readQuote(created.id)).quoteNumber;
+
+    const updated = await updateQuote({
+      id: created.id,
+      expectedVersion: 1,
+      fields: fields({ quoteNumber, items: [] }),
+      actorUserId,
+    });
+    assert.equal(updated.ok, true);
+    assert.equal((await readItems(created.id)).length, 0);
+  });
+
+  test("다른 장의 번호로 바꾸려 하면 거절한다", async () => {
+    const other = await create();
+    const target = await create();
+    assert.ok(other.ok && target.ok);
+    if (!other.ok || !target.ok) return;
+    const takenNumber = (await readQuote(other.id)).quoteNumber;
+
+    const result = await updateQuote({
+      id: target.id,
+      expectedVersion: 1,
+      fields: fields({ quoteNumber: takenNumber }),
+      actorUserId,
+    });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.ok(result.fieldErrors?.quoteNumber);
+  });
+
+  test("자기 번호를 그대로 두는 저장은 중복이 아니다", async () => {
+    const created = await create();
+    assert.ok(created.ok);
+    if (!created.ok) return;
+    const ownNumber = (await readQuote(created.id)).quoteNumber;
+
+    const result = await updateQuote({
+      id: created.id,
+      expectedVersion: 1,
+      fields: fields({ quoteNumber: ownNumber, subject: "번호는 그대로" }),
+      actorUserId,
+    });
+    assert.equal(result.ok, true, "자기 번호를 자기가 중복이라고 말하면 안 된다");
+  });
+
+  test("지워진 장은 고칠 수 없다 — 수정이 되살리기를 겸하면 안 된다", async () => {
+    const created = await create();
+    assert.ok(created.ok);
+    if (!created.ok) return;
+    await db.update(quotes).set({ isDeleted: true }).where(eq(quotes.id, created.id));
+
+    const result = await updateQuote({
+      id: created.id,
+      expectedVersion: 1,
+      fields: fields(),
+      actorUserId,
+    });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "NOT_FOUND");
+  });
+
+  test("없는 장은 NOT_FOUND", async () => {
+    const result = await updateQuote({
+      id: randomUUID(),
+      expectedVersion: 1,
+      fields: fields(),
+      actorUserId,
+    });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "NOT_FOUND");
+  });
+});
+
+/**
+ * ============================================================================
+ * 작업 내역 — 견적서에 적히는 조사/수리/통전
+ * ============================================================================
+ * 매쳐 견적서의 `2. 작업 비용` 아래에 세 묶음으로 적힌다. 여기서 못 박는 것은
+ * 셋이다:
+ *
+ *  1. 저장하고 다시 읽으면 **묶음과 차례가 그대로**다 — 문서에 적히는 순서가
+ *     곧 그 차례라, 뒤섞이면 받아 본 쪽이 다른 문서로 읽는다.
+ *  2. 차례는 **묶음 안에서** 매겨진다. 셋이 하나의 번호를 나눠 쓰면 한 묶음의
+ *     줄을 지웠을 때 다른 묶음의 번호까지 흔들린다.
+ *  3. 고쳐 저장하면 **통째로 갈아 끼워진다** — 폼에서 지운 줄이 남아 있으면
+ *     안 된다(부품 줄의 replaceItems 와 같은 규칙).
+ * ============================================================================
+ */
+describe("견적서 작업 내역", () => {
+  const scope = (section: "INVESTIGATION" | "REPAIR" | "POWER_TEST", ...texts: string[]) =>
+    texts.map((text) => ({ section, text }));
+
+  async function readScope(quoteId: string) {
+    return db
+      .select({
+        section: quoteWorkScopeLines.section,
+        lineNo: quoteWorkScopeLines.lineNo,
+        text: quoteWorkScopeLines.text,
+      })
+      .from(quoteWorkScopeLines)
+      .where(eq(quoteWorkScopeLines.quoteId, quoteId))
+      .orderBy(asc(quoteWorkScopeLines.section), asc(quoteWorkScopeLines.lineNo));
+  }
+
+  test("세 묶음이 저장되고, 차례는 묶음 안에서 1부터 매겨진다", async () => {
+    const created = await create({
+      workScopeLines: [
+        ...scope("INVESTIGATION", "외관 및 내부 검사", "파라메타 체크"),
+        ...scope("REPAIR", "바리콘 교환"),
+        ...scope("POWER_TEST", "정격 출력 시험", "에이징시험"),
+      ],
+    });
+    assert.ok(created.ok, JSON.stringify(created));
+
+    const rows = await readScope(created.id);
+    assert.equal(rows.length, 5);
+
+    // 🔴 묶음마다 1부터. 셋이 번호를 나눠 쓰면 한 묶음을 지울 때 다른 묶음이 흔들린다.
+    const bySection = (s: string) => rows.filter((r) => r.section === s).map((r) => r.lineNo);
+    assert.deepEqual(bySection("INVESTIGATION"), [1, 2]);
+    assert.deepEqual(bySection("REPAIR"), [1]);
+    assert.deepEqual(bySection("POWER_TEST"), [1, 2]);
+
+    // 적은 순서가 그대로 차례다 — 문서에 적히는 순서다.
+    assert.deepEqual(
+      rows.filter((r) => r.section === "INVESTIGATION").map((r) => r.text),
+      ["외관 및 내부 검사", "파라메타 체크"]
+    );
+  });
+
+  test("고쳐 저장하면 통째로 갈아 끼워진다 — 지운 줄이 남지 않는다", async () => {
+    const created = await create({
+      workScopeLines: scope("REPAIR", "지울 줄 A", "지울 줄 B", "지울 줄 C"),
+    });
+    assert.ok(created.ok);
+
+    const updated = await updateQuote({
+      id: created.id,
+      expectedVersion: created.version,
+      fields: fields({ workScopeLines: scope("REPAIR", "남길 줄 하나") }),
+      actorUserId,
+    });
+    assert.ok(updated.ok, JSON.stringify(updated));
+
+    const rows = await readScope(created.id);
+    assert.deepEqual(
+      rows.map((r) => r.text),
+      ["남길 줄 하나"],
+      "폼에서 지운 줄이 남아 있으면 문서에 그대로 나간다"
+    );
+    assert.deepEqual(rows.map((r) => r.lineNo), [1], "차례도 1부터 다시 매겨진다");
+  });
+
+  test("작업 내역이 없는 견적서도 저장된다 — 그 구역이 없는 양식이 있다", async () => {
+    const created = await create({ workScopeLines: [] });
+    assert.ok(created.ok);
+    assert.deepEqual(await readScope(created.id), []);
+  });
+
+  test("🔴 견적서를 지우면 작업 내역도 함께 사라진다 — CASCADE", async () => {
+    const created = await create({ workScopeLines: scope("REPAIR", "딸린 줄") });
+    assert.ok(created.ok);
+    assert.equal((await readScope(created.id)).length, 1);
+
+    await db.delete(quotes).where(eq(quotes.id, created.id));
+    assert.deepEqual(await readScope(created.id), [], "부모가 사라지면 딸린 줄도 사라진다");
+  });
+});
+
+/**
+ * ============================================================================
+ * 통전작업 제외 — 결정과 그때 뺀 금액을 함께 남긴다
+ * ============================================================================
+ * 🔴 두 칸인 이유가 여기서 드러난다: **"제외하기로 했으나 빼지 못했다"** 는
+ * 상태가 실제로 있다(T/C 는 통전 공수시간을 아직 정하지 않았다). 금액 한 칸만
+ * 두고 null 로 접으면 그 상태와 "제외하지 않았다"가 구별되지 않는다.
+ *
+ * 뺀 금액은 **화면이 셈해 보낸 값을 그대로** 적는다 — 서버가 설정 표를 다시 보고
+ * 계산하면, 통전 공수시간이 바뀌는 순간 이미 보낸 견적서의 근거가 소리 없이
+ * 달라진다(schema/quotes.ts 의 그 항목).
+ * ============================================================================
+ */
+describe("견적서 통전작업 제외", () => {
+  test("🔴 기본은 '빼지 않음' — 이 기능이 생기기 전에 만든 견적서와 같은 상태다", async () => {
+    const created = await create();
+    assert.ok(created.ok);
+    if (!created.ok) return;
+
+    const row = await readQuote(created.id);
+    assert.equal(row.powerTestExcluded, false);
+    assert.equal(row.laborPowerTestDeduction, null, "null 은 '빼지 않았다'이다");
+  });
+
+  test("켜면 결정과 뺀 금액이 그대로 적힌다 — 350만 − 140만", async () => {
+    const created = await create({
+      laborEquipmentKind: "GENERATOR",
+      laborBaseCost: "3500000",
+      powerTestExcluded: true,
+      laborPowerTestDeduction: "1400000",
+      workCost: "2100000",
+    });
+    assert.ok(created.ok);
+    if (!created.ok) return;
+
+    const row = await readQuote(created.id);
+    assert.equal(row.powerTestExcluded, true);
+    assert.equal(Number(row.laborPowerTestDeduction), 1400000);
+    assert.equal(row.laborBaseCost, "3500000.00", "뺀 금액과 별개로 기본 작업비는 그때 값 그대로다");
+  });
+
+  test("🔴 제외하기로 했으나 빼지 못한 장 — 결정은 남고 금액은 null 이다(T/C)", async () => {
+    const created = await create({
+      laborEquipmentKind: "TOTAL_CONTROLLER",
+      laborBaseCost: "2200000",
+      powerTestExcluded: true,
+      laborPowerTestDeduction: null,
+    });
+    assert.ok(created.ok);
+    if (!created.ok) return;
+
+    const row = await readQuote(created.id);
+    assert.equal(row.powerTestExcluded, true, "사람의 결정은 남아야 한다");
+    assert.equal(row.laborPowerTestDeduction, null, "빼지 못했다는 사실도 남아야 한다");
+  });
+
+  test("고쳐 저장하면 둘 다 따라간다 — 켰다 끄면 금액도 지워진다", async () => {
+    const created = await create({
+      laborBaseCost: "3500000",
+      powerTestExcluded: true,
+      laborPowerTestDeduction: "1400000",
+    });
+    assert.ok(created.ok);
+    if (!created.ok) return;
+
+    const updated = await updateQuote({
+      id: created.id,
+      expectedVersion: created.version,
+      fields: fields({
+        quoteNumber: (await readQuote(created.id)).quoteNumber,
+        laborBaseCost: "3500000",
+        powerTestExcluded: false,
+        laborPowerTestDeduction: null,
+      }),
+      actorUserId,
+    });
+    assert.equal(updated.ok, true, JSON.stringify(updated));
+
+    const row = await readQuote(created.id);
+    assert.equal(row.powerTestExcluded, false);
+    assert.equal(row.laborPowerTestDeduction, null, "끈 뒤에도 옛 차감이 남아 있으면 안 된다");
+  });
+});
+
+/**
+ * ============================================================================
+ * 견적서 조사작업 뺌 (2026-09-15) — 조사 칸을 손대서 비운 채 저장한 결정
+ * ============================================================================
+ * 옛 견적서의 빈 조사 칸과 가르는 것이 이 저장된 칸뿐이다(schema/quotes.ts).
+ * 만들 때와 고칠 때 모두 적히고, 다시 읽을 때 그대로 돌아와야 한다.
+ * ============================================================================
+ */
+describe("견적서 조사작업 뺌", () => {
+  test("🔴 기본은 '빼지 않음' — 이 기능이 생기기 전에 만든 견적서와 같은 상태다", async () => {
+    const created = await create();
+    assert.ok(created.ok);
+    if (!created.ok) return;
+
+    const row = await readQuote(created.id);
+    assert.equal(row.investigationExcluded, false);
+  });
+
+  test("켜서 만들면 그대로 적히고, 고쳐 저장하면 따라간다", async () => {
+    const created = await create({ investigationExcluded: true });
+    assert.ok(created.ok);
+    if (!created.ok) return;
+    assert.equal((await readQuote(created.id)).investigationExcluded, true);
+
+    const updated = await updateQuote({
+      id: created.id,
+      expectedVersion: created.version,
+      fields: fields({
+        quoteNumber: (await readQuote(created.id)).quoteNumber,
+        investigationExcluded: false,
+      }),
+      actorUserId,
+    });
+    assert.equal(updated.ok, true, JSON.stringify(updated));
+    assert.equal((await readQuote(created.id)).investigationExcluded, false, "끈 결정이 남지 않았다");
+  });
+});
+
+/**
+ * ============================================================================
+ * 견적서 서류작업 제외 (2026-09-16) — 금액만 빠지는 결정
+ * ============================================================================
+ * 통전 · 조사와 같은 성격의 **사람의 결정**이고, 뺀 금액을 담는 짝 칸은 없다
+ * (조사도 없다 — domain/quote-labor-cost.ts 머리말). 문서는 이 칸을 읽지 않는다 —
+ * 견적서의 구역은 조사 · 수리 · 통전 셋뿐이다.
+ * ============================================================================
+ */
+describe("견적서 서류작업 제외", () => {
+  test("🔴 기본은 '빼지 않음' — 이 기능이 생기기 전에 만든 견적서와 같은 상태다", async () => {
+    const created = await create();
+    assert.ok(created.ok);
+    if (!created.ok) return;
+
+    const row = await readQuote(created.id);
+    assert.equal(row.documentExcluded, false);
+  });
+
+  test("켜서 만들면 그대로 적히고, 고쳐 저장하면 따라간다 — 다시 열면 켜져 있다", async () => {
+    const created = await create({ documentExcluded: true });
+    assert.ok(created.ok);
+    if (!created.ok) return;
+    assert.equal((await readQuote(created.id)).documentExcluded, true);
+
+    const updated = await updateQuote({
+      id: created.id,
+      expectedVersion: created.version,
+      fields: fields({
+        quoteNumber: (await readQuote(created.id)).quoteNumber,
+        documentExcluded: false,
+      }),
+      actorUserId,
+    });
+    assert.equal(updated.ok, true, JSON.stringify(updated));
+    assert.equal((await readQuote(created.id)).documentExcluded, false, "끈 결정이 남지 않았다");
+  });
+
+  test("🔴 셋을 함께 켠 장 — 세 결정이 서로를 지우지 않는다", async () => {
+    const created = await create({
+      laborEquipmentKind: "GENERATOR",
+      laborBaseCost: "3500000",
+      investigationExcluded: true,
+      powerTestExcluded: true,
+      laborPowerTestDeduction: "1400000",
+      documentExcluded: true,
+    });
+    assert.ok(created.ok);
+    if (!created.ok) return;
+
+    const row = await readQuote(created.id);
+    assert.equal(row.investigationExcluded, true);
+    assert.equal(row.powerTestExcluded, true);
+    assert.equal(row.documentExcluded, true);
+    // 🔴 서류에는 「그때 뺀 금액」 칸이 없다 — 통전 것만 있다(조사와 같은 수준으로 맞췄다).
+    assert.equal(Number(row.laborPowerTestDeduction), 1400000);
+  });
+});
+
+/**
+ * ============================================================================
+ * 같은 수리 작업을 여러 번 — 수량은 같은 task_id 여러 줄로 저장된다
+ * ============================================================================
+ * 화면은 수량 N 을 **같은 작업 N 줄**로 펴서 보낸다(2026-09-11,
+ * domain/quote-repair-task-selection.ts). 수량 칸을 새로 만들지 않은 까닭은
+ * `quote_repair_tasks` 의 유니크가 `(quote_id, line_no)` 뿐이라 같은 task_id 여러
+ * 줄을 이미 담을 수 있어서다. 여기서 못 박는 것은 그 전제다:
+ *
+ *  1. 서버 검증이 같은 task_id 두 줄을 **걸러 내지 않는다**.
+ *  2. 저장이 두 줄을 **그대로, 차례대로** 담는다.
+ *  3. 다시 열면(getQuoteForEdit) 두 줄이 돌아와 **수량 2 로 되살아난다.**
+ * ============================================================================
+ */
+describe("견적서 수리 작업 — 같은 작업 여러 줄", () => {
+  let rfTaskId: string;
+  let fanTaskId: string;
+
+  before(async () => {
+    const inserted = await db
+      .insert(repairTaskCatalog)
+      .values([
+        {
+          equipmentKind: "GENERATOR",
+          taskName: `${TEST_TASK_NAME_PREFIX}RF 모듈 교체-${randomUUID().slice(0, 6)}`,
+          hours: 8,
+          displayOrder: 9001,
+        },
+        {
+          equipmentKind: "GENERATOR",
+          taskName: `${TEST_TASK_NAME_PREFIX}FAN 교환-${randomUUID().slice(0, 6)}`,
+          hours: 2,
+          displayOrder: 9002,
+        },
+      ])
+      .returning({ id: repairTaskCatalog.id });
+    [rfTaskId, fanTaskId] = inserted.map((row) => row.id);
+  });
+
+  async function readTaskLines(quoteId: string) {
+    return db
+      .select({
+        lineNo: quoteRepairTasks.lineNo,
+        taskId: quoteRepairTasks.taskId,
+        hours: quoteRepairTasks.hours,
+        hourlyRate: quoteRepairTasks.hourlyRate,
+      })
+      .from(quoteRepairTasks)
+      .where(eq(quoteRepairTasks.quoteId, quoteId))
+      .orderBy(asc(quoteRepairTasks.lineNo));
+  }
+
+  test("🔴 같은 task_id 두 줄이 검증을 지나 그대로 저장되고, 다시 열면 수량 2 로 되살아난다", async () => {
+    const catalog = [
+      { id: rfTaskId, taskName: "RF 모듈 교체", hours: 8, isOverhaul: false },
+      { id: fanTaskId, taskName: "FAN 교환", hours: 2, isOverhaul: false },
+    ];
+    // 화면이 보내는 그대로 — RF × 2, FAN × 1.
+    const lines = expandRepairTaskLines(
+      catalog,
+      new Map([
+        [rfTaskId, 2],
+        [fanTaskId, 1],
+      ]),
+      "100000"
+    );
+    assert.equal(lines.length, 3);
+
+    const validated = validateQuoteFields(
+      fields({ laborEquipmentKind: "GENERATOR", workCost: "1800000", repairTasks: lines })
+    );
+    assert.ok(validated.ok, JSON.stringify(validated));
+    if (!validated.ok) return;
+    assert.deepEqual(
+      validated.data.repairTasks.map((task) => task.taskId),
+      [rfTaskId, rfTaskId, fanTaskId],
+      "검증이 같은 작업의 둘째 줄을 걸러 내면 수량이 소리 없이 1 로 줄어든다"
+    );
+
+    const created = await create(validated.data);
+    assert.ok(created.ok, JSON.stringify(created));
+    if (!created.ok) return;
+
+    assert.deepEqual(
+      (await readTaskLines(created.id)).map((line) => [line.lineNo, line.taskId, line.hours, line.hourlyRate]),
+      [
+        [1, rfTaskId, 8, "100000.00"],
+        [2, rfTaskId, 8, "100000.00"],
+        [3, fanTaskId, 2, "100000.00"],
+      ]
+    );
+
+    const reopened = await getQuoteForEdit(created.id);
+    assert.ok(reopened);
+    const restored = restoreRepairTaskQuantities(reopened.repairTasks);
+    assert.equal(restored.get(rfTaskId), 2);
+    assert.equal(restored.get(fanTaskId), 1);
+  });
+
+  test("고쳐 저장하면 수량이 줄어든 만큼 줄도 줄어든다 — 통째로 갈아 끼워진다", async () => {
+    const twice = [
+      { taskId: rfTaskId, taskName: "RF 모듈 교체", hours: 8, hourlyRate: "100000" },
+      { taskId: rfTaskId, taskName: "RF 모듈 교체", hours: 8, hourlyRate: "100000" },
+    ];
+    const created = await create({ repairTasks: twice });
+    assert.ok(created.ok, JSON.stringify(created));
+    if (!created.ok) return;
+    assert.equal((await readTaskLines(created.id)).length, 2);
+
+    const updated = await updateQuote({
+      id: created.id,
+      expectedVersion: created.version,
+      fields: fields({ quoteNumber: (await readQuote(created.id)).quoteNumber, repairTasks: twice.slice(0, 1) }),
+      actorUserId,
+    });
+    assert.ok(updated.ok, JSON.stringify(updated));
+    assert.deepEqual(
+      (await readTaskLines(created.id)).map((line) => [line.lineNo, line.taskId]),
+      [[1, rfTaskId]]
+    );
+  });
+});
+
+/**
+ * ============================================================================
+ * 케이블 견적서 — 규격 · 설명 줄 · 특이사항이 왕복하는가 (2026-09-16 케이블 ③)
+ * ============================================================================
+ * 화면이 이 종류를 그리게 됐다. 여기서 보는 것은 **저장했다 다시 열었을 때 그대로인가**
+ * 하나다 — 규격 · 설명 줄 · 특이사항 · **줄의 차례**. 차례가 곧 뜻이라(설명이 어느 묶음
+ * 위에 붙는지) 줄 순서를 바꿔 넣으면 문서의 뜻이 달라진다.
+ *
+ * 그리고 마지막 방어선: **설명 줄에 금액이 남으면 DB 가 거절한다.** 화면이 그 칸을 아예
+ * 그리지 않고 검증이 null 로 못 박지만, 둘을 거치지 않는 부르기가 있으면 여기서 멈춘다.
+ * ============================================================================
+ */
+describe("케이블 견적서 (2026-09-16)", () => {
+  const cableItems = [
+    {
+      partId: null,
+      isOverhaulPart: false,
+      kind: "ITEM" as const,
+      partNameText: "20kW RFG 부속케이블 A",
+      partSpecText: "5C-FB 3M",
+      quantity: 2,
+      unitPrice: "10000.00",
+    },
+    {
+      partId: null,
+      isOverhaulPart: false,
+      kind: "NOTE" as const,
+      partNameText: "* 20kW RFG 부속케이블 Parts 3종",
+      partSpecText: null,
+      quantity: null,
+      unitPrice: null,
+    },
+    {
+      partId: null,
+      isOverhaulPart: false,
+      kind: "ITEM" as const,
+      partNameText: "20kW RFG 부속케이블 B",
+      partSpecText: null,
+      quantity: 1,
+      unitPrice: "20000.00",
+    },
+  ];
+  const REMARKS = "1) 케이블 길이는 발주 시 확정합니다.\n2) 부가세 별도.";
+
+  /**
+   * 그 CHECK 가 거절했는가. 드리즐은 실패한 질의를 감싸 던지므로 **까닭은 cause 에** 있다 —
+   * 겉 메시지에는 제약 이름이 없어, 거기만 보면 「어떤 오류든 통과」하는 시험이 된다.
+   */
+  async function rejectsWithCheck(run: () => Promise<unknown>, constraint: string) {
+    await assert.rejects(run, (err: unknown) => {
+      const cause = (err as { cause?: { message?: string } }).cause;
+      const text = `${(err as Error).message} ${cause?.message ?? ""}`;
+      assert.match(text, new RegExp(constraint), `${constraint} 가 아닌 까닭으로 거절됐다`);
+      return true;
+    });
+  }
+
+  test("🔴 저장했다 다시 열면 규격 · 설명 줄 · 특이사항 · 차례가 그대로다", async () => {
+    const result = await create({ kind: "CABLE", remarks: REMARKS, items: cableItems });
+    assert.ok(result.ok, JSON.stringify(result));
+    if (!result.ok) return;
+
+    const row = await readQuote(result.id);
+    assert.equal(row.kind, "CABLE");
+    // 줄바꿈이 있는 그대로 저장된다 — 줄마다 행을 만들지 않는다.
+    assert.equal(row.remarks, REMARKS);
+
+    const reopened = await getQuoteForEdit(result.id);
+    assert.ok(reopened, "케이블 견적서를 다시 열지 못했다 — 종류 관문이 닫혀 있다");
+    assert.equal(reopened.kind, "CABLE");
+    assert.equal(reopened.remarks, REMARKS);
+
+    // 🔴 고치는 화면이 펴는 목록 — 설명 줄이 **적힌 자리 그대로** 들어 있다.
+    assert.deepEqual(
+      reopened.itemLines.map((line) => [line.kind, line.partNameText, line.partSpecText, line.quantity, line.unitPrice]),
+      [
+        ["ITEM", "20kW RFG 부속케이블 A", "5C-FB 3M", 2, "10000.00"],
+        ["NOTE", "* 20kW RFG 부속케이블 Parts 3종", null, null, null],
+        ["ITEM", "20kW RFG 부속케이블 B", null, 1, "20000.00"],
+      ]
+    );
+
+    // 🔴 문서로 나가는 쪽이 읽는 목록에는 **설명 줄이 없다** — 그쪽은 수량 · 단가가
+    // 반드시 있다는 것에 기대어 셈한다(queries/quotes.ts 의 items 항목).
+    assert.deepEqual(
+      reopened.items.map((item) => [item.partNameText, item.quantity, item.unitPrice]),
+      [
+        ["20kW RFG 부속케이블 A", 2, "10000.00"],
+        ["20kW RFG 부속케이블 B", 1, "20000.00"],
+      ]
+    );
+
+    // 🔴 합계에 설명 줄이 섞이지 않는다 — 2×10,000 + 1×20,000 = 40,000.
+    assert.equal(
+      quoteSupplyAmountOf({
+        isExcelOnly: reopened.isExcelOnly,
+        manualSupplyAmount: reopened.manualSupplyAmount,
+        items: reopened.itemLines,
+        workCost: reopened.workCost,
+      }),
+      40000
+    );
+  });
+
+  test("🔴 설명 줄에 금액이 남으면 DB 가 거절한다 — 화면 · 검증을 거치지 않은 부르기의 마지막 방어선", async () => {
+    await rejectsWithCheck(
+      () =>
+        create({
+          kind: "CABLE",
+          items: [
+            {
+              partId: null,
+              isOverhaulPart: false,
+              kind: "NOTE",
+              partNameText: "설명 줄인데 금액이 있다",
+              partSpecText: null,
+              quantity: 1,
+              unitPrice: "1000.00",
+            },
+          ],
+        }),
+      "quote_items_amounts_item_line_only"
+    );
+  });
+
+  test("🔴 품목 줄에 수량이 없으면 DB 가 거절한다 — 0원짜리 품목이 문서에 찍히지 않게", async () => {
+    await rejectsWithCheck(
+      () =>
+        create({
+          kind: "CABLE",
+          items: [
+            {
+              partId: null,
+              isOverhaulPart: false,
+              kind: "ITEM",
+              partNameText: "수량 없는 품목",
+              partSpecText: null,
+              quantity: null,
+              unitPrice: null,
+            },
+          ],
+        }),
+      "quote_items_item_line_amounts_required"
+    );
+  });
+});

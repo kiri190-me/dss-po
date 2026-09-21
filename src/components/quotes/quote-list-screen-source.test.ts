@@ -46,14 +46,19 @@ const sliceBetween = (source: string, startMarker: string, endMarker: string) =>
 const SCREEN_PATH = "vendor/dss-core/src/ui/quotes/QuoteListScreen.tsx";
 const listSource = read(SCREEN_PATH);
 const pageSource = read("src/app/(app)/quotes/page.tsx");
+const slotsSource = read("src/components/quotes/QuoteListSlots.tsx");
 const actionSource = read("src/lib/server/actions/quotes.ts");
 const dialogsSource = read("vendor/dss-core/src/ui/common/master-data-trash-dialogs.tsx");
 
 describe("🔴 화면은 한 벌이다 — 이 사이트에 복사본을 두지 않는다", () => {
   test("목록 화면은 서브모듈(vendor/dss-core)에서 들여온다", () => {
     assert.ok(
-      pageSource.includes('from "@dss/core/ui/quotes/QuoteListScreen"'),
-      "page.tsx 가 서브모듈의 목록 화면을 쓰지 않는다"
+      slotsSource.includes('from "@dss/core/ui/quotes/QuoteListScreen"'),
+      "QuoteListSlots 가 서브모듈의 목록 화면을 쓰지 않는다"
+    );
+    assert.ok(
+      pageSource.includes('from "@/components/quotes/QuoteListSlots"'),
+      "page.tsx 가 함수 슬롯을 거는 클라이언트 조각을 쓰지 않는다"
     );
   });
 
@@ -81,9 +86,39 @@ describe("🔴 화면은 한 벌이다 — 이 사이트에 복사본을 두지 
   });
 });
 
-describe("조각 3a 가 채우는 것과 비워 두는 것", () => {
+/**
+ * ============================================================================
+ * 🔴 함수 슬롯은 **서버 컴포넌트에서 못 건넨다** (2026-09-21 눈 확인에서 잡았다)
+ * ============================================================================
+ * 조각 3b-1 이 `rowHref` 를 page.tsx 에서 곧바로 넘겼더니 화면이 통째로 죽었다 —
+ * "Functions cannot be passed directly to Client Components…". page.tsx 는 서버
+ * 컴포넌트이고 목록 화면은 `"use client"` 라, 그 경계를 넘는 값은 직렬화되어야
+ * 한다. 휴지통 액션은 **서버 액션**이라 넘어간다(같은 「함수」가 아니다).
+ *
+ * 🔴 **tsc 도 lint 도 이것을 잡지 못한다.** 그래서 여기서 글자로 본다 — 뒤 조각
+ * 셋(`intakeHref` · `renderFileBadges` · `renderRowActions`)이 똑같이 걸린다.
+ * ============================================================================
+ */
+describe("🔴 함수 슬롯은 클라이언트 조각(QuoteListSlots)이 건다", () => {
+  test("QuoteListSlots 가 \"use client\" 다 — 아니면 함수를 걸 수 없다", () => {
+    assert.ok(slotsSource.startsWith('"use client";'), "첫 줄이 \"use client\" 가 아니다");
+  });
+
+  test("🔴 page.tsx 는 함수 슬롯 넷을 하나도 넘기지 않는다 — 넘기면 화면이 죽는다", () => {
+    const call = flat(sliceBetween(pageSource, "<QuoteListSlots", "/>\n  );"));
+    for (const slot of ["rowHref=", "intakeHref=", "renderFileBadges=", "renderRowActions="]) {
+      assert.equal(
+        call.includes(slot),
+        false,
+        `${slot} — 서버 컴포넌트에서 함수를 넘기고 있다. QuoteListSlots 에 걸 것`
+      );
+    }
+  });
+});
+
+describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
   test("page.tsx 는 휴지통 액션 셋을 넘긴다 — 화면은 DB 를 모른다", () => {
-    const call = flat(sliceBetween(pageSource, "<QuoteListScreen", "/>\n  );"));
+    const call = flat(sliceBetween(pageSource, "<QuoteListSlots", "/>\n  );"));
     assert.ok(call.includes("deleteQuote: deleteQuoteAction"), "휴지통 보내기 액션이 넘어가지 않는다");
     assert.ok(call.includes("restoreQuote: restoreQuoteAction"), "되살리기 액션이 넘어가지 않는다");
     assert.ok(
@@ -92,16 +127,31 @@ describe("조각 3a 가 채우는 것과 비워 두는 것", () => {
     );
   });
 
+  test("🔴 조각 3b-1 — 줄을 누르면 편집 폼으로 간다. 고칠 수 없는 사람에게는 링크가 없다", () => {
+    // 🔴 주소를 이 사이트가 지어낸다 — 화면(서브모듈)은 사이트마다의 주소를 모른다.
+    assert.ok(
+      flat(slotsSource).includes("rowHref={(row) => (props.canEdit ? `/quotes/${row.id}` : null)}"),
+      "줄 링크 슬롯이 채워지지 않았거나 모양이 다르다"
+    );
+    // 🔴 그 주소에 실제로 화면이 있어야 한다 — 없는 곳으로 보내는 링크는 3a 가 막던 그것이다.
+    assert.equal(
+      existsSync(fileURLToPath(new URL("src/app/(app)/quotes/[id]/page.tsx", repoUrl))),
+      true,
+      "줄 링크가 가리키는 수정 화면이 없다"
+    );
+  });
+
   test("🔴 아직 없는 화면으로 가는 슬롯은 넘기지 않는다 — 없는 주소로 보내지 않는다", () => {
-    // 편집 폼(3b) · 발행(3c) · 첨부(3d) · 인쇄(3f) 가 오면 여기에 한 줄씩 더한다.
+    // 새 견적서(3b-2) · 발행(3c) · 첨부(3d) · 인쇄(3f) 가 오면 한 줄씩 더한다.
     // 미리 넘기면 없는 화면으로 가는 링크·단추가 목록에 선다.
-    const call = flat(sliceBetween(pageSource, "<QuoteListScreen", "/>\n  );"));
-    for (const slot of ["rowHref=", "newQuoteControl=", "renderRowActions=", "renderFileBadges=", "notice="]) {
-      assert.equal(call.includes(slot), false, `${slot} — 아직 그 조각이 오지 않았는데 슬롯이 채워져 있다`);
+    // 🔴 두 파일을 함께 본다 — 함수 슬롯은 QuoteListSlots, 나머지는 page.tsx 다.
+    const both = flat(sliceBetween(pageSource, "<QuoteListSlots", "/>\n  );")) + flat(slotsSource);
+    for (const slot of ["newQuoteControl=", "renderRowActions=", "renderFileBadges=", "notice="]) {
+      assert.equal(both.includes(slot), false, `${slot} — 아직 그 조각이 오지 않았는데 슬롯이 채워져 있다`);
     }
     // 🔴 인수번호가 가는 곳(수리 건 상세)은 **A/S 의 화면**이다. 사이트를 건너가는
     // 주소를 이 사이트가 지어내지 않는다 — 조각 4·5 에서 정한다.
-    assert.equal(call.includes("intakeHref="), false, "수리 건 상세 주소를 이 사이트가 지어내고 있다");
+    assert.equal(both.includes("intakeHref="), false, "수리 건 상세 주소를 이 사이트가 지어내고 있다");
   });
 
   test("🔴 슬롯을 안 주면 요약 줄은 링크가 아니라 글자다 — 목록은 그래도 읽힌다", () => {

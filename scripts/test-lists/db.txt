@@ -35,3 +35,13 @@
 # 적는 법은 unit.txt 머리를 볼 것.
 
 src/lib/db/db-roundtrip.integration.test.ts
+
+# ── 조각 3b-1 — 견적서 만들기 · 고치기(A/S 에서 옮겨 옴) ────────────────
+# 🔴 **이 저장소가 처음으로 옮겨 온 A/S 의 쓰기 통합 시험**이다(1,044줄). 조각
+#    1·2·3a 때는 시험 DB 장치가 없어 못 옮겼고, 그 사실을 unit.txt 가 적어 두었다.
+#
+# 저쪽과 다른 것 셋(그 파일 머리말): 환경 불러오기 · import 경로 · 수리 건 한 줄을
+# createRepairCase 대신 직접 넣는 것 · 격리 접두사를 `PO-` 로 가른 것.
+# 🔴 **접두사를 저쪽과 같게 바꾸지 마라** — 두 저장소가 같은 dss_as_test 를 쓰므로
+#    겹치면 한쪽 after() 가 다른 쪽이 만든 줄을 치운다.
+src/lib/db/mutations/quotes.integration.test.ts

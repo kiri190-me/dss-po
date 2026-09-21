@@ -2,21 +2,26 @@
 
 import { getSessionUser } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/permission-resolver";
-import { isValidExpectedVersion, isValidQuoteId } from "@/lib/validation/quote-input";
+import {
+  isValidExpectedVersion,
+  isValidQuoteId,
+  validateQuoteFields,
+} from "@/lib/validation/quote-input";
+import { createQuote, updateQuote } from "@/lib/db/mutations/quotes";
 import { permanentlyDeleteQuote, restoreQuote, softDeleteQuote } from "@/lib/db/mutations/quote-trash";
 
 /**
  * ============================================================================
- * 견적서 — 서버 액션 (정책 계층). 🔴 **지금은 휴지통 셋뿐이다**
+ * 견적서 — 서버 액션 (정책 계층). 🔴 **만들기 · 고치기 · 휴지통 셋**
  * ============================================================================
  * server/actions/domestic-orders.ts 와 같은 형식이다: 세션 확인 → 인가 확인 →
  * 입력 검증 → mutation 호출. **순서가 곧 규칙이다** — 검증을 먼저 하면
  * 로그인하지 않은 요청이 어떤 값이 유효한지를 알아낼 수 있게 된다.
  *
- * 🔴 A/S 의 같은 이름 파일에는 만들기 · 고치기 · 인수번호 찾기도 있다. 그 셋은
- * **편집 폼이 부르는 것**이고 편집 폼은 조각 3b 에서 온다(설계서 G절). 지금 옮겨
- * 오면 아무도 부르지 않는 저장 통로가 열린 채로 남는다 — 화면이 없어도 서버 액션은
- * 주소만 알면 부를 수 있으므로, 쓰지 않는 쓰기 통로를 열어 두지 않는다.
+ * 🔴 A/S 의 같은 이름 파일에는 **인수번호 찾기**(lookupIntakeForQuoteAction)도
+ * 있다. 그것은 **조각 3b-3**(인수번호 불러오기 · 부품 고르개)의 것이고, 그 조회
+ * 하나가 재고 · O/H 템플릿 · 단가 다섯 표를 끌고 온다(queries/quotes.ts 머리말).
+ * 그 조각이 올 때 여기에 한 함수가 는다.
  *
  * ── 관문은 하나다 ───────────────────────────────────────────────────────
  * 관리자가 설정한 수준(hasPermission)만 본다. A/S 가 2026-08-31 에 그렇게 전환했고
@@ -58,7 +63,19 @@ export type QuoteActionResultCode =
 
 export type QuoteActionResult =
   | { ok: true; id: string; version: number }
-  | { ok: false; code: QuoteActionResultCode; message: string };
+  | {
+      ok: false;
+      code: QuoteActionResultCode;
+      /**
+       * 칸 단위 한국어 오류 — 화면이 입력칸 밑에 문장을 붙인다(validation/quote-input.ts
+       * 의 fieldErrors). 🔴 **조각 3b-1 에서 더해졌다**: 휴지통 셋에는 붙일 칸이 없어
+       * 필요가 없었지만, 만들기 · 고치기는 「어느 칸이 문제인가」를 말해야 한다.
+       * 부품 줄은 `items.2.quantity` 처럼 줄 번호를 낀 키라, 다섯째 줄이 틀렸는데
+       * 첫 줄에 빨간 글씨가 붙는 일이 없다. A/S 와 같은 모양이다.
+       */
+      fieldErrors?: Record<string, string>;
+      message: string;
+    };
 
 /** 완전 삭제의 결과. 지운 뒤에는 version 이 없으므로 id 만 돌려준다. */
 export type QuotePermanentDeleteActionResult =
@@ -66,9 +83,121 @@ export type QuotePermanentDeleteActionResult =
   | { ok: false; code: QuoteActionResultCode; message: string };
 
 const DATABASE_UNAVAILABLE_MESSAGE = "일시적으로 저장할 수 없습니다. 잠시 후 다시 시도해 주세요.";
+const VALIDATION_MESSAGE = "입력값을 확인해 주세요.";
 
 /** 완전 삭제 사유의 길이 상한. 내자 정리 휴지통(actions/domestic-orders.ts)과 같은 값이다. */
 const MAX_PURGE_REASON_LENGTH = 2000;
+
+/**
+ * ============================================================================
+ * 만들기 · 고치기 — 관문은 `quotes` WRITE 하나다 (조각 3b-1)
+ * ============================================================================
+ * 휴지통의 셋보다 한 칸 넓다(그쪽은 MANAGE — 아래 resolveDeletingUser).
+ *
+ * 🔴 **A/S 와 다른 점은 세션을 읽는 방법 하나다.** 저쪽은 `readSession()` +
+ * `resolveActingUserForSession()` 두 걸음에 `getAuthSource()`(mock 모드) 갈래가
+ * 붙지만, 이 사이트의 `getSessionUser()` 가 그 일을 한 걸음으로 하고 mock 모드는
+ * 없다(휴지통 셋이 이미 그렇게 옮겨져 있다 — 위 머리말 ①②). 검증과 mutation 은
+ * **같은 함수 같은 순서**다.
+ * ============================================================================
+ */
+async function resolveWritingUser() {
+  // 살아 있는 계정을 다시 읽는다 — 강등된 계정이 세션 만료 전까지 예전 권한으로
+  // 저장하는 구멍을 막는다(auth/session.ts).
+  const actingUser = await getSessionUser();
+  if (!actingUser) {
+    return { ok: false as const, code: "UNAUTHORIZED" as const, message: "로그인이 필요합니다." };
+  }
+  if (!(await hasPermission(actingUser, "quotes", "WRITE"))) {
+    return { ok: false as const, code: "FORBIDDEN" as const, message: "이 작업을 수행할 권한이 없습니다." };
+  }
+  return { ok: true as const, actingUser };
+}
+
+/**
+ * 새 견적서 한 장.
+ *
+ * 🔴 **이 사이트에는 아직 [새 견적서] 화면이 없다**(조각 3b-2). 그런데도 이 액션을
+ * 함께 옮기는 까닭은 편집 폼이 A/S 와 **같은 한 컴포넌트**이기 때문이다 — 만들기와
+ * 고치기가 같은 칸, 같은 검증, 같은 저장을 쓴다(components/quotes/QuoteEditForm.tsx ·
+ * mutations/quotes.ts 의 toColumnValues). 둘로 가르면 「새로 만들면 들어가는데
+ * 고치면 안 들어가는 칸」이 생긴다. 3b-2 는 `/quotes/new` 라우트만 얹으면 된다.
+ *
+ * 관문은 고치기와 같은 `quotes` WRITE 라, 화면이 없는 동안 이 통로로 할 수 있는
+ * 일은 **그 사람이 이미 할 수 있는 일**뿐이다(권한이 넓어지지 않는다).
+ */
+export async function createQuoteAction(input: {
+  fields: Record<string, unknown>;
+}): Promise<QuoteActionResult> {
+  const auth = await resolveWritingUser();
+  if (!auth.ok) return { ok: false, code: auth.code, message: auth.message };
+
+  const validation = validateQuoteFields(input?.fields ?? {});
+  if (!validation.ok) {
+    return {
+      ok: false,
+      code: "VALIDATION_ERROR",
+      fieldErrors: validation.fieldErrors,
+      message: VALIDATION_MESSAGE,
+    };
+  }
+
+  try {
+    return await createQuote({ fields: validation.data, actorUserId: auth.actingUser.id });
+  } catch (err) {
+    // 값 자체는 절대 로그에 담지 않는다 — 품명·신고증상에 고객사 사정이 섞일 수
+    // 있다(schema/quotes.ts 의 PII 항목).
+    console.error("createQuoteAction: unexpected DB error", err);
+    return { ok: false, code: "DATABASE_UNAVAILABLE", message: DATABASE_UNAVAILABLE_MESSAGE };
+  }
+}
+
+/**
+ * 있는 견적서 한 장을 고친다 — **조각 3b-1 의 심장**이다.
+ *
+ * 🔴 낙관적 잠금(`expectedVersion`)이 여기서 끝나지 않는다. 최종 판정은 mutation 이
+ * 트랜잭션 안에서 행을 잠그고 한다 — 여기서는 형식만 본다(mutations/quotes.ts 의
+ * '동시 수정은 version 으로 막는다'). 🔴 **A/S 에도 같은 편집 화면이 남아 있고**
+ * (조각 4 전까지, 설계서 G절) 같은 `quotes` 표를 고친다. 자료가 갈라지지 않는 것은
+ * 그 version 덕이다 — 먼저 저장한 쪽이 이기고 늦은 쪽은 CONFLICT 를 받는다.
+ */
+export async function updateQuoteAction(input: {
+  id: string;
+  expectedVersion: number;
+  fields: Record<string, unknown>;
+}): Promise<QuoteActionResult> {
+  const auth = await resolveWritingUser();
+  if (!auth.ok) return { ok: false, code: auth.code, message: auth.message };
+
+  if (!isValidQuoteId(input?.id)) {
+    return { ok: false, code: "NOT_FOUND", message: "해당 견적서를 찾을 수 없습니다." };
+  }
+  if (!isValidExpectedVersion(input.expectedVersion)) {
+    return { ok: false, code: "CONFLICT", message: "최신 정보를 다시 불러온 뒤 시도해 주세요." };
+  }
+
+  const validation = validateQuoteFields(input.fields ?? {});
+  if (!validation.ok) {
+    return {
+      ok: false,
+      code: "VALIDATION_ERROR",
+      fieldErrors: validation.fieldErrors,
+      message: VALIDATION_MESSAGE,
+    };
+  }
+
+  try {
+    return await updateQuote({
+      id: input.id,
+      expectedVersion: input.expectedVersion,
+      fields: validation.data,
+      actorUserId: auth.actingUser.id,
+    });
+  } catch (err) {
+    console.error("updateQuoteAction: unexpected DB error", err);
+    return { ok: false, code: "DATABASE_UNAVAILABLE", message: DATABASE_UNAVAILABLE_MESSAGE };
+  }
+}
 
 /**
  * 휴지통의 관문은 한 칸 더 좁다. 만들기·고치기는 `quotes` WRITE 지만, 지우고

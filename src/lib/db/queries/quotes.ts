@@ -2,25 +2,47 @@ import "server-only";
 
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
-import { attachments, quoteItems, quotes, repairCases } from "@dss/core/schema";
+import {
+  attachments,
+  quoteItems,
+  quoteRepairTasks,
+  quoteWorkScopeLines,
+  quotes,
+  repairCases,
+} from "@dss/core/schema";
 import { db } from "@/lib/db";
 import {
   buildQuoteSummaryLine,
   isQuoteAmountItemLine,
   quoteSupplyAmountOf,
   type QuoteAmountLine,
+  type QuoteItemKind,
 } from "@/lib/domain/quote-list";
+import type { WorkflowKind } from "@/lib/domain/workflow-kind";
+import {
+  isQuoteKind,
+  type QuoteKind,
+  type QuoteWorkScopeSection,
+} from "@/lib/validation/quote-input";
 
 /**
  * ============================================================================
- * 견적서 — 읽는 쪽. 🔴 **지금은 목록 · 휴지통 · 드롭다운 셋뿐이다**
+ * 견적서 — 읽는 쪽. 🔴 **목록 · 휴지통 · 드롭다운 · 수정 폼이 여는 한 장**
  * ============================================================================
  * A/S 관리 시스템의 같은 이름 파일(888줄)은 견적서 화면 **전체**의 읽기 쪽이다 —
  * 목록·상세(`getQuoteForEdit`)·인수번호 찾기(`lookupIntakeForQuote`)·부품 줄·
  * 결재 이력까지. 그 나머지는 **그것을 쓰는 화면이 오는 조각에서 함께 온다**
- * (설계서 G절: 3b 편집 폼 · 3e 결재 …). 지금 통째로 베껴 오면 아무도 부르지 않는
- * 조회가 600줄 남고, 그 조각이 올 때 죽은 코드와 새로 옮겨 온 코드 중 어느 것이
- * 참인지 답할 수 없게 된다.
+ * (설계서 G절: 3e 결재 …). 지금 통째로 베껴 오면 아무도 부르지 않는 조회가 남고,
+ * 그 조각이 올 때 죽은 코드와 새로 옮겨 온 코드 중 어느 것이 참인지 답할 수 없게
+ * 된다.
+ *
+ * 🔴 **`lookupIntakeForQuote` 는 아직 없다**(조각 3b-1). 인수번호로 접수 건을
+ * 찾아 폼 상단을 채우는 일은 **조각 3b-3** 이고(그쪽에 부품 고르개도 함께 온다),
+ * 그 조회 하나가 `inventory_part_requests` · `oh_part_templates` ·
+ * `part_unit_prices` · `products` 다섯 표를 더 끌고 온다. 편집 폼은 그 구역 없이
+ * 열린다 — 저장된 `repair_case_id` · 인수번호 글자는 **그대로 왕복한다**(화면이
+ * 값을 들고 있다가 그대로 돌려보낸다). 그러니 3b-3 전에 편집해도 연결이 끊기지
+ * 않는다.
  *
  * 🔴 **`listQuotesForRepairCase` 도 아직 없다.** 저쪽에서 그것은 수리 건 상세의
  * [견적서] 탭이 쓰는 조회이고, 그 탭은 A/S 의 화면이다(설계서 F절 5번 — 화면은
@@ -306,4 +328,262 @@ export async function listQuoteOptions(): Promise<
       faultDescription: row.faultDescriptionText,
     }),
   }));
+}
+
+export type QuoteEditData = {
+  id: string;
+  version: number;
+  quoteNumber: string;
+  /**
+   * 🔴 **앱이 다루는 종류만 온다**(QuoteKind — 목록의 StoredQuoteKind 와 다르다).
+   * 아직 그릴 줄 모르는 종류는 **아예 오지 않는다** — 아래 getQuoteForEdit 의
+   * 관문이 null 로 답한다. 2026-09-16 에 CABLE 이 그 목록에 들어와 케이블
+   * 견적서도 이 관문을 지난다(validation/quote-input.ts 의 QUOTE_KINDS).
+   */
+  kind: QuoteKind;
+  quoteDate: string;
+  repairCaseId: string | null;
+  intakeNumberText: string | null;
+  customerId: string | null;
+  customerNameText: string;
+  modelNameText: string | null;
+  lotNumberText: string | null;
+  serialNumberText: string | null;
+  faultDescriptionText: string | null;
+  subject: string;
+  validity: string | null;
+  delivery: string | null;
+  payment: string | null;
+  /**
+   * 특이사항 — 케이블 견적서 양식 10번(2026-09-16 — schema/quotes.ts 의 remarks).
+   * 수정 화면이 케이블 견적서에서만 그리고, 그대로 다시 편다(왕복). 내자 · OH 는
+   * 늘 null 이다 — 그 두 양식에 이 항목이 없다.
+   */
+  remarks: string | null;
+  workCost: string;
+  /**
+   * 위 workCost 를 만든 근거. **다시 열었을 때 금액만 남고 무엇을 골랐는지
+   * 사라지지 않게** 함께 싣는다(schema/quotes.ts 의 labor_* 주석).
+   *
+   * 이 기능이 생기기 전에 만든 견적서는 셋 다 비어 있다 — 그때는 작업을 고르는
+   * 방법 자체가 없었다. 화면은 그 상태를 "아직 고른 적 없음"으로 그린다.
+   */
+  laborEquipmentKind: WorkflowKind | null;
+  laborBaseCost: string | null;
+  /**
+   * 통전작업을 빼고 청구한 장인가, 그리고 **그때 실제로 뺀 금액**.
+   *
+   * 🔴 **다시 셈하지 않는다.** 저장된 이 두 값이 곧 근거다 — 통전 공수시간이나
+   * 시간당 단가가 나중에 바뀌어도 이미 보낸 견적서는 그대로여야 한다
+   * (schema/quotes.ts 의 그 항목).
+   *
+   * 옛 견적서는 `false` · `null` 이다. 그때는 제외할 방법 자체가 없었다.
+   */
+  powerTestExcluded: boolean;
+  laborPowerTestDeduction: string | null;
+  /**
+   * 「① 조사작업」을 문서에서 빼는가 — 조사 칸을 손대서 비운 채 저장한 장이다
+   * (schema/quotes.ts 의 그 항목). **다시 셈하지 않는다** — 옛 견적서의 빈 조사 칸과
+   * 가르는 것이 이 저장된 결정뿐이다. 옛 견적서는 `false` 다.
+   */
+  investigationExcluded: boolean;
+  /**
+   * 서류작업을 빼고 청구한 장인가(2026-09-16 — schema/quotes.ts 의 그 항목).
+   *
+   * 수정 화면이 체크 상자로 켜고 끄며, 이 값으로 다시 편다(왕복). **뺀 금액을 담는 짝
+   * 칸은 없다** — 조사와 같다(domain/quote-labor-cost.ts 머리말).
+   *
+   * 🔴 **문서는 이 칸을 읽지 않는다** — 견적서의 구역은 조사 · 수리 · 통전 셋뿐이라
+   * 서류작업은 적히는 자리가 없다. 금액만 빠진다. 옛 견적서는 `false` 다.
+   */
+  documentExcluded: boolean;
+  /**
+   * 엑셀 전용 견적서인가 · 손으로 적은 공급가액(2026-09-15 Q2 — schema/quotes.ts). 엑셀
+   * 전용 장은 품목이 없고, 받기(/api/quotes/{id}/xlsx)가 앱 양식 대신 붙인 엑셀을 내려준다.
+   * 옛 견적서는 `false` · `null` 이다.
+   */
+  isExcelOnly: boolean;
+  manualSupplyAmount: string | null;
+  repairTasks: {
+    /** 카탈로그의 그 줄. 지워졌으면 null 일 수 있다(참고용). */
+    taskId: string | null;
+    taskNameText: string;
+    hours: number;
+    /** 그때의 시간당 작업비. 지금 값으로 다시 셈하지 않는다. */
+    hourlyRate: string;
+  }[];
+  /**
+   * 견적서에 적히는 작업 내역(조사/수리/통전). 묶음 안의 차례대로 온다.
+   *
+   * 이 기능이 생기기 전에 만든 견적서는 빈 배열이다 — 그때는 적을 방법이
+   * 없었다. 화면은 그때 양식의 기본 목록으로 채워 준다.
+   */
+  workScopeLines: { section: QuoteWorkScopeSection; text: string }[];
+  /**
+   * 🔴 **금액이 있는 품목 줄만 온다** — **문서로 나가는 쪽**이 읽는 목록이다
+   * (미리보기 QuotePrintView · xlsx 생성기 services/quote-workbook.ts). 그 둘은
+   * 수량 · 단가가 반드시 있다는 것에 기대어 셈하므로, 설명 줄이 섞이면 0원짜리
+   * 품목이 문서에 찍히거나 합계가 어긋난다. 그래서 수량 · 단가가 **여기서는 비지
+   * 않는다** — DB 칸이 nullable 이 된 것(0101)은 설명 줄 하나 때문이고, 품목 줄에는
+   * 언제나 있다(CHECK quote_items_item_line_amounts_required).
+   *
+   * 🔴 규격(part_spec_text)도 여기 없다 — 내자 · OH 양식에는 규격 칸이 없다.
+   * **고치는 화면은 이 목록이 아니라 아래 itemLines 를 편다.**
+   */
+  items: {
+    partId: string | null;
+    partNameText: string;
+    isOverhaulPart: boolean;
+    quantity: number;
+    unitPrice: string;
+  }[];
+  /**
+   * ==========================================================================
+   * 🔴 품목 표 **전체** — 설명 줄까지, 적힌 차례 그대로 (2026-09-16 케이블 ③)
+   * ==========================================================================
+   * **고치는 화면(QuoteEditForm)이 이것으로 표를 다시 편다.** 위 items 와 같은
+   * 줄들을 담지만 셋이 다르다:
+   *
+   *   · 설명 줄(kind = "NOTE")이 **빠지지 않는다.** 빠지면 케이블 견적서를 다시
+   *     열었을 때 설명 줄이 사라지고, 저장하는 순간 영영 없어진다.
+   *   · **규격**을 싣는다 — 케이블 양식의 셋째 칸이다.
+   *   · 그래서 수량 · 단가가 **null 일 수 있다**(설명 줄).
+   *
+   * 차례가 곧 뜻이다 — 설명 줄이 어느 품목 묶음 **위에** 붙는지가 그 줄의 내용이다.
+   * 그래서 종류로 나누지 않고 line_no 순서 그대로 한 목록으로 준다.
+   *
+   * 🔴 위 items 와 **두 벌이 아니다**: 문서로 나가는 쪽(양식 셋을 채우는 코드)과
+   * 고치는 쪽이 필요로 하는 모양이 서로 다르고, 한쪽으로 합치면 문서 쪽이 설명
+   * 줄을 만난다. 둘 다 같은 조회 결과(itemRows) 하나에서 갈라 나온다.
+   */
+  itemLines: {
+    partId: string | null;
+    kind: QuoteItemKind;
+    partNameText: string;
+    partSpecText: string | null;
+    isOverhaulPart: boolean;
+    quantity: number | null;
+    unitPrice: string | null;
+  }[];
+};
+
+/**
+ * 수정 폼이 여는 한 장. **version 을 반드시 함께 싣는다** — 저장할 때 되돌려
+ * 보낼 낙관적 잠금 토큰이고, 폼을 열 때 따로 한 번 더 읽으면 그 사이의 변경을
+ * 놓친다.
+ *
+ * 지워진 장은 null 이다. 목록에 없는 것을 주소로 열 수 있으면 휴지통이 뜻을
+ * 잃는다(mutations 의 '지워진 장은 고칠 수 없다'와 같은 판단).
+ */
+export async function getQuoteForEdit(id: string): Promise<QuoteEditData | null> {
+  const [row] = await db
+    .select({
+      id: quotes.id,
+      version: quotes.version,
+      quoteNumber: quotes.quoteNumber,
+      kind: quotes.kind,
+      quoteDate: quotes.quoteDate,
+      repairCaseId: quotes.repairCaseId,
+      intakeNumberText: quotes.intakeNumberText,
+      customerId: quotes.customerId,
+      customerNameText: quotes.customerNameText,
+      modelNameText: quotes.modelNameText,
+      lotNumberText: quotes.lotNumberText,
+      serialNumberText: quotes.serialNumberText,
+      faultDescriptionText: quotes.faultDescriptionText,
+      subject: quotes.subject,
+      validity: quotes.validity,
+      delivery: quotes.delivery,
+      payment: quotes.payment,
+      remarks: quotes.remarks,
+      workCost: quotes.workCost,
+      laborEquipmentKind: quotes.laborEquipmentKind,
+      laborBaseCost: quotes.laborBaseCost,
+      powerTestExcluded: quotes.powerTestExcluded,
+      laborPowerTestDeduction: quotes.laborPowerTestDeduction,
+      investigationExcluded: quotes.investigationExcluded,
+      documentExcluded: quotes.documentExcluded,
+      isExcelOnly: quotes.isExcelOnly,
+      manualSupplyAmount: quotes.manualSupplyAmount,
+    })
+    .from(quotes)
+    .where(and(eq(quotes.id, id), eq(quotes.isDeleted, false)))
+    .limit(1);
+
+  if (!row) return null;
+
+  /**
+   * 🔴 **아직 다루지 못하는 종류는 열지 않는다**(2026-09-16).
+   *
+   * 그 값을 아는 종류로 접으면 **다른 종류의 양식으로 문서가 나간다** — 그 편이 못
+   * 여는 것보다 나쁘다. 그래서 목록(있는 그대로 보여 준다)과 달리 여기서는 **없는
+   * 장으로 답한다.**
+   *
+   * 판정을 isQuoteKind 에 맡긴 것은 일부러다 — 「앱이 다루는 종류」 목록이 한
+   * 곳(QUOTE_KINDS)뿐이라, 거기에 종류가 들어오는 순간 이 관문도 함께 열린다.
+   * CABLE 은 2026-09-16 에 그렇게 열렸다(케이블 ③ — 화면이 그 종류를 그릴 줄 알게 됐다).
+   */
+  if (!isQuoteKind(row.kind)) return null;
+  const kind = row.kind;
+
+  const itemRows = await db
+    .select({
+      partId: quoteItems.partId,
+      partNameText: quoteItems.partNameText,
+      partSpecText: quoteItems.partSpecText,
+      isOverhaulPart: quoteItems.isOverhaulPart,
+      kind: quoteItems.kind,
+      quantity: quoteItems.quantity,
+      unitPrice: quoteItems.unitPrice,
+    })
+    .from(quoteItems)
+    .where(eq(quoteItems.quoteId, id))
+    .orderBy(asc(quoteItems.lineNo));
+
+  /**
+   * 한 조회에서 **두 모양**이 갈라져 나온다(위 QuoteEditData 의 items · itemLines).
+   *
+   *  · items     문서로 나가는 쪽이 읽는다 — **품목 줄만**, 수량 · 단가가 반드시 있다.
+   *  · itemLines 고치는 화면이 읽는다 — **설명 줄까지 차례 그대로**, 규격도 함께.
+   */
+  const items = itemRows.filter(isQuoteAmountItemLine).map((item) => ({
+    partId: item.partId,
+    partNameText: item.partNameText,
+    isOverhaulPart: item.isOverhaulPart,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+  }));
+  const itemLines = itemRows.map((item) => ({
+    partId: item.partId,
+    kind: item.kind,
+    partNameText: item.partNameText,
+    partSpecText: item.partSpecText,
+    isOverhaulPart: item.isOverhaulPart,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+  }));
+
+  // 고른 수리 작업. **그때 값의 사본**이라 카탈로그를 조인하지 않는다 —
+  // 조인하면 단가가 오른 뒤 옛 견적서의 근거가 소리 없이 바뀐다.
+  const repairTasks = await db
+    .select({
+      taskId: quoteRepairTasks.taskId,
+      taskNameText: quoteRepairTasks.taskNameText,
+      hours: quoteRepairTasks.hours,
+      hourlyRate: quoteRepairTasks.hourlyRate,
+    })
+    .from(quoteRepairTasks)
+    .where(eq(quoteRepairTasks.quoteId, id))
+    .orderBy(asc(quoteRepairTasks.lineNo));
+
+  // 작업 내역. 묶음 안의 차례대로 — 문서에 적히는 순서 그대로다.
+  const workScopeLines = await db
+    .select({ section: quoteWorkScopeLines.section, text: quoteWorkScopeLines.text })
+    .from(quoteWorkScopeLines)
+    .where(eq(quoteWorkScopeLines.quoteId, id))
+    .orderBy(asc(quoteWorkScopeLines.section), asc(quoteWorkScopeLines.lineNo));
+
+  // kind 를 따로 싣는 것은 위 관문이 좁혀 둔 값을 쓰기 위해서다 — `...row` 는
+  // DB 가 내주는 넓은 값(CABLE 포함)을 그대로 펴 놓는다.
+  return { ...row, kind, items, itemLines, repairTasks, workScopeLines };
 }

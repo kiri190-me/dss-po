@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import QuoteListScreen from "@dss/core/ui/quotes/QuoteListScreen";
+import QuoteListSlots from "@/components/quotes/QuoteListSlots";
 import { requireAreaAccessForCurrentUser } from "@/lib/auth/area-guard";
 import { hasPermission } from "@/lib/auth/permission-resolver";
 import { listDeletedQuotes, listQuotes } from "@/lib/db/queries/quotes";
@@ -34,20 +34,31 @@ export const dynamic = "force-dynamic";
  * 날」이 오고, 그날 사람은 같은 견적서의 다른 금액을 두 화면에서 보게 된다.
  * ⚠️ 조각 4 까지 A/S 는 제 복사본을 계속 쓴다 — 그쪽 README 2절 참조.
  *
- * ── 🔴 이 조각에 아직 없는 것 ───────────────────────────────────────────
- * 화면의 슬롯 여섯 중 **휴지통 액션 하나만** 채운다. 나머지는 그 조각이 오면
- * 여기에 한 줄씩 더한다(화면 파일은 그때 손대지 않는다):
+ * ── 🔴 함수 슬롯은 여기서 못 건넨다 (조각 3b-1 에서 눈으로 잡았다) ───────
+ * 그래서 화면을 곧바로 부르지 않고 얇은 클라이언트 조각 `QuoteListSlots` 를
+ * 거친다. 이 파일은 **서버 컴포넌트**이고 목록 화면은 `"use client"` 라, 그
+ * 경계를 넘는 값은 직렬화되어야 한다 — **평범한 함수는 안 된다**(화면이 통째로
+ * 죽는다. 그 오류와 까닭은 QuoteListSlots.tsx 머리말에 적어 두었다).
+ * 🔴 `tsc` 도 `lint` 도 잡지 못한다.
  *
- *   rowHref / newQuoteControl  → 조각 3b (편집 폼). 지금은 수정 화면이 없어
- *                                요약 줄이 **링크가 아니라 글자**로 그려진다.
- *   renderRowActions           → 조각 3c·3f ([견적서 받기] · [미리보기 · PDF])
- *   renderFileBadges           → 조각 3d (첨부)
- *   notice                     → 조각 3c (받기 결과 알림)
- *   intakeHref                 → 🔴 수리 건 상세는 **A/S 의 화면**이다. 사이트를
- *                                건너가는 주소를 이 사이트가 지어내지 않는다 —
- *                                그 주소를 어디서 얻을지는 배포 설정의 일이고,
- *                                조각 4·5 에서 정한다. 지금은 인수번호가 글자로
- *                                보인다(값은 그대로 보이고, 누를 수만 없다).
+ * ── 🔴 이 조각에 아직 없는 것 ───────────────────────────────────────────
+ * 화면의 슬롯 일곱 중 지금 채운 것은 **휴지통 액션과 줄 링크 둘**이다. 나머지는
+ * 그 조각이 오면 한 줄씩 더한다(화면 파일은 그때 손대지 않는다). 🔴 **어디에
+ * 더하는지가 갈린다**:
+ *
+ *   ✅ rowHref                  → 조각 3b-1 에서 채웠다. 🔴 **QuoteListSlots 에서**
+ *                                — 함수라 여기서는 못 넘긴다. 줄 요약을 누르면
+ *                                `/quotes/{id}` 의 편집 폼이 열린다.
+ *   renderRowActions           → 조각 3c·3f. 🔴 **QuoteListSlots 에**(함수)
+ *   renderFileBadges           → 조각 3d. 🔴 **QuoteListSlots 에**(함수)
+ *   intakeHref                 → 🔴 **QuoteListSlots 에**(함수). 수리 건 상세는
+ *                                **A/S 의 화면**이다 — 사이트를 건너가는 주소를
+ *                                이 사이트가 지어내지 않는다. 그 주소를 어디서
+ *                                얻을지는 배포 설정의 일이고 조각 4·5 에서 정한다.
+ *                                지금은 인수번호가 글자로 보인다.
+ *   newQuoteControl            → 조각 3b-2 ([새 견적서] 팝업과 `/quotes/new`).
+ *                                ReactNode 라 **여기서** 넘겨도 된다.
+ *   notice                     → 조각 3c (받기 결과 알림). 이것도 ReactNode 다.
  *
  * ── canEdit 은 관문이 아니다 ────────────────────────────────────────────
  * 지금은 [새 견적서] 자리를 그릴지만 정하는데, 그 자리에 넣을 것이 아직 없어
@@ -77,7 +88,7 @@ export default async function QuotesPage() {
   ]);
 
   return (
-    <QuoteListScreen
+    <QuoteListSlots
       rows={rows}
       trashRows={trashRows}
       canEdit={canEdit}
