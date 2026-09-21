@@ -35,6 +35,14 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# local-only agent working notes; never intended for the published repo
+# (A/S 저장소의 .gitignore와 같은 모양이다. 여기서는 CLAUDE.md가 `@AGENTS.md`
+#  한 줄짜리 가리킴이라 둘을 함께 둔다. 빼놓으면 바탕화면 '작업 종료'가
+#  "커밋하지 않은 파일"로 보고 PO/내자를 끄지 않고 멈춘다 — 2026-09-22.)
+AGENTS.md
+CLAUDE.md
+HANDOFF.md
+
 # 예시 파일은 커밋한다 (비밀값 없음)
 !.env.example
 
