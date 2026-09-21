@@ -87,7 +87,20 @@ export function AppHeader({
 }) {
   return (
     <header className="border-b border-slate-200 bg-white">
-      <div className="mx-auto flex w-full max-w-[1100px] items-center justify-between gap-4 px-4 py-3">
+      {/*
+        🔴 폭 제한이 없다 — 창 끝까지 쓴다(2026-09-21). 한때 본문·메뉴와 함께
+        `mx-auto max-w-[1100px]` 이었는데, 본문의 그 못을 뽑으면서 여기도 같이
+        뽑았다. 본문만 풀면 넓은 화면에서 시스템 이름과 나가는 단추는 가운데
+        1100px 띠 안에 남고 표만 창 끝까지 뻗어 **왼쪽 끝이 어긋난다.**
+        바깥 틀 셋(머리말 · 화면 메뉴 · 본문)은 같은 폭·같은 좌우 여백이라야
+        한 장으로 보인다((app)/layout.tsx 의 <main> 주석).
+
+        🔴 좌우 여백의 폰 값 `px-4` 는 **바꾸지 않는다** — 이 파일 머리말의
+        360px 폭 계산이 속폭 328(=360-16*2)을 전제로 하고, 시험이 그 셈을 그대로
+        못 박아 둔다(service-menu-wiring.test.ts). 768px 이상에서만 24px 로
+        벌린다.
+      */}
+      <div className="flex w-full items-center justify-between gap-4 px-4 py-3 md:px-6">
         {/*
           시스템 이름. 폰(<768px)에서는 **눈에서만** 감춘다 — 왜인지는 이 파일
           머리말의 폭 계산에 있다. 낭독기에는 그대로 남고, 본문 맨 위에는 화면

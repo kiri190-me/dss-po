@@ -27,7 +27,13 @@ export function AppNav({ items }: { items: readonly NavItem[] }) {
       aria-label="화면 메뉴"
       className="border-b border-slate-200 bg-white"
     >
-      <ul className="mx-auto flex w-full max-w-[1100px] flex-wrap items-center gap-1 px-4 py-2">
+      {/*
+        🔴 폭 제한이 없다 — 머리말·본문과 **같은 폭, 같은 좌우 여백**이다
+        (px-4, 768px 이상은 md:px-6). 셋 중 하나만 1100px 로 남으면 넓은 화면에서
+        메뉴 줄만 가운데로 몰려 본문의 왼쪽 끝과 어긋난다((app)/layout.tsx 의
+        <main> 주석에 까닭이 적혀 있다).
+      */}
+      <ul className="flex w-full flex-wrap items-center gap-1 px-4 py-2 md:px-6">
         {items.map((item) => (
           <li key={item.key}>
             <Link
