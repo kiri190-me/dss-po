@@ -71,8 +71,10 @@ describe("작업 비용 기본 권한 — A/S 와 같은 답", () => {
   });
 
   test("모르는 영역은 닫는다 — 여는 쪽으로 실패하지 않는다", () => {
+    // 🔴 `domesticOrders` 는 조각 2 에서 **아는 영역이 되었다** — 그 대조는
+    // domestic-order-permission.test.ts 가 한다. 여기 남은 것은 아직 오지 않은
+    // 화면(견적서)과 이쪽으로 올 일이 없는 영역이다.
     assert.equal(baselinePermissionLevel("quotes", "SUPER_ADMIN"), "NONE");
-    assert.equal(baselinePermissionLevel("domesticOrders", "SUPER_ADMIN"), "NONE");
     assert.equal(baselinePermissionLevel("users", "SUPER_ADMIN"), "NONE");
   });
 });
@@ -81,7 +83,7 @@ describe("영역 목록", () => {
   test("🔴 저장 열쇠가 A/S 가 쓰는 글자 그대로다", () => {
     // 열쇠를 바꾸면 A/S 에서 저장해 둔 행이 이 사이트에서 무시되고, 관리자가
     // 정해 둔 값이 조용히 기본 정책으로 되돌아간다.
-    assert.deepEqual([...PERMISSION_LEAF_KEYS], ["repairLabor"]);
+    assert.deepEqual([...PERMISSION_LEAF_KEYS], ["domesticOrders", "repairLabor"]);
   });
 
   test("영역 키와 잎 키가 같다 — 이 사이트에는 하위 기능 트리가 없다", () => {
@@ -96,6 +98,8 @@ describe("영역 목록", () => {
 
   test("🔴 모르는 키는 걸러진다 — 같은 표에 A/S 의 영역 열넷이 함께 들어 있다", () => {
     assert.equal(isPermissionLeafKey("repairLabor"), true);
+    assert.equal(isPermissionLeafKey("domesticOrders"), true);
+    assert.equal(isPermissionLeafKey("quotes"), false);
     assert.equal(isPermissionLeafKey("repairCases.files"), false);
     assert.equal(isPermissionLeafKey("inventory"), false);
     assert.equal(isPermissionLeafKey(""), false);

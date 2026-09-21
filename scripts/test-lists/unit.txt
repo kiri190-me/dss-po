@@ -37,3 +37,35 @@ src/lib/domain/quote-repair-task-selection.test.ts
 src/lib/validation/repair-task-input.test.ts
 src/components/repair-labor/base-cost-display.test.ts
 src/components/repair-labor/repair-labor-screen-source.test.ts
+
+# ── 조각 2 — 내자 정리(A/S 에서 옮겨 옴) ────────────────────────────────
+# 🔴 A/S 의 통합 시험 넷(2,910줄)은 여기 없다. 위 조각 1 과 **같은 이유**다 —
+#    진짜 DB 에 쓰는 시험인데 이 저장소에는 시험용 DB 장치가 없고, 이 사이트의
+#    DB 는 A/S 와 같은 dss_as 라 장치 없이 붙이면 시험이 실제 업무 자료를
+#    건드린다. 못 옮긴 목록(A/S 쪽 경로 · 줄 수):
+#      lib/db/mutations/domestic-orders.integration.test.ts              1,100
+#      lib/db/queries/domestic-orders.integration.test.ts                  671
+#      lib/db/mutations/domestic-orders-trash.integration.test.ts          606
+#      lib/db/mutations/domestic-order-sheet-settings.integration.test.ts  533
+#    A/S 가 그 넷을 그대로 갖고 있고 저장 코드는 같은 벌이다. 조각 4 에서 푼다.
+#
+# 🔴 lib/domain/customer-row-color.test.ts(307줄)도 못 옮겼다. 그 시험은 A/S 의
+#    **앱 색 등록부**(UI_THEME_TOKENS)와 색 고르개(isCustomerRowColorGrayish ·
+#    readCustomerRowCustomContrast)를 함께 대조하는데, 이 사이트에는 등록부도
+#    고르개 화면도 없다(domain/ui-theme-tokens.ts 머리말). A/S 가 계속 갖는다.
+src/lib/auth/domestic-order-permission.test.ts
+src/lib/validation/domestic-order-input.test.ts
+src/lib/domain/domestic-order-list.test.ts
+src/lib/domain/domestic-order-cell-edit.test.ts
+src/lib/domain/domestic-order-sheet-heading.test.ts
+src/lib/domain/quote-link-options.test.ts
+src/lib/domain/repair-case-link-search.test.ts
+src/lib/domain/requested-due-date-link.test.ts
+src/lib/domain/entity-name-match.test.ts
+src/lib/domain/weekly-report-delivery.test.ts
+src/lib/domain/edit-draft-text.test.ts
+src/lib/domain/master-data-trash-retention.test.ts
+src/lib/domain/quote-list.test.ts
+src/components/common/responsive-list.test.ts
+src/components/domestic-orders/domestic-order-inline-cells.test.ts
+src/components/domestic-orders/domestic-order-trash.test.ts

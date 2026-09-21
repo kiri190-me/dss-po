@@ -1,0 +1,2678 @@
+"use client";
+
+import { useId, useMemo, useState, useTransition, type MouseEvent, type ReactNode } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { showSavePopup } from "@/components/common/SavePopup";
+import {
+  LIST_CARD_GRID,
+  ResponsiveList,
+  setStoredChoice,
+  useStoredChoice,
+} from "@/components/common/responsive-list";
+import {
+  MasterDataDeleteDialog,
+  MasterDataPermanentDeleteDialog,
+  MasterDataRestoreDialog,
+} from "@/components/common/master-data-trash-dialogs";
+import MasterDataTrashRetentionBadge from "@/components/common/master-data-trash-retention-badge";
+import { useMasterDataTrash, type MasterDataTrashTarget } from "@/lib/hooks/useMasterDataTrash";
+import { MASTER_DATA_TRASH_RETENTION_DAYS } from "@/lib/domain/master-data-trash-retention";
+import type {
+  CustomerOption,
+  DeletedDomesticOrderRow,
+  DomesticOrderListItem,
+  RepairCaseLinkOption,
+} from "@/lib/db/queries/domestic-orders";
+import {
+  collectDomesticOrderYears,
+  countDomesticOrdersWithoutOrderYear,
+  filterDomesticOrdersBySearch,
+  filterDomesticOrdersByYear,
+  groupDomesticOrdersByCustomer,
+  isDomesticOrderCompleted,
+  isDomesticOrderSearchActive,
+  resolveInitialDomesticOrderYear,
+} from "@/lib/domain/domestic-order-list";
+import {
+  DOMESTIC_ORDER_DUE_DATE_LINK_NOTE,
+  DUE_DATE_FROM_REPAIR_CASE_LABEL,
+  resolveDomesticOrderDueDateDisplay,
+} from "@/lib/domain/requested-due-date-link";
+import {
+  customerRowColorClass,
+  customerRowColorInteractiveClass,
+  customerRowColorStyle,
+} from "@/lib/domain/customer-row-color";
+import type { InlineEditCellWrapping } from "@/components/common/inline-edit-cell-button";
+import type { DomesticOrderInlineEditableField } from "@/lib/domain/domestic-order-cell-edit";
+import {
+  deleteDomesticOrdersAction,
+  permanentlyDeleteDomesticOrdersAction,
+  restoreDomesticOrdersAction,
+  saveDomesticOrderSheetHeadingAction,
+  setDomesticOrderCompletionAction,
+  type DomesticOrderTrashItem,
+} from "@/lib/server/actions/domestic-orders";
+import type { DomesticOrderSheetHeadingView } from "@/lib/db/queries/domestic-order-sheet-settings";
+import {
+  countSheetHeadingChars,
+  DEFAULT_DOMESTIC_ORDER_SHEET_GREETING,
+  DEFAULT_DOMESTIC_ORDER_SHEET_MEMO,
+  DOMESTIC_ORDER_SHEET_AS_OF_DATE_PLACEHOLDER,
+  DOMESTIC_ORDER_SHEET_GREETING_MAX_CHARS,
+  DOMESTIC_ORDER_SHEET_MEMO_MAX_CHARS,
+  resolveSheetGreetingLines,
+  resolveSheetInternalMemo,
+  validateDomesticOrderSheetHeadingInput,
+  type DomesticOrderSheetHeadingFieldErrors,
+  type SheetIndentLevel,
+} from "@/lib/domain/domestic-order-sheet-heading";
+import DomesticOrderEditForm, { type QuoteOption } from "./DomesticOrderEditForm";
+import DomesticOrderTextCell from "./DomesticOrderTextCell";
+import DomesticOrderDueDatesCell from "./DomesticOrderDueDatesCell";
+import { domesticOrderTrashLabel } from "./domestic-order-trash-label";
+
+/**
+ * ============================================================================
+ * 내자 정리 — 목록과 한 줄 편집 (2단계) + 년도 · 완료 · 고객사 묶기 (3단계)
+ * ============================================================================
+ * 손으로 관리하던 `내자 시트`를 그대로 옮겨 놓은 화면이다. 표의 22칼럼·머리말·
+ * 합계는 1단계 그대로이고, 그 위에 **행 추가**와 **줄 수정**(2단계),
+ * **발주 년도 고르기 · 완료 처리 · 고객사 묶기**(3단계)를 얹었다.
+ * 휴지통은 2026-09-11 에 붙었다 — 아래 '휴지통은 자리를 새로 차지하지 않는다'.
+ *
+ * ── 휴지통은 자리를 새로 차지하지 않는다 ────────────────────────────────
+ * 다른 휴지통(고객사·견적서·부품)과 같은 3단계다: 휴지통으로 보냄 → 15일 보관
+ * (그동안 복원) → 완전 삭제(관리자가 바로, 또는 15일 뒤 정리 스크립트). 확인 창·
+ * 보관 배지·창 상태 훅도 그쪽 것을 그대로 쓴다(master-data-trash-dialogs ·
+ * master-data-trash-retention-badge · useMasterDataTrash).
+ *
+ * 다른 화면과 다른 것은 **자리**다. 이 화면은 위쪽이 쓰고 남은 높이를 표가 받는
+ * 구조라(아래 '열 제목은 화면에 붙어 있다'), 다른 화면처럼 표 위에 탭 줄을 한 줄
+ * 더 세우면 그 높이(약 49px)가 그대로 표에서 빠진다. 그래서:
+ *
+ *  1. **보기 전환(사용중 / 휴지통)은 머리말의 제목 줄에 선다**(SheetHeading 의
+ *     viewSwitch). 이미 있는 줄이고, 옆의 `머리말 펼치기` 단추와 같은 높이라
+ *     그 줄이 자라지 않는다.
+ *  2. **`휴지통으로 보내기` 는 `줄 수정` 폼의 제목 줄에 선다**(DomesticOrderEditForm
+ *     의 onRequestDelete). 표의 22칼럼과 순번 칸(수정·완료 단추)은 그대로다 —
+ *     순번 칸에 단추를 하나 더 세우면 모든 줄의 폭이 늘고, 그 칸의 sr-only 함정
+ *     (EditRowButton 주석)을 한 번 더 밟을 자리가 생긴다.
+ *
+ * 둘 다 **지울 수 있는 세션(canDelete)에서만** 그려진다. 휴지통의 줄도 그 세션에만
+ * 서버가 실어 보낸다(page.tsx) — 볼 수 없는 휴지통의 존재를 알릴 이유가 없다.
+ * 화면이 감춘 것은 경계가 아니다: 서버 액션이 hasPermission("domesticOrders",
+ * "MANAGE") 로 매번 다시 본다.
+ *
+ * 휴지통을 보는 동안에는 검색·년도·합계 줄과 표 대신 휴지통 목록이 선다. 열려
+ * 있던 `줄 수정` 폼은 **지우지 않고 감춰 둔다**(display: contents / hidden) —
+ * 휴지통을 잠깐 들여다봤다고 적던 글이 사라지면 안 된다.
+ *
+ * ── 무엇을 보여 줄지 정하는 규칙은 여기 없다 ────────────────────────────
+ * 년도 후보를 뽑고, 년도로 거르고, 고객사로 묶고, 완료인지 판정하는 일은
+ * domain/domestic-order-list.ts 가 한다. 이 파일은 그 결과를 그릴 뿐이다 —
+ * 규칙을 화면 안에 두면 "발주일 없는 줄이 왜 안 사라지는가" 같은 것을 시험할
+ * 방법이 브라우저를 띄우는 것밖에 없어진다.
+ *
+ * ── 발주일 없는 줄은 어느 년도에서도 함께 보인다 ────────────────────────
+ * 그 줄은 아직 발주가 나지 않았다는 뜻이라 가장 챙겨야 하는 줄이다. 년도로
+ * 감추면 어느 해를 골라도 나오지 않아 잊힌다. 그래서 년도 칸 옆에 몇 건인지
+ * 적고, 그 줄의 **발주발행일 칸에 `발주일 미정`을 띄운다** — "-"로만 두면
+ * 왜 2026년을 골랐는데 이 줄이 함께 있는지 알 길이 없다.
+ *
+ * ── 검색칸은 하나이고, 그 하나가 여덟 칸을 함께 본다 ────────────────────
+ * 고객사 · 인수번호 · 발주서번호 · 견적서번호 · PJT · 형식 · S/N · L/N.
+ * 칸마다 검색칸을 두지 않는 이유는 사람이 손에 쥔 것이 번호 하나뿐이어서다 —
+ * 그것이 무슨 번호인지 먼저 골라 달라고 하면 고르는 일부터 틀린다.
+ *
+ * 무엇이 걸리는지 정하는 일은 여기서 하지 않는다(domain 의
+ * filterDomesticOrdersBySearch · 위 '규칙은 여기 없다'와 같은 이유). 화면은
+ * 친 글자를 그 함수에 넘기고 돌아온 줄을 그릴 뿐이다.
+ *
+ * **검색어가 있으면 년도를 보지 않는다.** 견적서번호를 칠 때 그게 몇 년도
+ * 건인지 기억하는 사람은 없어서, 고른 해 안에서만 찾으면 **있는 건을 "없다"고
+ * 보게 된다.** 그래서 검색 중에는 filterDomesticOrdersByYear 를 아예 부르지
+ * 않고, **그 사실을 화면에 한 줄로 적는다** — 다른 해의 줄이 말없이 섞여
+ * 나오면 사람은 년도 고르개가 고장 났다고 읽는다.
+ *
+ * 그동안 년도 고르개는 **없애지 않고 disabled 로 둔다.** 없애면 검색어를 지운
+ * 뒤에야 어느 해를 보고 있었는지 알 수 있고, 그대로 열어 두면 골라도 화면이
+ * 바뀌지 않는 조작이 되어 그쪽이 고장으로 읽힌다. 고른 값(selectedYear)은
+ * 상태에 그대로 남아 있어, 검색어를 지우면 보던 해로 그대로 돌아온다.
+ *
+ * ── 인수번호는 링크, 수정은 버튼 ───────────────────────────────────────
+ * 연결된 줄의 인수번호를 누르면 그 수리 건 상세로 넘어간다. 그 링크에는
+ * stopPropagation 을 건다 — 줄 전체가 '수정 폼 열기'라서 그대로 두면 이동과
+ * 폼 열기가 함께 일어난다. 연결이 없는 줄은 시트에 적혀 있던 글자뿐이라
+ * 링크가 아니다(갈 곳이 없다).
+ *
+ * 그 대신 **수정 버튼을 순번 칸으로 옮겼다.** 예전에는 인수번호 칸이 폼을 여는
+ * <button> 이었다 — <tr> 은 키보드 포커스를 받지 못해서, 22칼럼을 늘리지 않고
+ * 포커스 가능한 조작을 줄 유일한 자리였기 때문이다. 인수번호를 링크로 바꾸면
+ * 그 자리가 사라지므로, 키보드로 폼을 여는 길이 없어지지 않도록 완료 버튼 옆에
+ * 나란히 둔다. 칼럼은 여전히 22개다.
+ *
+ * ── 열두 칸은 칸을 눌러 그 자리에서 고친다 ──────────────────────────────
+ * 한 줄짜리 다섯(발주서번호 · PJT · 견적서번호 · 납품자 · 일본 송금), 여러
+ * 줄짜리 넷(고장내역 · 현황 · 이력 · 기타), 날짜 셋(발주발행일 · 견적발행일 ·
+ * 세금계산서발행일). 이 열둘은 `줄 수정` 폼을 열지 않고 **그 칸을 눌러 바로**
+ * 고친다(DomesticOrderTextCell) — 번호 하나를 고치려고 칸 22개짜리 폼을 여는 것은
+ * 실제로 가장 자주 하는 일에 가장 긴 길을 내주는 셈이다. 주간보고의 비고 칸이
+ * 같은 방식이고, 겉모습도 셋이 나눠 쓴다
+ * (components/common/inline-edit-cell-button.ts).
+ *
+ * 여러 줄 칸의 편집칸은 `<textarea>` 다. `<input>` 으로 열면 기존 값의 줄바꿈이
+ * 말없이 사라진 채 저장되고, 무엇보다 Enter 로 줄을 바꿀 수가 없다 — 그래서 이
+ * 넷은 Enter 가 아니라 버튼으로 저장한다(그 파일 헤더). 날짜 셋은
+ * `<input type="date">` 다 — 글자로 받으면 사람이 `2026.5.11` 처럼 쳐서 저장할
+ * 때마다 검증에 걸린다. 무엇으로 열지는 화면이 아니라 도메인이 정한다
+ * (domesticOrderInlineEditControl).
+ *
+ * ⚠️ **발주발행일을 고치면 그 줄이 지금 고른 년도에서 사라질 수 있다.** 이
+ * 목록이 그 칸의 년도로 줄을 가르기 때문이고(filterDomesticOrdersByYear), 고장이
+ * 아니라 규칙대로 움직인 결과다. 그래도 미리 말해 두지 않으면 "저장했더니 줄이
+ * 없어졌다"로 읽히므로, 그 칸의 편집칸 아래에 두 줄이 붙는다(도메인의
+ * domesticOrderInlineEditYearNotice). 년도 거르기 규칙 자체는 그대로다.
+ *
+ * **열둘뿐인 것은 일부러다.** 금액·입금완료·고르기 칸은 다루는 방식이 제각각이라
+ * (쉼표가 섞인 숫자, 체크상자, UUID 를 고르는 드롭다운) 아직 같은 방식으로 묶지
+ * 않았다 — 금액은 견적서에서 가져오는 값이라 칸 편집을 두지 않기로 했다(사용자
+ * 결정 2026-09-11). 날짜 중에서도 **납품일은 들어오지 않는다** — 연결된 줄은
+ * 수리 건의 출하일이라 적는 값이 아니고, 연결 없는 줄은 `줄 수정` 폼에서만
+ * 적는다(아래 '납품일은 연결된 수리 건의 실제 출하일이다'). 그 칸들은 지금도
+ * `줄 수정` 폼에서 고친다 — **`행 추가` 와 `줄 수정` 은 그대로 남고**, 줄의
+ * 나머지를 누르면 폼이 열리는 동작도 그대로다.
+ *
+ * **납기요청일은 열둘과 따로 눌러 고친다(2026-09-11).** 한 칸에 날짜가 여럿인
+ * 별도 표라 편집칸이 **날짜 목록**이다(DomesticOrderDueDatesCell — 추가 · 삭제 ·
+ * 고치기). 🔴 이 줄에 날짜가 없어 수리 건의 요청일을 빌려 보여 주는 칸이라도
+ * 편집 목록은 **빈 목록으로** 열린다 — 빌린 날짜를 채우면 저장 한 번에 수리 건
+ * 값이 이 줄의 납기요청일로 굳는다(그 파일 헤더 ②).
+ *
+ * ⚠️ **견적서가 연결된 줄의 견적서번호 · 견적발행일은 눌러 고치지 않는다.** 그
+ * 둘은 견적서의 값으로 덮여 보이는 칸이라, 고쳐도 화면이 바뀌지 않는다
+ * (DomesticOrderTextCell 헤더). 그 줄에서는 글자만 그리고 까닭을 title 로 띄운다.
+ *
+ * ⚠️ 이 화면의 저장은 **보낸 칸만 고치지 않는다.** 칸 하나를 고쳐도 그 줄의 값
+ * 전체를 실어 보내야 하고, 그러지 않으면 나머지 칸이 지워진다. 그 규칙과 까닭은
+ * domain/domestic-order-cell-edit.ts 와 DomesticOrderTextCell 헤더에 있다.
+ *
+ * ⚠️ **고장내역만은 보이는 값과 고치는 칸이 다르다.** 표·카드가 그리는 것은
+ * 계산된 값(reportedSymptom — 그 줄에 적힌 것이 먼저, 없으면 연결된 수리 건의
+ * 것)이고, 저장되는 것은 원본 칸(faultDescriptionText)이다. 편집칸은 **원본
+ * 칸으로** 열리고, 비어 있는 채로 열릴 때 무엇이 보이게 되는지는 편집칸 아래
+ * 한 줄이 말해 준다 — `줄 수정` 폼과 같은 규칙이다.
+ *
+ * 표와 카드가 **같은 열두 칸**을 고칠 수 있다. 한쪽만 되면 같은 자료가 화면
+ * 크기에 따라 다르게 다뤄진다 — 카드 쪽은 아래 CARD_FIELD_GROUPS 의 edit 이
+ * 그 짝을 맞춘다. **안 고칠 때 보이는 것은 열두 칸 모두 이 변경 전과 똑같다**:
+ * 접는 방식을 컴포넌트가 정하지 않고 그 자리가 쓰던 값을 그대로 넘기기 때문이고
+ * (wrapping), 표의 날짜 칸은 자릿수 폭까지 그대로 넘긴다(numeric — `<td>` 의
+ * tabular-nums 는 버튼 안까지 내려오지 않는다). 발주발행일의 `발주일 미정`
+ * 배지도 글자가 아니라 마디째 넘겨 그대로 남는다(OrderIssuedDateContent).
+ *
+ * ── 고객사마다 줄 배경색, 완료 회색이 그 위에 있다 ──────────────────────
+ * 고객사 관리에서 정해 둔 색(customers.row_color)으로 그 고객사의 줄과 묶음
+ * 소제목을 함께 칠한다. 22칼럼을 옆으로 밀어 보는 표라, 색이 있어야 스크롤
+ * 도중에도 어느 고객사의 줄인지 놓치지 않는다. 소제목까지 같은 색인 이유는
+ * 소제목과 그 아래 줄들이 한 덩어리로 읽혀야 해서다.
+ *
+ * **완료된 줄에는 고객사 색을 칠하지 않는다.** 완료의 회색이 이긴다 — 색을
+ * 겹쳐 칠하면 "끝난 건인가"라는, 이 표에서 제일 자주 보는 판단이 고객사마다
+ * 다른 모양이 된다. 색은 어디까지나 묶음을 알아보는 표시이고, 완료는 그 줄의
+ * 상태다.
+ *
+ * 색 → 클래스는 domain/customer-row-color.ts 가 정한다. 여기서 색 코드를 직접
+ * 적지 않는 이유는 그 파일 머리에 적혀 있다.
+ *
+ * ── 완료는 감추는 것이 아니라 회색으로 두는 것이다 ──────────────────────
+ * 완료된 줄도 자리를 지킨다. 아래로 내리거나 접지 않는다 — 이 표에는 사람이
+ * 매긴 순번이 있어서, 순서를 흔들면 순번 칸과 눈에 보이는 차례가 어긋난다.
+ * 회색이지만 글자는 흐리게 하지 않고 여전히 눌러서 고칠 수 있다. 회색이
+ * "못 누른다"로 읽히면 완료된 줄의 입금 사실을 나중에 적을 수 없게 된다.
+ *
+ * ── 고칠 수 없는 사람에게는 1단계와 똑같이 보인다 ───────────────────────
+ * canEdit 이 거짓이면 추가 버튼도, 누를 수 있는 줄도 없다. 그것은 편의일 뿐
+ * 경계가 아니라서, 서버 액션은 화면이 무엇을 그렸든 매번 다시 검사한다
+ * (server/actions/domestic-orders.ts).
+ *
+ * ── 표 22칼럼, 가로 스크롤은 표 안에서만 ────────────────────────────────
+ * 시트의 22칼럼을 순서 그대로 둔다. 이 표는 웬만한 화면 폭에 들어가지 않는데,
+ * 스크롤 래퍼를 여기서 따로 두르지 않는다 — ResponsiveList 가 표 껍데기를
+ * 소유하고(그 파일의 '표 껍데기는 여기가 소유한다'), overflow-x-auto 도 거기
+ * 있다. 여기서 한 겹 더 감싸면 넘침이 안쪽에서 흡수돼 바깥은 영원히
+ * "들어간다"고 답하고, 그러면 표/카드 자동 전환이 고장 난다. 스크롤이 표
+ * 컨테이너 안에서만 일어나므로 화면 전체(body)는 좌우로 밀리지 않는다.
+ *
+ * 표/카드 전환을 여기서 분기하지 않는 것도 같은 이유다 — 서비스 전체에서
+ * 목록의 기준은 responsive-list.tsx 하나뿐이다.
+ *
+ * ── ⚠️ 열 제목은 화면에 붙어 있다. 그래서 세로 스크롤바가 둘이다 ─────────
+ * 22칼럼 장부라 줄을 내리다 보면 지금 보는 칸이 발주발행일인지 견적발행일인지
+ * 알 수 없게 된다. 그래서 `<thead>` 를 sticky top-0 으로 붙여 둔다. 다만 그
+ * 선언만으로는 아무 일도 일어나지 않는다 — sticky 는 가장 가까운 **굴러가는**
+ * 스크롤 상자를 기준으로 붙는데 표 껍데기에는 높이 제한이 없어 표 높이만큼
+ * 자랄 뿐이었다. 그래서 ResponsiveList 에 stickyHeader 를 켜 그 껍데기가 표
+ * 높이와 무관한 높이를 갖게 하고, 상자가 자기 안에서 실제로 굴러가게 만든다.
+ *
+ * ⚠️ **그 높이는 이 파일이 준다.** 맨 바깥 상자가 h-full 이라 이 화면은 <main>
+ * 의 남는 높이를 꼭 채우고, 표는 그 세로 배치의 마지막 칸이라 **위 요소들이
+ * 쓰고 남은 높이**를 그대로 받는다. 처음에는 70dvh 라는 어림값이었는데, 어림이라
+ * 표 아래에 남는 공간이 생기고 페이지가 표와 따로 굴러갔다 — 표를 다 보려면
+ * 페이지를 먼저 내려야 하고 페이지는 표 아래로 더 내려갔다(사용자 지적). 지금은
+ * 스크롤이 실질적으로 표 하나다. **h-full 을 지우면 이 계산이 통째로 무너진다.**
+ *
+ * ⚠️ **h-full 만으로는 모자란다 — 받는 쪽도 있어야 한다.** h-full 은 이 바깥
+ * 상자의 높이를 807px(=<main> 안쪽) 로 못 박을 뿐이고, 그 안의 항목이 줄어들지
+ * 못하면 상자는 그냥 넘친다. 실제로 그렇게 넘쳤다: flex 항목의 min-height 기본값
+ * auto 는 **제 내용의 최소 높이**로 계산되는데(css-flexbox-1 §4.5), 목록의 루트는
+ * overflow 가 visible 이라 그 규칙을 그대로 받아 표 높이 아래로 한 픽셀도 줄지
+ * 않았다. 실측: <main> clientHeight 855 / scrollHeight 1322 — 위 요소 340px 에
+ * 목록이 제 높이 934px 을 그대로 얹어 467px 이 밖으로 나갔고, 껍데기 안쪽에는
+ * 스크롤이 아예 없어 sticky 머리글도 함께 화면 밖으로 밀려났다. 지금은
+ * ResponsiveList 의 루트가 min-h 로 그 자동 최소 높이를 걷고 flex-1 로 남는
+ * 높이를 받는다 — 값과 실측은 responsive-list.tsx 의 같은 항목에 있다.
+ *
+ * 다만 `줄 수정` 폼이 열리면 위쪽이 화면 절반을 먹어서 남는 높이가 거의 없어진다.
+ * 그때는 표가 바닥(min-h-[18rem])에 걸리고 **페이지가 다시 굴러간다** — 폼을
+ * 보려면 어차피 위로 올라가야 하니 그게 맞다. 값과 근거는 responsive-list.tsx
+ * 의 '높이는 값이 아니라 자리로 정해진다' 항목에 있다.
+ *
+ * ⚠️ 그 대가로 표에 **세로 스크롤바가 생긴다**(그리고 폼이 열려 바닥에 걸릴
+ * 때만 페이지 것이 하나 더 붙는다). 주간보고 화면 헤더가 같은 모양을 **고장**
+ * 으로 적어 두었는데 종류가 다르다 — 거기서는 스크롤 상자가 의도치 않게 생겼고,
+ * 여기서는 머리글을 붙여 두려고 알고 만들었다. 다른 선택지(표의 가로 스크롤
+ * 상자를 없애 페이지 전체를 굴리는 것)는 옆으로 밀 때 제목·검색칸·합계까지 함께
+ * 밀려나가서 버렸다. **stickyHeader 를 떼면 머리글 고정이 다시 헛돈다** —
+ * 스크롤바가 보인다는 이유로 걷어내지 말 것.
+ *
+ * 머리글이 지나가는 줄을 가리게 하는 것은 z-10 하나뿐이다. 배경은 이미 그 줄에
+ * 있었다(bg-white dark:bg-zinc-900) — 밝은 화면·어두운 화면 모두 아래 줄이
+ * 비치지 않는다. **고객사 묶음 소제목은 붙이지 않았다**: 둘을 함께 붙이려면
+ * 소제목의 top 값을 머리글 높이에 맞춰 손으로 적어야 하는데 그 높이는 글꼴에
+ * 따라 달라지고, 묶음이 여럿이라 소제목끼리도 겹쳐 쌓인다. 소제목이 이미 가진
+ * sticky left-0(가로로만 붙는다)은 그대로 살아 있고, z-index 가 없어 z-10 인
+ * 머리글 **아래로** 지나간다 — 둘이 부딪히지 않는다.
+ *
+ * ── 표 위쪽은 자리를 적게 쓴다 — 머리말 접기 · 한 줄 합치기 ─────────────
+ * 위가 남는 높이를 다 받는 구조라, **표 위에 있는 것은 전부 표에서 빼 온
+ * 높이다.** 그런데 위가 화면의 절반 가까이를 먹고 있었다(사용자 지적).
+ *
+ * 실측(<main> 안쪽 869px):
+ *
+ *     머리말 상자 202 · 검색 줄 30 · 건수/`행 추가`/합계 줄 28 ·
+ *     납품일 안내 16 · gap-4 넷 64  →  표에 남는 것 **529**
+ *
+ * 둘을 했다. **머리말 상자를 접고**(SheetHeading — 기본 접힘, 제목과 기준일은
+ * 남는다), **검색 줄 · 건수 줄 · 납품일 안내를 한 상자로 합쳤다**(아래 그 줄의
+ * 주석 — 조작 한 줄과 안내 한 줄, 사이는 gap-4 가 아니라 gap-y-2). 어느 쪽도
+ * 글자를 지우지 않는다 — 펼치면 그대로 나오고, 안내 셋(발주일 미정 N건 · 검색
+ * 중 년도 안내 · 납품일 안내)은 조건도 문구도 그대로다.
+ *
+ * 같은 화면에서 다시 재면:
+ *
+ *     머리말 46(접힘) · 조작+안내 54 · gap-4 둘 32  →  표에 남는 것 **737**
+ *     펼쳐 두어도 202 · 54 · 32               →  표에 남는 것 **581**
+ *
+ * 펼친 채로도 예전보다 52px 넓은 것은 줄 합치기 몫이다. 좁은 화면에서는 조작이
+ * 여러 줄로 접혀 그만큼 줄지만(1024px 에서 표 681, 480px 에서 557), 그 폭에서는
+ * 애초에 표가 아니라 카드가 나온다.
+ *
+ * ⚠️ **자리를 줄이는 방법으로 sr-only 를 쓰지 말 것.** Tailwind 의 sr-only 는
+ * position:absolute 라, 기준이 되는 조상 없이 쓰면 표 껍데기의 스크롤을 빠져
+ * 나가 문서 바닥에 자리를 주장한다 — 이 화면이 바로 그것으로 405px 을 흘렸다
+ * (EditRowButton 주석의 실측). 자리를 줄이려다 자리를 새로 만드는 셈이 된다.
+ *
+ * ── ⚠️ 납품일은 연결된 수리 건의 실제 출하일이다. 표에서 적지 않는다 ────
+ * 수리 건이 연결된 줄에서 이 칸이 그리는 것은 그 건의 `actual_shipment_date`
+ * 이고(queries 의 displayDeliveredDate), 그 줄의 `delivered_date` 에 값이 있어도
+ * 보지 않는다. 실제 출하일은 워크플로가 출하 완료 때 자동으로 찍는 값이라 사람이
+ * 손을 댈 수 없고, "언제 나갔는가"에 대해 이 시스템이 가진 유일한 사실이다.
+ *
+ * **연결이 없는 줄은 그 줄의 `delivered_date` 를 그린다**(2026-09-11 사용자
+ * 결정) — 적는 자리는 `줄 수정` 폼의 입력칸이다(연결이 없을 때만 열린다 —
+ * DomesticOrderEditForm). 둘을 섞지는 않는다: 연결된 줄이 비었다고 손 값으로
+ * 메우지 않는다(resolveDomesticOrderDeliveredDate).
+ *
+ * **그래서 이 칸은 빈칸일 수 있다** — 연결은 있어도 아직 안 나간 줄, 연결 없이
+ * 날짜를 안 적은 줄이 그렇다. 아무 말 없이 비워 두면 **자료가 사라진 것으로
+ * 읽히므로**, 표 위에 한 줄(DELIVERED_DATE_NOTE)을 적고 표 머리말과 카드
+ * 이름표에도 같은 말을 title 로 붙인다. 22칼럼을 옆으로 밀어 보는 표라, 표 위의
+ * 한 줄만으로는 그 칸에 닿았을 때 설명이 화면 밖에 있다.
+ *
+ * 이 칸에는 **칸 편집을 붙이지 않는다** — 연결 여부와 무관하게 없다. 연결된
+ * 줄에서는 못 적는 값이라, 눌러서 고칠 수 있는 열두 칸에 이것이 없는 것은
+ * 빠뜨린 것이 아니다. **날짜 셋에 칸 편집이 붙은 뒤에도 그대로다** — 옆 칸들이
+ * 눌러서 고쳐진다는 이유로 이 칸까지 열면, 자동으로 따라오던 출하일이 이 줄에
+ * 박제된다. 연결 없는 줄의 날짜는 `줄 수정` 폼에서 고친다.
+ *
+ * ⚠️ **`납품자`(deliveredBy)는 이름만 비슷한 다른 칸이다.** 그쪽은 지금도 눌러서
+ * 고치는 열두 칸 중 하나다.
+ *
+ * ── 납기요청일이 비어 있으면 수리 건의 고객 요청 납기일이 대신 보인다 ────
+ * 그 줄의 딸린 표에 날짜가 하나라도 있으면 **그것이 전부**이고, 하나도 없을
+ * 때만 연결된 수리 건의 `고객 요청 납기일` 을 빌려 온다. 고르는 규칙은 여기
+ * 없다 — domain/requested-due-date-link.ts 가 갖는다(이 파일의 '규칙은 여기
+ * 없다'와 같은 이유). 양쪽 다 없으면 지금처럼 "-"다.
+ *
+ * ⚠️ **빌려 온 날짜에는 `수리 건 요청일` 꼬리표가 붙는다.** 두 값은 뜻이 다르고
+ * (발주서에 적힌 날짜 / 고객이 접수 때 말한 날짜) 각자 자기 자리에 그대로
+ * 저장되므로, 표시 없이 날짜만 그리면 "이 줄에 적어 둔 값"으로 읽힌다. 그
+ * 판단이 고객사·형식 다섯 칸과 왜 다른지는 그 도메인 파일 헤더에 있다.
+ *
+ * ⚠️ **이 칸은 여전히 저장에 실리지 않는 계산된 값이다.** 빌려 온 날짜가 그 줄의
+ * 딸린 표에 들어가는 일은 없다 — 목록 한 줄(DomesticOrderListItem)에는 이
+ * 계산 결과를 담는 칸조차 없고, 그릴 때 그 자리에서 계산한다. 고장내역·납품일이
+ * 겪은 함정과 같은 종류라 같은 방식으로 막는다
+ * (domain/domestic-order-cell-edit.ts 헤더의 함정 ②).
+ *
+ * ── 빈 값은 "-" ────────────────────────────────────────────────────────
+ * 시트에는 아직 안 정해진 칸이 많다(견적은 냈는데 납품 전, 납품은 했는데 입금
+ * 전). 빈 칸을 그냥 비워 두면 표가 어디까지가 한 줄인지 읽히지 않아서, 이
+ * 저장소의 다른 목록과 같이 "-"로 채운다. 자료를 "-"로 바꾸는 일은 화면에서만
+ * 한다 — 질의 쪽은 null 을 null 그대로 내려보낸다(queries/domestic-orders.ts).
+ *
+ * ── 금액은 문자열로 받아 정수로 더한다 ──────────────────────────────────
+ * numeric 컬럼이라 문자열로 온다. 소수점이 있는 채로 더하면 합계가
+ * 세금계산서와 1원씩 어긋나기 시작하므로(부동소수 오차), **소수점을 없앤
+ * 정수**로 바꿔 더하고 다시 문자열로 되돌린다(toMinorUnits 주석). 표시는
+ * tabular-nums 로 자릿수를 맞춰 오른쪽 정렬한다 — 금액은 자릿수를 세로로 훑어
+ * 읽는 값이다.
+ * ============================================================================
+ */
+
+/**
+ * 발주일이 아직 없는 줄의 발주발행일 칸에 적는 말. "-"(그냥 빈 값)와 구분한다 —
+ * 이 줄이 년도와 상관없이 늘 보이는 이유가 바로 이 칸이기 때문이다.
+ */
+const NO_ORDER_DATE_LABEL = "발주일 미정";
+
+/** 표의 칼럼 수. 고객사 소제목 줄이 표 전체 폭을 덮는 데 쓴다. */
+const TABLE_COLUMN_COUNT = 22;
+
+/**
+ * 검색칸과 년도 고르개가 함께 쓰는 모양. 둘은 한 줄에 나란히 서므로 높이나
+ * 테두리가 어긋나면 한쪽이 다른 성격의 조작처럼 보인다.
+ */
+const filterControlClass =
+  "rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+
+/**
+ * 검색칸에 적는 예시. 사람이 실제로 손에 쥐고 오는 것 넷만 적는다 — 여덟 칸을
+ * 다 늘어놓으면 칸 폭을 넘겨 뒤가 잘리고, 잘린 예시는 없는 것과 같다.
+ * 나머지 넷은 아래 SEARCH_FIELDS_HINT 가 말해 준다.
+ */
+const SEARCH_PLACEHOLDER = "고객사 · 인수번호 · 발주서번호 · 견적서번호 등";
+
+/**
+ * 실제로 무엇을 뒤지는지. **여기 적힌 칸이 도메인 함수가 보는 칸과 같아야
+ * 한다**(domain 의 DOMESTIC_ORDER_SEARCH_FIELDS) — 적어 놓고 안 걸리면 그것은
+ * 고장으로 읽힌다. 칸 옆에 늘어놓지 않고 마우스를 올렸을 때 뜨게 두는 것은,
+ * 이 줄에 이미 년도 고르개와 안내가 함께 서 있어서다.
+ */
+const SEARCH_FIELDS_HINT =
+  "고객사 · 인수번호 · 발주서번호 · 견적서번호 · PJT · 형식 · S/N · L/N 에서 찾습니다";
+
+/**
+ * `납품일` 칸이 무엇이고 왜 비어 있을 수 있는지. **한 글자를 세 곳이 나눠
+ * 쓴다** — 표 위의 한 줄, 표 머리말의 title, 카드 이름표의 title. 따로 적으면
+ * 언젠가 한쪽만 고쳐져 같은 칸이 화면마다 다른 규칙으로 설명된다
+ * (SEARCH_FIELDS_HINT 가 도메인의 검색 칸 목록과 같아야 하는 것과 같은 이유).
+ *
+ * 말투는 이 화면의 다른 안내(`발주일 미정 N건은 … 함께 보입니다`)와 맞춘다.
+ */
+const DELIVERED_DATE_NOTE =
+  "납품일은 연결된 수리 건의 실제 출하일입니다. 연결이 없는 줄은 직접 적은 날짜이고, 아직 출하되지 않은 줄은 비어 있습니다.";
+
+/** 빈 값의 표시. 이 화면의 모든 칸이 같은 글자를 쓴다. */
+function dash(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "number") return String(value);
+  return value.trim() === "" ? "-" : value;
+}
+
+/**
+ * "1234567.00" → 123456700(전 단위 정수). 형식이 어긋나면 null 이고, 그 행은
+ * 합계에서 조용히 빠지는 대신 화면에 원문 그대로 보인다 — 잘못된 값을 0으로
+ * 세면 합계가 맞는 것처럼 보이기만 한다.
+ *
+ * BigInt 를 쓰지 않는 이유는 tsconfig 의 target 이 ES2017 이라 BigInt 리터럴이
+ * 컴파일되지 않아서다. 대신 **정수만 다룬다** — 소수점을 없애 놓고 더하므로
+ * 0.1 + 0.2 류의 오차가 애초에 생기지 않는다. 자바스크립트의 number 는
+ * 2^53-1(약 90조 전 = 9000억 원)까지 정수를 정확히 담으므로 이 표의 금액에는
+ * 남는다. 그 위로 넘어가면 정확성을 보장할 수 없으므로 null 로 돌려보내
+ * 합계에서 빼고 화면에는 원문을 보여 준다.
+ */
+function toMinorUnits(value: string): number | null {
+  const matched = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
+  if (!matched) return null;
+  const sign = matched[1] === "-" ? -1 : 1;
+  const whole = Number(matched[2]);
+  const fraction = Number((matched[3] ?? "0").padEnd(2, "0"));
+  const minor = sign * (whole * 100 + fraction);
+  return Number.isSafeInteger(minor) ? minor : null;
+}
+
+function groupDigits(digits: string): string {
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/** 전 단위 정수를 사람이 읽는 금액으로. 소수점 이하가 0이면 적지 않는다. */
+function formatMinorUnits(minor: number): string {
+  const isNegative = minor < 0;
+  const absolute = Math.abs(minor);
+  const whole = Math.floor(absolute / 100);
+  const fraction = absolute % 100;
+  const body =
+    fraction === 0
+      ? groupDigits(String(whole))
+      : `${groupDigits(String(whole))}.${String(fraction).padStart(2, "0")}`;
+  return isNegative ? `-${body}` : body;
+}
+
+function formatAmount(value: string | null): string {
+  if (value === null) return "-";
+  const minor = toMinorUnits(value);
+  // 파싱에 실패하면 원문을 그대로 보여 준다. 숨기면 이상한 값이 들어와 있다는
+  // 사실 자체가 화면에서 사라진다.
+  return minor === null ? value : formatMinorUnits(minor);
+}
+
+function sumAmounts(rows: DomesticOrderListItem[]): { total: string; skipped: number } {
+  let total = 0;
+  let skipped = 0;
+  for (const row of rows) {
+    // 줄마다 화면에 보이는 금액(연결된 견적서가 이긴 값)을 더한다 — 원본 칸을
+    // 더하면 합계가 표의 금액 칸과 어긋난다.
+    if (row.displayAmountExcludingVat === null) continue;
+    const minor = toMinorUnits(row.displayAmountExcludingVat);
+    // 합계 자체가 안전 정수 범위를 넘으면 그 뒤의 값은 믿을 수 없다 — 더하지
+    // 않고 뺀 건수로 센다.
+    if (minor === null || !Number.isSafeInteger(total + minor)) {
+      skipped += 1;
+      continue;
+    }
+    total += minor;
+  }
+  return { total: formatMinorUnits(total), skipped };
+}
+
+/** 입금완료 여부 — boolean 을 시트의 말로 되돌린다. */
+function paymentLabel(completed: boolean): string {
+  return completed ? "완료" : "미완료";
+}
+
+/**
+ * 빌려 온 값 옆에 붙는 작은 표시의 모양. `발주일 미정` 배지와 **일부러 다른
+ * 색**이다 — 저쪽은 "챙겨야 하는 줄"이라는 주의 표시(amber)이고, 이것은 값의
+ * 출처를 알리는 중립적인 꼬리표다. 같은 색으로 두면 빌려 온 날짜가 전부 경고로
+ * 읽힌다.
+ */
+const borrowedBadgeClass =
+  "ml-1.5 rounded border border-zinc-300 px-1 py-0.5 text-[11px] leading-none font-normal text-zinc-500 dark:border-zinc-600 dark:text-zinc-400";
+
+/**
+ * 표의 `납기요청일` 칸. **칼럼은 여전히 22개다** — 날짜가 여럿이 될 수 있게
+ * 됐다고 칸을 늘리지 않는다(파일 헤더의 '표 22칼럼'). 늘어나는 것은 옆이 아니라
+ * 아래, 그 줄의 높이뿐이다.
+ *
+ * **한 줄에 날짜 하나씩 전부 적는다.** 무엇을 어떤 글자로 적을지, 그리고 그
+ * 날짜가 **이 줄의 것인지 빌려 온 것인지**는 도메인 함수가 정하고
+ * (resolveDomesticOrderDueDateDisplay), 여기는 그 줄들을 <div> 로 쌓기만 한다 —
+ * 줄바꿈 문자와 CSS 에 맡기지 않는 이유는, 그러면 무엇이 한 줄인지가 이 칸의
+ * whitespace 설정(줄 전체에 걸린 whitespace-nowrap)에 달리기 때문이다.
+ *
+ * ── ⚠️ 빌려 온 날짜에는 표시가 붙는다 ───────────────────────────────────
+ * 이 줄에 납기요청일이 하나도 없으면 연결된 수리 건의 고객 요청 납기일이 대신
+ * 보인다. 그냥 날짜만 그리면 "이 줄에 내가 적어 둔 값"으로 읽히고, 나중에 수리
+ * 건 쪽이 바뀌면 영문 모를 변화가 된다 — 그래서 `수리 건 요청일` 꼬리표를 함께
+ * 그린다. 왜 이 칸만 표시가 붙고 고객사·형식 다섯 칸은 안 붙는지는 도메인 파일
+ * 헤더에 적혀 있다(같은 사실의 두 이름이 아니라 뜻이 다른 두 날짜다).
+ *
+ * 빌려 온 값은 언제나 **한 줄**이다(수리 건의 그 칸은 날짜 하나다). 그래서
+ * 꼬리표가 두 번 그려질 일이 없다.
+ *
+ * title 과 sr-only 보조 한 줄은 두지 않는다. 접힌 것이 없으니 되찾을 것도 없고,
+ * 보이는 글자를 sr-only 로 한 번 더 적으면 화면 낭독기에는 같은 날짜가 두 번
+ * 읽힌다. 꼬리표에만 title 이 붙는다 — 그 표시가 무슨 뜻인지는 보이는 글자만으로
+ * 다 말할 수 없다.
+ *
+ * 날짜가 양쪽 다 없으면 다른 칸과 똑같이 "-"다.
+ */
+function DueDateCellContent({ row }: { row: DomesticOrderListItem }) {
+  const display = resolveDomesticOrderDueDateDisplay(row);
+  if (display.lines.length === 0) return <>-</>;
+  return (
+    <>
+      {display.lines.map((line, index) => (
+        // 같은 날짜에 같은 메모가 두 번 적힐 수 있어(사람이 적는 값이다) 글자를
+        // key 로 쓰지 않는다. 이 목록은 다시 정렬되지 않으므로 차례가 곧 신원이다.
+        //
+        // <div> 가 아니라 block 인 <span> 이다 — 고칠 수 있는 사람에게는 이 줄들이
+        // 눌러서 여는 <button> 안에 들어가는데(DomesticOrderDueDatesCell), 버튼 안에는
+        // 구문 요소(phrasing content)만 둘 수 있다. 화면에서는 <div> 와 똑같이 한
+        // 줄에 날짜 하나로 쌓인다.
+        <span key={index} className="block">
+          {line}
+          {display.borrowed && (
+            <span className={borrowedBadgeClass} title={DOMESTIC_ORDER_DUE_DATE_LINK_NOTE}>
+              {DUE_DATE_FROM_REPAIR_CASE_LABEL}
+            </span>
+          )}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/**
+ * 표의 `발주발행일` 칸에 그릴 것. **이 칸만 빈 값이 "-" 가 아니다** — 날짜가
+ * 없으면 `발주일 미정` 배지를 그린다(파일 헤더의 '발주일 없는 줄은 어느
+ * 년도에서도 함께 보인다').
+ *
+ * 함수로 떼어 둔 이유는 **같은 자리를 두 갈래가 그리기 때문이다.** 고칠 수 있는
+ * 사람에게는 이것이 눌러서 여는 버튼의 내용이 되고, 못 고치는 사람에게는 칸에
+ * 그대로 그려진다. 두 곳에 각각 적으면 언젠가 한쪽만 고쳐져, 같은 줄이 사람에
+ * 따라 다른 모양으로 보인다 — 하필 이 칸은 "왜 이 줄이 어느 해에서도 보이는가"를
+ * 설명하는 유일한 자리다.
+ *
+ * ⚠️ 그래서 이 칸에 넘기는 것은 글자가 아니라 마디다(DomesticOrderTextCell 의
+ * displayText). 글자만 넘기면 눌러서 고칠 수 있게 되는 순간 배지가 사라진다.
+ */
+function OrderIssuedDateContent({ row }: { row: DomesticOrderListItem }) {
+  if (row.orderIssuedDate !== null) return <>{row.orderIssuedDate}</>;
+  return (
+    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] leading-none text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+      {NO_ORDER_DATE_LABEL}
+    </span>
+  );
+}
+
+/**
+ * 머리말을 펼쳐 두었는지를 브라우저에 적어 두는 이름. **표/카드 토글이 쓰는
+ * 장치와 같은 것을 같은 규약으로 쓴다**(responsive-list.tsx 의 useStoredChoice ·
+ * setStoredChoice, 키는 `무엇:어디` 꼴). 접기를 새로 만들면서 저장 장치까지 새로
+ * 만들면, 저장값과 첫 그림이 어긋나 화면이 한 번 깜빡이는 함정을 여기서 다시
+ * 밟는다 — 그 파일이 이미 풀어 둔 문제다.
+ *
+ * 값이 "COLLAPSED"·"EXPANDED" 인 것은 표/카드가 "TABLE"·"CARD" 를 적는 것과
+ * 같은 이유다. true/false 로 적으면 나중에 세 번째 상태(예: 인사문만 보기)가
+ * 생겼을 때 적어 둔 값을 읽는 규칙부터 바뀐다.
+ */
+const SHEET_HEADING_STORAGE_KEY = "sheet-heading:domestic-orders";
+const SHEET_HEADING_EXPANDED = "EXPANDED";
+const SHEET_HEADING_COLLAPSED = "COLLAPSED";
+
+/**
+ * 시트 머리말. 원본 2~8행을 그대로 옮긴다.
+ *
+ * 이 화면은 목록이기 전에 **고객사에 보내는 문서**다. 인사문과 연락 안내가
+ * 빠지면 표만 남고, 그러면 이 자료가 무엇을 위한 것인지가 사라진다. 날짜는
+ * 서버가 정해 내려보낸다 — 클라이언트에서 new Date() 를 부르면 서버가 그린
+ * 것과 달라져 hydration 이 어긋난다.
+ *
+ * ── ⚠️ 기본은 접힘이다. 내용은 하나도 지우지 않았다 ─────────────────────
+ * 이 상자는 펼쳐 두면 **202px**, 접으면 **46px** 다(실측). 그 차이는 그대로
+ * 표로 간다 — 이 화면은 <main> 의 남는 높이를 표가 받는 구조라(파일 헤더 '열
+ * 제목은 화면에 붙어 있다'), 위가 줄면 표가 정확히 그만큼 커진다. 인사문은
+ * 매일 볼 글이 아니고 표는 매일 훑는 장부라, 기본을 접힘으로 두었다(사용자
+ * 결정).
+ *
+ * **접혀도 제목과 기준일은 남는다.** 이 화면이 무엇이고 언제 기준인지는 늘
+ * 보여야 한다 — 그 둘까지 접으면 접힌 상자가 무엇을 접어 둔 것인지 알 수 없다.
+ * 펼치면 인사문 네 줄과 내부 메모가 **접기 전과 한 글자도 다르지 않게** 나온다.
+ *
+ * ── 접었는지 펼쳤는지는 브라우저가 기억한다 ─────────────────────────────
+ * 매번 다시 접어야 하면 안 고친 것과 같다. 이 화면이 이미 쓰고 있는 장치를
+ * 그대로 쓴다(위 SHEET_HEADING_STORAGE_KEY).
+ *
+ * ── 접기 버튼은 진짜 <button> 이다 ──────────────────────────────────────
+ * 키보드로 닿고 Enter·Space 로 열린다. 지금 어느 쪽인지는 aria-expanded 가
+ * 말한다. <details>/<summary> 를 쓰지 않는 까닭은 FilterDisclosure 헤더에
+ * 있고, 그 파일과 같은 모양(이름 + ▸)을 쓴다 — 한 서비스 안에서 접는 것이
+ * 화면마다 다르게 생기면 접힌다는 사실 자체가 안 읽힌다.
+ *
+ * ⚠️ **버튼에 sr-only 를 쓰지 않았다.** 보이는 글자("머리말 접기"/"머리말
+ * 펼치기")가 이미 무슨 버튼인지 다 말하고, 이 화면에 하나뿐이라 어느 줄의
+ * 것인지 밝힐 일도 없다. Tailwind 의 sr-only 는 position:absolute 라 기준이
+ * 되는 조상이 없으면 문서 바닥에 자리를 주장하고, 바로 앞 커밋이 이 화면에서
+ * 그것 때문에 405px 이 새던 것을 고쳤다(EditRowButton 주석의 실측). 자리를
+ * 줄이려는 변경에서 같은 종류를 새로 만들지 않는다 — **여기에 sr-only 를
+ * 새로 넣게 되면 그 버튼에 relative 를 함께 붙일 것.**
+ *
+ * ⚠️ 접힌 몸통은 지우지 않고 **hidden 으로 둔다**(FilterDisclosure 와 같다).
+ * 조건부로 아예 안 그리면 aria-controls 가 없는 id 를 가리키게 된다. display:
+ * none 인 자식은 flex 항목이 아니라 gap 도 함께 사라지므로, 접었을 때 이 상자는
+ * 제목 줄 하나 높이 그대로다.
+ *
+ * ── 인사문과 메모는 이제 저장된 글이다 (2026-09-11) ──────────────────────
+ * 전에는 이 함수에 글자로 박혀 있었다. 지금은 서버가 내려준 글(heading)을
+ * domain/domestic-order-sheet-heading.ts 가 줄과 들여쓰기로 펴고, `{기준일}` 을
+ * 위 asOfDate 로 바꾼다. **저장된 행이 없으면 그 글이 전에 박혀 있던 문구 그대로라**
+ * 그린 결과가 한 글자도 다르지 않다(도메인 시험이 옛 JSX 의 글자와 대조한다).
+ *
+ * [머리말 편집] 단추는 **펼쳤을 때만, 고칠 수 있는 세션(canEditHeading)에만** 제목
+ * 줄에 선다 — 접기 단추와 같은 높이라 제목 줄이 자라지 않고, 접힌 상태의 높이는
+ * 전과 같다. 누르면 펼친 몸통 **그 자리에서** 인사문·메모가 편집칸으로 바뀐다
+ * (SheetHeadingEditor). 편집 상자는 펼친 머리말 안에서만 자라고, 표 위에 새 줄을
+ * 세우지 않는다. 화면이 감춘 단추는 경계가 아니다 — 저장 액션이 다시 본다.
+ *
+ * 편집 중에 머리말을 접어도 적던 글은 사라지지 않는다 — 몸통이 hidden 으로 남는
+ * 위 규칙 그대로다.
+ */
+function SheetHeading({
+  asOfDate,
+  heading,
+  canEditHeading,
+  viewSwitch,
+}: {
+  asOfDate: string;
+  /** 서버가 읽은 머리말. 저장된 행이 없으면 코드의 기본 문구다(page.tsx). */
+  heading: DomesticOrderSheetHeadingView;
+  /** 머리말을 고칠 수 있는가 — 행 추가·수정과 같은 판정(domesticOrders WRITE). */
+  canEditHeading: boolean;
+  /**
+   * 사용중 / 휴지통 전환(ViewSwitch). 지울 수 있는 세션에서만 넘어온다 —
+   * 넘어오지 않으면 이 줄은 이 변경 전과 똑같다. 제목 줄에 세우는 까닭은 파일
+   * 머리말의 '휴지통은 자리를 새로 차지하지 않는다'.
+   */
+  viewSwitch?: ReactNode;
+}) {
+  const stored = useStoredChoice(SHEET_HEADING_STORAGE_KEY);
+  // 적어 둔 적이 없으면(서버가 그릴 때도 그렇다) 접힘이다 — 기본이 접힘이라
+  // 서버가 그린 화면과 저장값이 없는 첫 그림이 같다.
+  const isExpanded = stored === SHEET_HEADING_EXPANDED;
+  const panelId = useId();
+  const [isEditingHeading, setIsEditingHeading] = useState(false);
+  // 권한을 잃은 채 편집칸이 남지 않게 한다(새로고침으로 canEditHeading 이 거짓이 되면).
+  const showEditor = canEditHeading && isEditingHeading;
+
+  const greetingLines = useMemo(
+    () => resolveSheetGreetingLines(heading.greetingText, asOfDate),
+    [heading.greetingText, asOfDate]
+  );
+  const internalMemo = resolveSheetInternalMemo(heading.internalMemo, asOfDate);
+
+  return (
+    <section
+      className={`flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white text-sm text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 ${
+        // 접었을 때는 위아래 여백도 함께 줄인다. 제목 한 줄짜리 띠에 p-4 를
+        // 그대로 두면 접어서 번 자리의 3분의 1을 여백이 도로 가져간다.
+        isExpanded ? "p-4" : "px-4 py-2"
+      }`}
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">내자 정리</h1>
+          <button
+            type="button"
+            onClick={() =>
+              setStoredChoice(
+                SHEET_HEADING_STORAGE_KEY,
+                isExpanded ? SHEET_HEADING_COLLAPSED : SHEET_HEADING_EXPANDED
+              )
+            }
+            aria-expanded={isExpanded}
+            aria-controls={panelId}
+            className="flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-0.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            {isExpanded ? "머리말 접기" : "머리말 펼치기"}
+            {/* 화면 낭독기에는 aria-expanded 가 이미 같은 사실을 말한다 —
+                이 표시는 눈으로 보는 사람 몫이라 읽히지 않게 둔다. */}
+            <span
+              aria-hidden="true"
+              className={`text-zinc-400 transition-transform dark:text-zinc-500 ${
+                isExpanded ? "rotate-90" : ""
+              }`}
+            >
+              ▸
+            </span>
+          </button>
+          {/* 펼쳤을 때만, 고칠 수 있는 세션에만. 접기 단추와 같은 높이라 제목 줄이
+              자라지 않는다. sr-only 를 쓰지 않는다 — 보이는 글자가 다 말한다(위 ⚠️).
+              인쇄에서는 빠진다 — 이 머리말은 고객사에 보내는 문서의 일부다. */}
+          {canEditHeading && isExpanded && !showEditor && (
+            <button
+              type="button"
+              onClick={() => setIsEditingHeading(true)}
+              className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs text-zinc-700 hover:bg-zinc-100 print:hidden dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              머리말 편집
+            </button>
+          )}
+        </div>
+        {viewSwitch ? (
+          // 전환 단추와 기준일을 한 덩어리로 오른쪽 끝에 둔다 — 따로 두면 좁아질
+          // 때 기준일만 제목 쪽으로 흘러가 무엇의 기준일인지 흐려진다.
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            {viewSwitch}
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">{asOfDate} 기준</p>
+          </div>
+        ) : (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">{asOfDate} 기준</p>
+        )}
+      </div>
+      <div id={panelId} className={isExpanded ? "flex flex-col gap-2" : "hidden"}>
+        {showEditor ? (
+          <SheetHeadingEditor heading={heading} onClose={() => setIsEditingHeading(false)} />
+        ) : (
+          <>
+            <ol className="flex list-none flex-col gap-1">
+              {greetingLines.map((line, index) => (
+                // 줄에는 id 가 없고 순서가 곧 정체다 — 글이 바뀌면 목록 전체가
+                // 새로 그려지므로 index 로 충분하다.
+                <li key={index} className={SHEET_INDENT_CLASS[line.indentLevel]}>
+                  {/* 빈 줄도 문서의 한 줄이다 — 글자가 없으면 li 높이가 0 이 되어
+                      사람이 넣은 빈 줄이 사라진다. 줄 높이만 차지하는 공백(NBSP)을 둔다. */}
+                  {line.text === "" ? NBSP : line.text}
+                </li>
+              ))}
+            </ol>
+            {/* 시트 머리말에 함께 적혀 있던 내부 메모다. 고객사에 보내는 문장이
+                아니라 우리 쪽 확인 사항이라 따로 떼어 둔다 — 위 인사문과 같은 줄에
+                두면 문서에 그대로 실려 나갈 말처럼 읽힌다. **메모가 비어 있으면
+                상자를 그리지 않는다.** 이름표("내부 메모 —")는 여기서 붙인다 —
+                저장된 글에 들어 있지 않다. 여러 줄 메모는 줄바꿈을 그대로
+                그린다(whitespace-pre-line — 한 줄짜리는 전과 모양이 같다). */}
+            {internalMemo !== null && (
+              <p className="rounded-md bg-amber-50 px-3 py-2 text-xs whitespace-pre-line text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                내부 메모 — {internalMemo}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 인사문 들여쓰기 단 → 클래스. 0단은 클래스를 달지 않는다(undefined) — 이 기능 전
+ * 들여쓰지 않은 줄이 className 없는 <li> 였던 것과 같다. 1단이 전의 pl-4 다.
+ * 규칙(공백 두 칸마다 한 단, 세 단까지)은 domain/domestic-order-sheet-heading.ts.
+ */
+/** 줄바꿈 없는 공백(U+00A0). 소스에 글자 그대로 두면 보통 공백과 구별되지 않는다. */
+const NBSP = String.fromCharCode(0xa0);
+
+const SHEET_INDENT_CLASS: Record<SheetIndentLevel, string | undefined> = {
+  0: undefined,
+  1: "pl-4",
+  2: "pl-8",
+  3: "pl-12",
+};
+
+/**
+ * 머리말 편집칸 — 펼친 머리말 몸통 **그 자리에** 선다(SheetHeading 주석).
+ *
+ * ── 단추 셋 ─────────────────────────────────────────────────────────────
+ *  - [저장]: 서버 액션으로 보낸다. 성공하면 편집칸을 닫고 서버에서 다시 받아
+ *    새 문구로 그린다(router.refresh — 저장된 글의 정규화 결과는 서버가 안다).
+ *  - [취소]: 적던 글을 버리고 닫는다. 서버에 아무것도 보내지 않는다.
+ *  - [기본 문구로]: 편집칸을 코드의 기본 문구로 **채우기만** 한다. [저장]을 눌러야
+ *    적용되고, 그때 서버는 저장된 행을 지운다(행이 없다 = 기본 문구). 화면 문구
+ *    편집기(UiTextEditor 의 「모든 문구를 기본값으로」)와 같은 방식이다 — 누르자마자
+ *    지우면 잘못 누른 한 번에 적어 둔 문구가 사라진다.
+ *
+ * ── 검증은 도메인 함수 하나 ─────────────────────────────────────────────
+ * 서버 액션과 같은 validateDomesticOrderSheetHeadingInput 을 저장 전에 부른다 —
+ * 막힐 것을 미리 알려 줄 뿐이고, 판정은 서버가 다시 한다. 글자 수도 서버와 같은
+ * 잣대(코드 포인트)로 센다.
+ *
+ * ⚠️ 이름표는 보이는 <label> 이다 — sr-only 를 쓰지 않는다(SheetHeading 주석의 ⚠️).
+ */
+function SheetHeadingEditor({
+  heading,
+  onClose,
+}: {
+  heading: DomesticOrderSheetHeadingView;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const greetingId = useId();
+  const memoId = useId();
+  const [greetingText, setGreetingText] = useState(heading.greetingText);
+  const [internalMemo, setInternalMemo] = useState(heading.internalMemo);
+  const [fieldErrors, setFieldErrors] = useState<DomesticOrderSheetHeadingFieldErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  // 저장 뒤 서버에서 새 문구를 받아 오는 동안. 그 사이 옛 문구가 한순간 비치지 않게,
+  // 닫기와 새로고침을 한 전환(transition)으로 묶는다.
+  const [isRefreshing, startRefresh] = useTransition();
+  const isBusy = isSaving || isRefreshing;
+
+  const greetingCount = countSheetHeadingChars(greetingText);
+  const memoCount = countSheetHeadingChars(internalMemo);
+  // 편집칸 높이 — 적힌 줄 수에 맞추되 상한을 둔다. 그 이상은 칸 안에서 굴러간다
+  // (펼친 머리말이 표의 높이를 끝없이 가져가지 않게).
+  const greetingRows = Math.min(Math.max(greetingText.split("\n").length, 4), 8);
+
+  function fillWithDefaults() {
+    setGreetingText(DEFAULT_DOMESTIC_ORDER_SHEET_GREETING);
+    setInternalMemo(DEFAULT_DOMESTIC_ORDER_SHEET_MEMO);
+    setFieldErrors({});
+    setFormError(null);
+    setNotice("기본 문구로 채웠습니다 — [저장]을 눌러야 적용됩니다.");
+  }
+
+  async function save() {
+    if (isBusy) return;
+    setFormError(null);
+    setNotice(null);
+    const checked = validateDomesticOrderSheetHeadingInput({ greetingText, internalMemo });
+    if (!checked.ok) {
+      setFieldErrors(checked.fieldErrors);
+      return;
+    }
+    setFieldErrors({});
+    setIsSaving(true);
+    try {
+      const result = await saveDomesticOrderSheetHeadingAction(checked.data);
+      if (!result.ok) {
+        setFieldErrors(result.fieldErrors ?? {});
+        setFormError(result.message);
+        return;
+      }
+      startRefresh(() => {
+        onClose();
+        router.refresh();
+      });
+      showSavePopup({ message: "머리말을 저장했습니다.", redirectTo: null });
+    } catch {
+      setFormError("일시적으로 저장할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 print:hidden">
+      <div className="flex flex-col gap-1">
+        <label htmlFor={greetingId} className={SHEET_EDIT_LABEL_CLASS}>
+          인사문 <span className="tabular-nums">({greetingCount} / {DOMESTIC_ORDER_SHEET_GREETING_MAX_CHARS}자)</span>
+        </label>
+        <textarea
+          id={greetingId}
+          value={greetingText}
+          onChange={(event) => setGreetingText(event.target.value)}
+          rows={greetingRows}
+          disabled={isBusy}
+          aria-invalid={fieldErrors.greetingText ? true : undefined}
+          className={SHEET_EDIT_TEXTAREA_CLASS}
+        />
+        <p className={SHEET_EDIT_HINT_CLASS}>
+          한 줄이 문서 한 줄입니다. 줄 앞에 공백 두 칸마다 한 단씩 들여씁니다(세 단까지).{" "}
+          <code>{DOMESTIC_ORDER_SHEET_AS_OF_DATE_PLACEHOLDER}</code> 은 기준일로 바뀝니다.
+        </p>
+        {fieldErrors.greetingText && <p className={SHEET_EDIT_ERROR_CLASS}>{fieldErrors.greetingText}</p>}
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor={memoId} className={SHEET_EDIT_LABEL_CLASS}>
+          내부 메모 <span className="tabular-nums">({memoCount} / {DOMESTIC_ORDER_SHEET_MEMO_MAX_CHARS}자)</span>
+        </label>
+        <textarea
+          id={memoId}
+          value={internalMemo}
+          onChange={(event) => setInternalMemo(event.target.value)}
+          rows={2}
+          disabled={isBusy}
+          aria-invalid={fieldErrors.internalMemo ? true : undefined}
+          className={SHEET_EDIT_TEXTAREA_CLASS}
+        />
+        <p className={SHEET_EDIT_HINT_CLASS}>
+          우리 쪽 확인 사항입니다. 비워 두면 메모 상자가 보이지 않습니다.
+        </p>
+        {fieldErrors.internalMemo && <p className={SHEET_EDIT_ERROR_CLASS}>{fieldErrors.internalMemo}</p>}
+      </div>
+      {formError && (
+        <p
+          role="alert"
+          className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-400"
+        >
+          {formError}
+        </p>
+      )}
+      {notice && <p className={SHEET_EDIT_HINT_CLASS}>{notice}</p>}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={fillWithDefaults}
+          disabled={isBusy}
+          className={SHEET_EDIT_SECONDARY_BUTTON_CLASS}
+        >
+          기본 문구로
+        </button>
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} disabled={isBusy} className={SHEET_EDIT_SECONDARY_BUTTON_CLASS}>
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={isBusy}
+            aria-busy={isBusy}
+            className="rounded-md bg-primary-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-primary-50 dark:text-zinc-900 dark:hover:bg-primary-200"
+          >
+            {isBusy ? "저장 중..." : "저장"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 편집칸 모양은 이 저장소의 편집 폼(EditSectionActions 의 editInputClass · 저장/취소
+// 단추)과 같다. 그 파일에서 가져오지 않고 적는 까닭은 [기본 문구로] 단추가 하나 더
+// 있어 그쪽 단추 묶음을 그대로 쓸 수 없어서다 — 글자 그대로 맞춰 둔다.
+const SHEET_EDIT_LABEL_CLASS = "text-xs text-zinc-500 dark:text-zinc-400";
+const SHEET_EDIT_HINT_CLASS = "text-xs text-zinc-500 dark:text-zinc-400";
+const SHEET_EDIT_ERROR_CLASS = "text-xs text-red-600 dark:text-red-400";
+const SHEET_EDIT_TEXTAREA_CLASS =
+  "w-full resize-y rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50";
+const SHEET_EDIT_SECONDARY_BUTTON_CLASS =
+  "rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
+
+const CARD_FIELD_GROUPS: {
+  label: string;
+  fields: {
+    label: string;
+    of: (row: DomesticOrderListItem) => string;
+    /**
+     * 값에 든 줄바꿈을 진짜 줄바꿈으로 그릴 칸인가. 켠 칸만 whitespace-pre-line
+     * 이 붙는다 — 줄 단위로 만들어 내는 칸(납기요청일)과 사람이 줄바꿈을 섞어
+     * 적는 칸(현황·이력·기타)만 켠다. 모든 칸에 걸면 날짜·번호·금액·이름처럼
+     * 한 줄로 나란히 서야 할 값의 생김새까지 함께 바뀐다.
+     *
+     * 켜고 끄는 것은 줄바꿈뿐이다 — 긴 낱말을 접는 break-words 는 카드의 모든
+     * 칸이 이미 함께 쓴다(아래 <dd>). pre-line 은 사람이 넣은 줄바꿈만 살릴 뿐
+     * 줄바꿈 없이 길게 이어 적은 한 덩어리는 접어 주지 못하므로, 둘은 늘 짝이다.
+     *
+     * 카드는 표와 **일부러 다르다.** 표의 세 칸은 pre 로 바꿔 폭이 모자라도
+     * 접지 않게 했지만(noteCellContentClass), 카드가 나오는 좁은 화면에서
+     * 좌우 스크롤은 사실상 못 쓰는 조작이라 접지 않으면 글자가 화면 밖으로
+     * 나가 아예 안 보인다. 그래서 카드는 break-words + pre-line 을 유지한다.
+     * 사람이 친 줄바꿈이 살아나는 것은 표와 카드가 똑같고, **폭이 모자랄 때만**
+     * 다르게 군다.
+     */
+    multiline?: boolean;
+    /**
+     * 이름표에 마우스를 올렸을 때 뜨는 설명. **표 머리말의 title 과 같은 글자를
+     * 넘긴다** — 좁은 화면으로 옮겼다고 설명이 사라지면, 같은 칸이 화면 크기에
+     * 따라 다른 규칙으로 읽힌다(파일 헤더의 표/카드 원칙).
+     *
+     * 지금 이것이 붙은 칸은 납품일 하나다. 다른 칸에 같은 자리를 만들어 두는
+     * 것은, 설명이 필요한 칸이 또 생겼을 때 카드 쪽만 빠뜨리지 않기 위해서다.
+     */
+    hint?: string;
+    /**
+     * 칸을 눌러 그 자리에서 고칠 수 있는 칸인가. **표에서 고칠 수 있는 열두 칸과
+     * 정확히 같아야 한다** — 좁은 화면으로 옮겼다고 고칠 수 있던 칸이 사라지면
+     * 같은 자료가 화면 크기에 따라 다르게 다뤄진다(파일 헤더).
+     *
+     * ⚠️ 여기에는 표가 날짜 칸에 넘기는 numeric 이 없다. 카드의 `<dd>` 에는
+     * 원래 tabular-nums 가 없어서, 켜면 **없던 생김새가 생긴다** — 표와 카드는
+     * 일부러 다른 자리이고 양쪽 다 기준은 "지금 보이는 그대로"다.
+     *
+     * 켠 칸의 `<dd>` 는 글자 대신 DomesticOrderTextCell 을 그린다. 안 고칠 때
+     * 보이는 글자는 위 `of` 가 그대로 정하므로, 켜고 끄는 것으로 값의 생김새가
+     * 달라지지는 않는다.
+     *
+     * ⚠️ **칸 이름과 접는 방식이 한 덩어리인 것은 일부러다.** 둘을 따로 둘 수
+     * 있게 하면 한쪽만 적힌 칸이 생기고, 그때 이 칸은 눌러서 고칠 수는 있는데
+     * 안 고칠 때의 생김새가 옆 칸과 달라진다. 접는 방식은 **바로 아래 `<dd>` 가
+     * 쓰는 것과 결과가 같아야 한다**(위 multiline 이 정하는 그것) — 눌러서 고칠
+     * 수 있게 되었다는 이유로 카드의 생김새가 함께 바뀌면 안 된다.
+     */
+    edit?: {
+      field: DomesticOrderInlineEditableField;
+      wrapping: InlineEditCellWrapping;
+    };
+    /**
+     * 납기요청일 칸 — 날짜 **목록**을 그 자리에서 고친다(DomesticOrderDueDatesCell).
+     * 위 edit 와 따로인 것은 값이 문자열 하나가 아니라서다(그 파일 헤더). 표의 같은
+     * 칸도 같은 부품을 쓴다 — 좁은 화면으로 옮겼다고 고칠 수 있던 칸이 사라지면
+     * 안 된다. 접는 방식은 바로 아래 `<dd>` 가 쓰는 것과 결과가 같은 값이다.
+     */
+    dueDatesEdit?: { wrapping: InlineEditCellWrapping };
+  }[];
+}[] = [
+  {
+    label: "발주",
+    fields: [
+      {
+        label: "발주서번호",
+        of: (row) => dash(row.purchaseOrderNumber),
+        edit: { field: "purchaseOrderNumber", wrapping: "whitespace-nowrap" },
+      },
+      {
+        label: "PJT",
+        of: (row) => dash(row.projectName),
+        edit: { field: "projectName", wrapping: "whitespace-nowrap" },
+      },
+      // 표와 같은 말을 쓴다 — 카드로 보고 있어도 이 줄이 왜 늘 보이는지 알 수
+      // 있어야 한다.
+      //
+      // ⚠️ 표는 이 자리에 배지를 그리고 카드는 글자만 적는다. 원래부터 다른
+      // 자리이고(카드에는 배지가 없었다), 눌러서 고칠 수 있게 되었다는 이유로
+      // 한쪽 생김새를 다른 쪽에 맞추지 않는다. 카드에서 눌렀을 때도 편집칸 아래
+      // 두 줄은 똑같이 붙는다 — 그 판정은 칸 이름이 하지 화면이 하지 않는다.
+      {
+        label: "발주발행일",
+        of: (row) => (row.orderIssuedDate === null ? NO_ORDER_DATE_LABEL : row.orderIssuedDate),
+        edit: { field: "orderIssuedDate", wrapping: "whitespace-nowrap" },
+      },
+      // 표와 같은 규칙이다 — 한 줄에 날짜 하나씩 전부, 어느 쪽 날짜인지도 같은
+      // 도메인 함수가 정한다. 좁은 화면이라고 접거나 표시를 빼면 같은 자료가
+      // 화면마다 다른 값으로 읽힌다(파일 헤더).
+      //
+      // ⚠️ 표는 이 자리에 배지를 그리고 카드는 **글자를 한 줄 더** 적는다 —
+      // 발주발행일의 `발주일 미정` 과 똑같은 나눔이다(위 그 칸의 주석). 카드에는
+      // 원래 배지가 없고, 여기 새로 들이면 눌러서 고칠 수 없는 이 칸만 옆 칸들과
+      // 다른 생김새가 된다. 말하는 내용은 양쪽이 같은 상수 하나에서 나온다.
+      {
+        label: "납기요청일",
+        of: (row) => {
+          const display = resolveDomesticOrderDueDateDisplay(row);
+          if (display.lines.length === 0) return "-";
+          const body = display.lines.join("\n");
+          return display.borrowed ? `${body}\n${DUE_DATE_FROM_REPAIR_CASE_LABEL}` : body;
+        },
+        multiline: true,
+        hint: DOMESTIC_ORDER_DUE_DATE_LINK_NOTE,
+        // 멀티라인 <dd> 의 접는 방식 그대로(위 multiline). 빌려 온 날짜가 보이는
+        // 줄이라도 편집 목록은 빈 목록으로 열린다(DomesticOrderDueDatesCell ②).
+        dueDatesEdit: { wrapping: "break-words whitespace-pre-line" },
+      },
+    ],
+  },
+  {
+    label: "제품",
+    fields: [
+      { label: "형식", of: (row) => dash(row.modelName) },
+      { label: "L/N", of: (row) => dash(row.lotNumber) },
+      { label: "S/N", of: (row) => dash(row.serialNumber) },
+      // ⚠️ 보여 주는 것은 **계산된 값**(reportedSymptom)이고 고쳐 보내는 것은
+      // **원본 칸**(faultDescriptionText)이다 — 이 열둘 중 둘이 다른 칸은 여기
+      // 하나뿐이다. multiline 을 켜지 않은 것도 일부러다: 이 칸의 표시 규칙은
+      // 아직 줄바꿈을 살리지 않고 있고(표 쪽 noteCellContentClass 의 '고장내역은
+      // 아직 켜지 않았다'), 눌러서 고칠 수 있게 되었다는 이유로 안 고칠 때의
+      // 생김새까지 함께 바꾸지는 않는다. wrapping 이 그 지금 모습 그대로다.
+      {
+        label: "고장내역",
+        of: (row) => dash(row.reportedSymptom),
+        edit: { field: "faultDescriptionText", wrapping: "break-words whitespace-normal" },
+      },
+    ],
+  },
+  {
+    label: "견적 · 납품",
+    fields: [
+      // ⚠️ 견적발행일 · 견적서번호 · (정산의) 금액은 **그리는 값**(display* —
+      // 연결된 견적서가 이긴다)과 **편집칸을 채우고 저장되는 원본 칸**(edit.field)이
+      // 다르다(queries 의 mapDomesticOrderRow 머리말). 연결된 줄의 두 칸은 눌러도
+      // 열리지 않는다(domesticOrderInlineEditQuoteLock). 표와 같은 값이다.
+      {
+        label: "견적발행일",
+        of: (row) => dash(row.displayQuoteIssuedDate),
+        edit: { field: "quoteIssuedDate", wrapping: "whitespace-nowrap" },
+      },
+      {
+        label: "견적서번호",
+        of: (row) => dash(row.displayQuoteNumber),
+        edit: { field: "quoteNumber", wrapping: "whitespace-nowrap" },
+      },
+      // 사람이 <textarea> 에 줄바꿈을 섞어 적는 칸이다 — 표와 마찬가지로
+      // 적은 그대로 여러 줄로 그린다(표 쪽은 noteCellContentClass).
+      {
+        label: "현황",
+        of: (row) => dash(row.progressNote),
+        multiline: true,
+        edit: { field: "progressNote", wrapping: "break-words whitespace-pre-line" },
+      },
+      // ⚠️ 표와 **같은 값**(displayDeliveredDate)이다 — 연결된 줄은 수리 건의 실제
+      // 출하일, 연결 없는 줄은 그 줄에 적은 deliveredDate. 한쪽만 고치면 같은 자료가
+      // 화면 크기에 따라 다른 날짜로 읽힌다(파일 헤더). 눌러서 고칠 수 없는 칸이라
+      // edit 도 없다.
+      {
+        label: "납품일",
+        of: (row) => dash(row.displayDeliveredDate),
+        hint: DELIVERED_DATE_NOTE,
+      },
+      {
+        label: "납품자",
+        of: (row) => dash(row.deliveredBy),
+        edit: { field: "deliveredBy", wrapping: "whitespace-nowrap" },
+      },
+    ],
+  },
+  {
+    label: "정산",
+    fields: [
+      {
+        label: "세금계산서발행일",
+        of: (row) => dash(row.taxInvoiceDate),
+        edit: { field: "taxInvoiceDate", wrapping: "whitespace-nowrap" },
+      },
+      { label: "금액(VAT별도)", of: (row) => formatAmount(row.displayAmountExcludingVat) },
+      { label: "입금완료 여부", of: (row) => paymentLabel(row.paymentCompleted) },
+      {
+        label: "일본 송금",
+        of: (row) => dash(row.japanRemittanceNote),
+        edit: { field: "japanRemittanceNote", wrapping: "whitespace-nowrap" },
+      },
+    ],
+  },
+  {
+    label: "기타",
+    fields: [
+      // 현황과 같다 — 사람이 줄바꿈을 섞어 적는 칸이라 적은 그대로 여러 줄로.
+      {
+        label: "이력",
+        of: (row) => dash(row.historyNote),
+        multiline: true,
+        edit: { field: "historyNote", wrapping: "break-words whitespace-pre-line" },
+      },
+      {
+        label: "기타",
+        of: (row) => dash(row.etcNote),
+        multiline: true,
+        edit: { field: "etcNote", wrapping: "break-words whitespace-pre-line" },
+      },
+    ],
+  },
+];
+
+/**
+ * 완료된 줄에 붙는 표. 회색 배경만으로는 "왜 회색인지"를 말하지 못한다 —
+ * 색을 구분하기 어려운 사람에게는 이 글자가 유일한 단서다.
+ */
+function CompletedBadge() {
+  return (
+    <span className="rounded bg-zinc-700 px-1.5 py-0.5 text-[11px] leading-none font-medium text-white dark:bg-zinc-300 dark:text-zinc-900">
+      완료
+    </span>
+  );
+}
+
+/**
+ * 순번 칸에 나란히 서는 작은 버튼들의 모양. 수정과 완료가 같은 자리에 붙어
+ * 있으므로 둘의 크기와 색이 어긋나면 한쪽이 다른 성격의 조작처럼 보인다.
+ */
+const rowActionButtonClass =
+  "rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-[11px] leading-none text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-700";
+
+/**
+ * 표의 현황·이력·기타 칸 **안쪽 블록**의 모양.
+ *
+ * ── 왜 이 세 칸만인가 ───────────────────────────────────────────────────
+ * 편집 폼에서 <textarea> 로 받는 칸이고(DomesticOrderEditForm 의 long 칸),
+ * 사람이 넣은 줄바꿈이 자료에 그대로 들어 있다. 그런데 줄 전체에 걸린
+ * whitespace-nowrap 이 그것을 공백 하나로 뭉개 한 줄로 그리고 있었다 — 자료는
+ * 멀쩡한데 화면만 못 보여 주던 셈이다. 나머지 칸(날짜·번호·금액·이름)은
+ * 지금처럼 한 줄이라야 22칼럼을 세로로 훑어 읽는다.
+ *
+ * 같은 <textarea> 칸인 고장내역은 아직 켜지 않았다. 표시 규칙을 한 번에
+ * 넓히지 않고, 실제로 줄바꿈을 섞어 적고 있는 칸부터 맞춘 것이다. **그 칸이
+ * 눌러서 고칠 수 있게 된 뒤에도 그대로다** — 고칠 수 있게 되었다는 것과 어떻게
+ * 보이는가는 다른 결정이라, 한쪽을 바꾸면서 다른 쪽을 함께 바꾸지 않는다.
+ *
+ * ── 이 값은 버튼에도 그대로 넘어간다 ────────────────────────────────────
+ * 이 세 칸은 이제 글자 자체가 `<button>` 이고(DomesticOrderTextCell), 그 버튼이
+ * 접는 방식을 **자기 것으로 다시 선언한다** — 바깥의 것이 폼 컨트롤 안까지
+ * 내려온다는 보장이 없어서다(inline-edit-cell-button.ts). 그래서 이 상수를
+ * wrapping 인자로 그대로 넘긴다: 두 자리에 같은 글자를 따로 적으면 언젠가
+ * 한쪽만 고쳐져, 같은 칸이 고칠 수 있을 때와 없을 때 다르게 보인다.
+ *
+ * ⚠️ 그래서 이 값은 **InlineEditCellWrapping 에 있는 것이어야 한다.** 다른
+ * 문자열로 바꾸려면 그 타입에도 함께 늘려야 한다(타입이 막아 준다).
+ *
+ * ── 왜 pre-line 이 아니라 pre 인가 ──────────────────────────────────────
+ * 처음에는 whitespace-pre-line 이었다. pre-line 은 사람이 넣은 줄바꿈을
+ * 살리기는 하는데 **폭이 모자라면 거기서 또 접는다.** 그래서 화면에 보이는
+ * 줄바꿈이 두 종류로 섞인다 — 사람이 친 것과 칸 폭이 만든 것. 읽는 사람은
+ * 둘을 구별할 수 없고, 창 폭이 바뀌면 같은 메모가 다른 모양으로 읽힌다.
+ * 이 칸에서 줄이 바뀌는 근거는 **사람이 친 줄바꿈 하나뿐**이어야 한다.
+ * white-space: pre 가 정확히 그것이다 — 사람이 친 곳에서만 바꾸고, 폭이
+ * 모자라도 접지 않는다.
+ *
+ * pre 는 pre-line 과 달리 연이은 공백도 그대로 남긴다. 손으로 칸을 맞춰
+ * 적는 메모라 적은 대로 보이는 편이 맞으므로, 이것은 부작용이 아니라 덤이다.
+ *
+ * ── 최대 폭과 break-words 는 일부러 뺐다. 다시 넣지 말 것 ───────────────
+ * 예전에는 max-w-[280px] 와 break-words 가 함께 걸려 있었다. 표가 옆으로
+ * 길어지는 것을 막으려던 것인데, 그 둘이 남아 있으면 pre 로 바꿔도 아무
+ * 소용이 없다 — 폭에서 접히지 않으려고 pre 를 쓰는데 폭을 끊어 두면 결국
+ * 같은 자리에서 접힌다. 그래서 둘 다 뺐고, 남은 것은 whitespace-pre 하나다.
+ *
+ * 대가는 분명하다: 줄바꿈 없이 길게 이어 적은 메모가 하나라도 있으면 그
+ * 칼럼이 그만큼 늘어나 표가 옆으로 길어진다. 이것은 고장이 아니라 맞바꾼
+ * 것이다 — "친 대로 보인다"를 얻고 "칼럼 폭이 일정하다"를 내주기로 사용자가
+ * 정했다. **max-w 나 break-words 를 되돌려 넣지 말 것.** 넣는 순간 이 칸은
+ * 원래 문제로 돌아간다.
+ *
+ * 표가 넓어져도 화면 전체가 밀리지는 않는다. 가로 스크롤은 ResponsiveList 가
+ * 두른 overflow-x-auto 래퍼 안에서만 일어난다(파일 헤더의 '스크롤 래퍼를
+ * 여기서 따로 두르지 않는다'). 그 래퍼를 없애거나 여기서 한 겹 더 감싸면
+ * 표가 파란 헤더와 사이드바까지 밀어낸다.
+ *
+ * ── 카드 쪽은 왜 여전히 접히는가 ────────────────────────────────────────
+ * 좁은 화면에서 그려지는 카드(CARD_FIELD_GROUPS 의 multiline)는 지금도
+ * break-words + pre-line 이고, 그대로 둔다. 폰에서 좌우 스크롤은 사실상 못
+ * 쓰는 조작이라, 접지 않으면 글자가 화면 밖으로 나가 아예 안 보이기 때문이다.
+ * 사람이 친 줄바꿈이 살아나는 것은 표와 카드가 똑같고, **폭이 모자랄 때만**
+ * 다르게 군다.
+ */
+const noteCellContentClass = "whitespace-pre";
+
+/**
+ * 수정 폼을 여는 버튼. **키보드로 이 표를 고칠 수 있는 유일한 길**이다 —
+ * <tr> 은 포커스를 받지 못하고, 인수번호는 이제 수리 건으로 가는 링크다
+ * (파일 헤더의 '인수번호는 링크, 수정은 버튼').
+ *
+ * 줄 전체가 같은 일을 하는 클릭 대상이라 stopPropagation 을 한다. 없어도 결과는
+ * 같지만(같은 줄의 폼이 열린다), 눌린 것이 무엇인지 화면과 코드가 같은 말을
+ * 하도록 명시해 둔다.
+ *
+ * 이름표에 인수번호를 함께 읽히는 이유: 이 버튼은 한 화면에 열두 개가 있고,
+ * "수정" 한 마디만으로는 화면 낭독기가 어느 줄의 것인지 말할 수 없다.
+ */
+function EditRowButton({
+  row,
+  onOpen,
+}: {
+  row: DomesticOrderListItem;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    // ⚠️ **relative 를 떼지 말 것 — 떼면 페이지가 표 아래로 계속 굴러간다.**
+    // 아래 sr-only 는 position:absolute 다(Tailwind 의 sr-only 가 그렇다). 이
+    // 버튼에 relative 가 없으면 그 span 의 컨테이닝 블록을 만들어 주는 조상이
+    // 표 껍데기 **바깥**(ResponsiveList 루트)이 되고, overflow 는 자기보다
+    // 바깥에 컨테이닝 블록을 둔 절대위치 자손을 자르지 못하므로 span 이 껍데기의
+    // 세로 스크롤을 그대로 빠져나가 **줄이 원래 있었을 자리**에 자리를 주장한다.
+    // 줄마다 하나씩이라 표가 길수록 그만큼 아래로 뻗는다. 실측: 23줄에서
+    // <main> clientHeight 917 / scrollHeight 1322 — 405px 이 전부 sr-only 였고,
+    // 그 405px 만큼 페이지가 굴러가면 sticky 머리글도 함께 화면 밖으로 나간다.
+    // 같은 고장의 경위는 WeeklyReportScreen 의 고객사 <section> 주석에 있다.
+    //
+    // relative 는 좌표를 주지 않으면 아무것도 옮기지 않고 z-index:auto 라 쌓임
+    // 맥락도 만들지 않는다 — 기준점만 준다. rowActionButtonClass 에 넣지 않는
+    // 것은 그 값이 "수정과 완료가 같은 크기·색으로 보인다"만 뜻하고, 같이 쓰는
+    // 완료 버튼에는 sr-only 가 없어서다(주간보고가 SIDE_BY_SIDE_GRID 에 넣지
+    // 않은 것과 같은 이유).
+    <button
+      type="button"
+      className={`${rowActionButtonClass} relative`}
+      onClick={(event: MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        onOpen(row.id);
+      }}
+    >
+      수정
+      <span className="sr-only"> — {dash(row.displayIntakeNumber)}</span>
+    </button>
+  );
+}
+
+/**
+ * 인수번호 칸. 연결이 있으면 그 수리 건 상세로 가는 링크이고, 없으면 시트에
+ * 적혀 있던 글자 그대로다(파일 헤더).
+ *
+ * 연결 없는 줄을 링크로 만들지 않는 것은 갈 곳이 없어서다. 링크처럼 보이는데
+ * 눌러도 아무 일이 없으면, 사람은 그 줄이 고장 났다고 읽는다.
+ */
+function IntakeNumberLink({ row }: { row: DomesticOrderListItem }) {
+  const label = dash(row.displayIntakeNumber);
+  if (row.repairCaseId === null) return <>{label}</>;
+  return (
+    <Link
+      href={`/repair-cases/${row.repairCaseId}`}
+      // 줄 아무 데나 누르면 수정 폼이 열린다 — 여기서 막지 않으면 수리 건으로
+      // 넘어가면서 폼도 함께 열린다.
+      onClick={(event) => event.stopPropagation()}
+      // ⚠️ **relative 를 떼지 말 것.** 아래 sr-only 는 position:absolute 라,
+      // 기준이 되는 조상이 없으면 표 껍데기의 세로 스크롤을 빠져나가 문서에
+      // 자리를 주장한다 — 줄마다 하나씩이라 페이지가 그만큼 아래로 굴러가고
+      // sticky 머리글이 화면 밖으로 나간다(바로 위 EditRowButton 주석에 실측이
+      // 있다). 주간보고의 같은 링크(GoalPrefix)와 **한 글자도 다르지 않은**
+      // 문자열이다 — 같은 경로·같은 모양이니 한쪽만 고쳐지지 않게 맞춰 둔다.
+      className="relative text-blue-700 underline underline-offset-2 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
+    >
+      {label}
+      <span className="sr-only"> 수리 건 상세로 이동</span>
+    </Link>
+  );
+}
+
+/**
+ * 완료 처리 · 완료 해제 버튼. 고칠 수 있는 사람에게만 그려지지만, 그것은
+ * 편의일 뿐 경계가 아니다 — 서버 액션이 매번 다시 검사한다.
+ *
+ * 줄 전체가 '수정 폼 열기' 버튼이라 여기서 stopPropagation 을 한다. 하지
+ * 않으면 완료를 누르는 순간 폼이 함께 열려, 방금 바뀐 값이 아니라 낡은 값을
+ * 담은 폼이 뜬다.
+ *
+ * 실패는 조용히 넘기지 않고 부르는 쪽에 올린다. 특히 CONFLICT 는 그 사이 남이
+ * 이 줄을 고쳤다는 뜻이라, 아무 일도 없었던 것처럼 두면 사람은 완료가 된 줄
+ * 안다.
+ */
+function CompletionToggle({
+  row,
+  onError,
+}: {
+  row: DomesticOrderListItem;
+  onError: (message: string | null) => void;
+}) {
+  const router = useRouter();
+  const [isPending, setIsPending] = useState(false);
+  const completed = isDomesticOrderCompleted(row);
+
+  async function toggle(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (isPending) return;
+    setIsPending(true);
+    onError(null);
+    try {
+      const result = await setDomesticOrderCompletionAction({
+        id: row.id,
+        expectedVersion: row.version,
+        completed: !completed,
+      });
+      if (!result.ok) {
+        onError(result.message);
+        return;
+      }
+      router.refresh();
+      showSavePopup({ message: completed ? "완료 표시를 풀었습니다." : "완료로 표시했습니다.", redirectTo: null });
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={isPending}
+      className={rowActionButtonClass}
+    >
+      {completed ? "완료 해제" : "완료 처리"}
+    </button>
+  );
+}
+
+/** 지금 보고 있는 것 — 사용중인 줄인가, 휴지통인가. */
+type ListView = "active" | "trash";
+
+/**
+ * 사용중 / 휴지통 전환. 머리말의 제목 줄에 선다(파일 머리말의 '휴지통은 자리를
+ * 새로 차지하지 않는다').
+ *
+ * 글자는 다른 휴지통 화면의 탭과 **같다**(`사용중 (N)` · `휴지통 (N)` — 고객사·
+ * 견적서). 생김새만 탭 줄 대신 붙은 단추 둘이다 — 표/카드 토글(responsive-list
+ * 의 ViewToggle)과 같은 모양이라 "둘 중 하나를 고르는 것"으로 읽힌다. 높이는
+ * 옆의 `머리말 펼치기` 단추와 같다(text-xs · py-0.5 · 테두리) — 이 줄이 자라지
+ * 않는 근거가 그것이다.
+ *
+ * 인쇄에서는 빠진다 — 이 화면은 고객사에 보내는 문서이기도 하다(SheetHeading).
+ * sr-only 는 쓰지 않는다: 보이는 글자가 이미 무슨 단추인지 다 말한다.
+ */
+function ViewSwitch({
+  view,
+  activeCount,
+  trashCount,
+  onChange,
+}: {
+  view: ListView;
+  activeCount: number;
+  trashCount: number;
+  onChange: (next: ListView) => void;
+}) {
+  const buttonClass = (selected: boolean) =>
+    `px-2 py-0.5 text-xs ${
+      selected
+        ? "bg-zinc-900 font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+        : "bg-white text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+    }`;
+  return (
+    <div
+      role="group"
+      aria-label="내자 정리 보기"
+      className="flex overflow-hidden rounded-md border border-zinc-300 dark:border-zinc-700 print:hidden"
+    >
+      <button
+        type="button"
+        aria-pressed={view === "active"}
+        onClick={() => onChange("active")}
+        className={buttonClass(view === "active")}
+      >
+        사용중 ({activeCount})
+      </button>
+      <button
+        type="button"
+        aria-pressed={view === "trash"}
+        onClick={() => onChange("trash")}
+        className={`border-l border-zinc-300 dark:border-zinc-700 ${buttonClass(view === "trash")}`}
+      >
+        휴지통 ({trashCount})
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 지운 시각 — 한국 표준시로 "2026-09-11 14:03". 시각까지 적는 것은 휴지통이
+ * 지운 순서(최신순)로 늘어서기 때문이다 — 같은 날 여러 줄을 지우면 날짜만으로는
+ * 그 순서가 읽히지 않는다.
+ *
+ * 표준시를 못 박는 이유는 이 화면의 다른 날짜와 같다(page.tsx 의 asOfDate) —
+ * 서버가 어디서 돌든, 브라우저가 어느 시간대든 같은 글자가 나와야 한다.
+ */
+const DELETED_AT_FORMAT = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+function formatDeletedAt(iso: string | null): string {
+  if (iso === null) return "-";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    DELETED_AT_FORMAT.formatToParts(date).find((p) => p.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
+}
+
+/**
+ * 휴지통. 줄마다 보관 만료 배지와 [복원] · [완전 삭제] 가 선다 — 고객사
+ * 휴지통(CustomerTrashTab)과 같은 칸·같은 단추 이름이다. 누르면 공용 확인 창이
+ * 열리고(부르는 쪽이 소유한다), 브라우저 기본 확인창(window.confirm)은 쓰지 않는다.
+ *
+ * 한 번에 한 줄씩 다룬다. 고객사처럼 여럿을 골라 한꺼번에 하는 선택 막대는
+ * 두지 않았다 — 내자 정리 줄은 하나씩 지우는 자료이고, 체크박스 칸을 세우면 그
+ * 자리만큼 폭을 쓴다. 서버 액션은 이미 여러 건을 받으므로(actions/
+ * domestic-orders.ts) 필요해지면 화면만 늘리면 된다.
+ *
+ * 배지는 지운 시각이 있을 때만 그린다 — 없는 줄은 정상 경로로는 생기지 않지만
+ * (queries 의 DeletedDomesticOrderRow.deletedAt 주석), 지어낸 시각으로 배지를
+ * 그리면 거짓말이 된다.
+ */
+function DomesticOrderTrashPanel({
+  rows,
+  isSubmitting,
+  onRestore,
+  onPermanentDelete,
+}: {
+  rows: DeletedDomesticOrderRow[];
+  isSubmitting: boolean;
+  onRestore: (row: DeletedDomesticOrderRow) => void;
+  onPermanentDelete: (row: DeletedDomesticOrderRow) => void;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        삭제한 지 {MASTER_DATA_TRASH_RETENTION_DAYS}일이 지나면 자동으로 완전히 삭제됩니다. 그
+        전에는 언제든 복원할 수 있습니다. 휴지통에 있는 줄은 주간보고 · 수리 건 상세 · 고객 안내
+        현황에서도 빠집니다.
+      </p>
+      {rows.length === 0 ? (
+        <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+          휴지통이 비어 있습니다.
+        </div>
+      ) : (
+        <ResponsiveList
+          listId="domestic-orders-trash"
+          measureKey={[rows.length]}
+          table={
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 bg-white text-left text-xs font-semibold whitespace-nowrap text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                  <th className="px-3 py-2">인수번호</th>
+                  <th className="px-3 py-2">고객사</th>
+                  <th className="px-3 py-2">형식</th>
+                  <th className="px-3 py-2">발주서번호</th>
+                  <th className="px-3 py-2">PJT</th>
+                  <th className="px-3 py-2">발주발행일</th>
+                  <th className="px-3 py-2">삭제 시각</th>
+                  <th className="px-3 py-2">삭제자</th>
+                  <th className="px-3 py-2">삭제 사유</th>
+                  <th className="px-3 py-2">보존</th>
+                  <th className="px-3 py-2">작업</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/60"
+                  >
+                    <td className="px-3 py-2 font-medium whitespace-nowrap text-zinc-900 dark:text-zinc-50">
+                      {dash(row.displayIntakeNumber)}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">{dash(row.customerName)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{dash(row.modelName)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{dash(row.purchaseOrderNumber)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{dash(row.projectName)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap tabular-nums">{dash(row.orderIssuedDate)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap tabular-nums">{formatDeletedAt(row.deletedAt)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{dash(row.deletedByUserName)}</td>
+                    <td className="px-3 py-2">{dash(row.deleteReason)}</td>
+                    <td className="px-3 py-2">
+                      {row.deletedAt !== null && <MasterDataTrashRetentionBadge deletedAt={row.deletedAt} />}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <span className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onRestore(row)}
+                          disabled={isSubmitting}
+                          className="text-sm text-blue-700 underline-offset-2 hover:underline disabled:opacity-50 dark:text-blue-400"
+                        >
+                          복원
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onPermanentDelete(row)}
+                          disabled={isSubmitting}
+                          className="text-sm text-red-700 underline-offset-2 hover:underline disabled:opacity-50 dark:text-red-400"
+                        >
+                          완전 삭제
+                        </button>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          }
+          cards={
+            <div className={LIST_CARD_GRID}>
+              {rows.map((row) => (
+                <div
+                  key={row.id}
+                  className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-semibold text-zinc-900 dark:text-zinc-50">
+                      {dash(row.displayIntakeNumber)}
+                    </span>
+                    {row.deletedAt !== null && <MasterDataTrashRetentionBadge deletedAt={row.deletedAt} />}
+                  </div>
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">{dash(row.customerName)}</p>
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+                    <div>
+                      <dt className="text-xs text-zinc-500 dark:text-zinc-500">형식</dt>
+                      <dd className="break-words">{dash(row.modelName)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-zinc-500 dark:text-zinc-500">발주서번호</dt>
+                      <dd className="break-words">{dash(row.purchaseOrderNumber)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-zinc-500 dark:text-zinc-500">PJT</dt>
+                      <dd className="break-words">{dash(row.projectName)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-zinc-500 dark:text-zinc-500">발주발행일</dt>
+                      <dd>{dash(row.orderIssuedDate)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-zinc-500 dark:text-zinc-500">삭제 시각</dt>
+                      <dd>{formatDeletedAt(row.deletedAt)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-zinc-500 dark:text-zinc-500">삭제자</dt>
+                      <dd>{dash(row.deletedByUserName)}</dd>
+                    </div>
+                    <div className="col-span-2">
+                      <dt className="text-xs text-zinc-500 dark:text-zinc-500">삭제 사유</dt>
+                      <dd className="break-words">{dash(row.deleteReason)}</dd>
+                    </div>
+                  </dl>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onRestore(row)}
+                      disabled={isSubmitting}
+                      className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      복원
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onPermanentDelete(row)}
+                      disabled={isSubmitting}
+                      className="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+                    >
+                      완전 삭제
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          }
+        />
+      )}
+    </section>
+  );
+}
+
+/** 확인 창에 넘길 한 건 — 서버 액션이 받는 두 칸에 창에 나열할 이름을 붙인다. */
+function trashTarget(row: {
+  id: string;
+  version: number;
+  displayIntakeNumber: string | null;
+  customerName: string | null;
+  purchaseOrderNumber: string | null;
+  modelName: string | null;
+}): MasterDataTrashTarget<DomesticOrderTrashItem> {
+  return { id: row.id, expectedVersion: row.version, name: domesticOrderTrashLabel(row) };
+}
+
+/**
+ * 지금 무엇을 편집하고 있는가. null 이면 편집 중이 아니고, "new" 는 행 추가,
+ * 그 밖의 값은 그 id 의 줄을 고치는 중이다.
+ *
+ * 하나의 상태로 묶어 둔 이유: "추가 중"과 "수정 중"을 각각 두면 둘 다 참인
+ * 상태가 만들어질 수 있고, 그러면 화면에 폼이 두 개 뜬다.
+ */
+type EditTarget = { kind: "new" } | { kind: "row"; id: string } | null;
+
+export default function DomesticOrderListScreen({
+  rows,
+  asOfDate,
+  currentYear,
+  canEdit,
+  repairCaseOptions,
+  customerOptions,
+  quoteOptions,
+  canDelete = false,
+  trashRows = [],
+  sheetHeading,
+}: {
+  rows: DomesticOrderListItem[];
+  /** 서버가 정한 "오늘". 머리말의 진행 상황 날짜다. */
+  asOfDate: string;
+  /**
+   * 서버가 한국 표준시로 정한 "올해"("YYYY"). 발주 년도 칸의 기본값이다 —
+   * 클라이언트에서 정하면 서버가 그린 것과 달라진다(page.tsx 주석).
+   */
+  currentYear: string;
+  /** 행을 추가·수정할 수 있는가. 거짓이면 1단계와 똑같이 보인다. */
+  canEdit: boolean;
+  /** 수정 폼의 '수리 건 연결' 목록. 고칠 수 없는 역할에게는 빈 배열이다. */
+  repairCaseOptions: RepairCaseLinkOption[];
+  /** 수정 폼의 '고객사' 목록. 같은 이유로 고칠 수 없는 역할에게는 빈 배열이다. */
+  customerOptions: CustomerOption[];
+  /** 견적서 연결 드롭다운. 고칠 수 없는 세션에는 빈 배열이 온다. */
+  quoteOptions: QuoteOption[];
+  /**
+   * 휴지통으로 보내고·복원하고·완전 삭제할 수 있는가(domesticOrders MANAGE).
+   * 거짓이면 보기 전환도 `휴지통으로 보내기` 도 없고, 화면은 이 변경 전과 똑같다.
+   * 서버가 판정해 내려보낸다(page.tsx) — 화면이 감춘 것은 경계가 아니다.
+   */
+  canDelete?: boolean;
+  /** 휴지통의 줄. 지울 수 있는 세션에만 서버가 채워 넘긴다 — 그 밖에는 빈 배열이다. */
+  trashRows?: DeletedDomesticOrderRow[];
+  /**
+   * 머리말의 인사문 · 내부 메모(2026-09-11). 저장된 행이 없으면 서버가 코드의 기본
+   * 문구를 넘긴다 — 그때 머리말은 이 기능 전과 한 글자도 다르지 않다. 고칠 수
+   * 있는지는 canEdit 과 같은 판정이다(page.tsx).
+   */
+  sheetHeading: DomesticOrderSheetHeadingView;
+}) {
+  const [editTarget, setEditTarget] = useState<EditTarget>(null);
+  const [view, setView] = useState<ListView>("active");
+  /**
+   * 휴지통 확인 창 셋의 상태. 창은 자기 상태를 갖지 않고 여기가 소유한다
+   * (master-data-trash-dialogs.tsx 머리말). 성공하면 훅이 router.refresh() 로
+   * 서버 목록을 다시 받는다 — 휴지통 줄의 지운 시각·지운 사람은 서버만 안다.
+   */
+  const trash = useMasterDataTrash<DomesticOrderTrashItem>({
+    onDelete: deleteDomesticOrdersAction,
+    onRestore: restoreDomesticOrdersAction,
+    onPermanentDelete: permanentlyDeleteDomesticOrdersAction,
+    // 폼에서 지웠으면 폼을 닫는다. 목록이 다시 오면 그 줄이 없어 어차피 닫히지만
+    // (아래 isFormOpen), 새로고침이 오기 전 한순간 지운 줄의 폼이 남지 않게 한다.
+    onAllSucceeded: () => setEditTarget(null),
+  });
+  // 권한을 잃은 채로 휴지통 보기가 남아 있지 않게 한다(새로고침으로 canDelete 가
+  // 거짓이 되면 전환 단추가 사라지므로, 돌아올 길이 없는 화면이 된다).
+  const showTrash = canDelete && view === "trash";
+  const [selectedYear, setSelectedYear] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState("");
+  const [completionError, setCompletionError] = useState<string | null>(null);
+
+  const years = useMemo(() => collectDomesticOrderYears(rows), [rows]);
+  /**
+   * 아직 고른 적이 없으면(selectedYear === null) 올해가 기본값이고, 골라 둔
+   * 해가 목록에서 사라졌으면(그 해의 마지막 줄에서 발주일을 지운 경우) 다시
+   * 기본값으로 내려온다. effect 로 되돌리지 않고 매번 계산하는 이유는, 그 사이
+   * 한 프레임 동안 없는 해가 골라진 화면이 스쳐 지나가지 않게 하기 위해서다.
+   */
+  const activeYear =
+    selectedYear !== null && years.includes(selectedYear)
+      ? selectedYear
+      : resolveInitialDomesticOrderYear(years, currentYear);
+
+  /**
+   * 검색 중인가. 이 판정을 화면에서 직접 하지 않는 이유는 도메인 쪽 주석에
+   * 적혀 있다 — 공백 한 칸을 "검색 중"으로 세면, 아무것도 걸러지지 않은 목록
+   * 위에 "모든 해에서 찾는 중"이라고 적히는 어긋난 상태가 만들어진다.
+   */
+  const isSearching = isDomesticOrderSearchActive(searchText);
+
+  /**
+   * **검색 중에는 년도로 거르지 않는다**(파일 헤더). 두 거르기를 겹쳐 쓰지
+   * 않고 한쪽만 쓴다 — 겹치면 다른 해의 건은 검색해도 끝내 나오지 않고, 그
+   * 건이 없는 것인지 해가 달라 가려진 것인지 화면에서 구분할 길이 없다.
+   *
+   * 거르는 일은 표/카드보다 **앞 단계**에 있다. 아래 groups 하나를 표와 카드가
+   * 함께 쓰므로, 어느 폭에서 보든 같은 줄이 남는다.
+   */
+  const visibleRows = useMemo(
+    () =>
+      isSearching
+        ? filterDomesticOrdersBySearch(rows, searchText)
+        : filterDomesticOrdersByYear(rows, activeYear),
+    [rows, activeYear, isSearching, searchText]
+  );
+  const groups = useMemo(() => groupDomesticOrdersByCustomer(visibleRows), [visibleRows]);
+  const alwaysVisibleCount = useMemo(() => countDomesticOrdersWithoutOrderYear(rows), [rows]);
+
+  // 합계는 1단계와 같은 함수다. 다만 **지금 보이는 줄**을 더한다 — 화면에 없는
+  // 해의 금액이 합계에 섞이면, 표를 세로로 훑어 더한 값과 맞지 않는다.
+  const { total, skipped } = sumAmounts(visibleRows);
+
+  /**
+   * 안내 두 줄을 지금 적는가. **조건은 예전 그대로다** — 각각 있던 자리에서
+   * 그대로 옮겨 왔고(아래 안내 묶음), 이름만 붙였다.
+   *
+   * 이름을 붙인 이유는 하나뿐이다: 둘 다 안 적을 때는 그 둘을 담는 상자까지
+   * 그리지 말아야 한다. 빈 상자를 남기면 한 줄을 통째로 차지하는 자리(w-full)에
+   * 높이 0짜리 항목이 남아 그 위 여백만 덩그러니 생긴다.
+   */
+  const showAlwaysVisibleNote = alwaysVisibleCount > 0 && years.length > 0 && !isSearching;
+  const showDeliveredDateNote = rows.length > 0;
+
+  const editingRow =
+    editTarget?.kind === "row" ? (rows.find((row) => row.id === editTarget.id) ?? null) : null;
+  // 고치려던 줄이 목록에서 사라졌으면(남이 지웠다) 폼을 열지 않는다 — 없는
+  // 줄에 대고 저장해 봐야 NOT_FOUND 만 돌아온다.
+  const isFormOpen = editTarget?.kind === "new" || editingRow !== null;
+
+  function openRow(id: string) {
+    if (!canEdit) return;
+    setEditTarget({ kind: "row", id });
+  }
+
+  return (
+    /*
+      h-full — 이 화면은 <main> 의 남는 높이를 **꼭 채우고 끝난다.** 표가 그
+      마지막 칸이라, 위 요소들이 쓰고 남은 높이가 그대로 표 껍데기의 높이가 된다
+      (파일 헤더 '열 제목은 화면에 붙어 있다'). 이 한 줄이 없으면 이 상자는 제
+      내용만큼 자라고, 표는 다시 제 높이만큼 자라 페이지가 표와 따로 굴러간다.
+
+      min-h-full 이 아니라 h-full 인 것이 중요하다 — min-height 로 주면 내용이
+      길어질 때 상자가 내용만큼 자라 **줄어들 자리가 사라지고**, 표가 통째로
+      늘어나 머리글 고정이 헛돈다. h-full 은 높이를 못 박아 두므로 모자랄 때
+      줄어드는 쪽은 언제나 표다(글 상자들은 자기 내용보다 작아지지 않는다).
+
+      ⚠️ 다만 **못을 박는 것만으로는 아무것도 줄지 않는다.** 줄어드는 쪽인 표
+      목록이 자기 자동 최소 높이(= 제 내용 높이)를 걷어내고 남는 높이를 받아야
+      비로소 이 계산이 성립한다 — 그 일은 ResponsiveList 의 stickyHeader 가
+      한다(파일 헤더의 ⚠️ 두 번째 항목). **둘은 한 짝이고, 한쪽만 있으면
+      페이지가 다시 굴러간다.**
+
+      print:h-auto — 인쇄에서는 못을 뺀다. 화면 높이에 맞춰 두면 표가 한 장에서
+      잘린다(responsive-list.tsx 의 같은 항목).
+    */
+    <div className="flex h-full flex-col gap-4 print:h-auto">
+      <SheetHeading
+        asOfDate={asOfDate}
+        heading={sheetHeading}
+        canEditHeading={canEdit}
+        viewSwitch={
+          canDelete ? (
+            <ViewSwitch
+              view={showTrash ? "trash" : "active"}
+              activeCount={rows.length}
+              trashCount={trashRows.length}
+              onChange={setView}
+            />
+          ) : undefined
+        }
+      />
+
+      {isFormOpen && (
+        // 휴지통을 보는 동안에는 폼을 **지우지 않고 감춘다**(파일 머리말). 사용중
+        // 보기에서는 display: contents 라 이 감싸개는 상자를 만들지 않는다 — 폼이
+        // 예전처럼 바깥 flex 의 항목 그대로다(gap · 높이 계산이 이 변경 전과 같다).
+        <div className={showTrash ? "hidden" : "contents"}>
+          <DomesticOrderEditForm
+            // 다른 줄을 누르면 폼 전체를 새로 만든다. key 가 없으면 이전 줄의
+            // 입력 상태가 그대로 남아 다른 줄에 저장된다.
+            key={editTarget?.kind === "new" ? "new" : editingRow?.id}
+            row={editingRow}
+            repairCaseOptions={repairCaseOptions}
+            customerOptions={customerOptions}
+            quoteOptions={quoteOptions}
+            onDone={() => setEditTarget(null)}
+            onRequestDelete={
+              canDelete && editingRow
+                ? () => trash.open("DELETE", [trashTarget(editingRow)])
+                : undefined
+            }
+          />
+        </div>
+      )}
+
+      {showTrash ? (
+        <DomesticOrderTrashPanel
+          rows={trashRows}
+          isSubmitting={trash.isSubmitting}
+          onRestore={(row) => trash.open("RESTORE", [trashTarget(row)])}
+          onPermanentDelete={(row) => trash.open("PERMANENT_DELETE", [trashTarget(row)])}
+        />
+      ) : (
+      <>
+
+      {/* 검색칸은 년도와 달리 **늘 있다** — 고를 년도가 하나도 없는 자료
+          (발주일이 전부 비어 있는 경우)에서도 번호로 찾는 일은 그대로 필요하다.
+          그래서 이 줄 전체를 years 로 감싸지 않고, 년도 부분만 감싼다.
+
+          ── ⚠️ 이 한 상자가 예전의 세 덩어리다 ─────────────────────────
+          검색·년도 고르개가 한 줄, 건수·`행 추가`·합계가 또 한 줄, 납품일 안내가
+          또 한 줄이었다. 30 + 28 + 16 에 사이 여백 16 이 둘이면 106px 이고, 그
+          높이는 그대로 표에서 빠진다(파일 헤더의 '표 위쪽은 자리를 적게 쓴다').
+          한 상자에 넣으면 **조작 한 줄(30) + 안내 한 줄(16)** 에 사이 여백 8 로
+          54px 다 — 바깥 상자의 gap-4 를 안쪽 gap-y-2 로 바꿔 치는 셈이라, 줄
+          수를 줄이지 않고도 여백이 준다.
+
+          **넣는 순서가 곧 접히는 순서다.** 조작 다섯이 먼저, 그다음 건수 묶음,
+          안내 묶음이 맨 뒤다. 안내 묶음은 w-full 이라 **언제나 제 줄에서
+          시작한다** — 폭에 따라 어떤 때는 합계 옆에 붙고 어떤 때는 아래로
+          내려가면, 같은 화면이 창 크기마다 다른 모양이 된다.
+
+          **좁아지면 저절로 여러 줄이 된다**(flex-wrap · gap-y-2). 억지로 한 줄에
+          밀어 넣지 않는 이유는 이 줄에 든 것이 이미 여럿이어서다 — 접히지 않으면
+          검색칸이 줄을 밀어내 body 가 좌우로 흔들린다(검색칸의 max-w-full ·
+          min-w-0 주석, 파일 헤더의 가로 스크롤 규칙). */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <label
+          className="text-sm font-medium text-zinc-700 dark:text-zinc-300"
+          htmlFor="domestic-order-search"
+        >
+          검색
+        </label>
+        <input
+          id="domestic-order-search"
+          type="search"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder={SEARCH_PLACEHOLDER}
+          title={SEARCH_FIELDS_HINT}
+          aria-label={`내자 정리 검색 — ${SEARCH_FIELDS_HINT}`}
+          autoComplete="off"
+          // 예시가 들어갈 만큼 넓게 두되, **폭은 화면 폭을 넘지 않는다** —
+          // max-w-full · min-w-0 이 없으면 좁은 화면에서 이 칸 하나가 줄을
+          // 밀어내 body 가 좌우로 흔들린다(파일 헤더의 가로 스크롤 규칙).
+          className={`w-80 max-w-full min-w-0 ${filterControlClass}`}
+        />
+        {isSearching && (
+          // 지우는 길을 눈에 보이게 둔다. type="search" 의 X 는 브라우저마다
+          // 있기도 없기도 하고, 검색 중에는 년도가 잠겨 있어 "원래대로"가
+          // 이 버튼 하나뿐이다.
+          <button
+            type="button"
+            onClick={() => setSearchText("")}
+            className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            검색 지우기
+          </button>
+        )}
+
+        {years.length > 0 && (
+          <>
+            <label
+              className="text-sm font-medium text-zinc-700 dark:text-zinc-300"
+              htmlFor="domestic-order-year"
+            >
+              발주 년도
+            </label>
+            {/* 검색 중에는 잠근다 — 지금 이 고르개는 아무것도 정하지 않는다
+                (모든 해에서 찾는 중이다). 열어 두면 골라도 화면이 바뀌지 않아
+                고장으로 읽히고, 아예 없애면 검색어를 지우기 전까지 어느 해로
+                돌아갈지 알 수 없다. 고른 값은 그대로 남는다(파일 헤더). */}
+            <select
+              id="domestic-order-year"
+              value={activeYear ?? ""}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              disabled={isSearching}
+              className={`${filterControlClass} disabled:opacity-50`}
+            >
+              {/* 자료에 있는 해만 낸다 — 없는 해를 고르면 빈 표가 나오고, 그것이
+                  자료가 없다는 뜻인지 해가 없다는 뜻인지 구분되지 않는다. */}
+              {years.map((year) => (
+                <option key={year} value={year}>
+                  {year}년
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+
+        {/* 건수 · `행 추가` · 합계. 셋을 한 덩어리로 묶어 **줄의 오른쪽 끝**에
+            둔다(ml-auto) — 예전 줄이 justify-between 으로 합계를 오른쪽에 두던
+            자리를 그대로 지킨다. 묶지 않고 낱개로 늘어놓으면 좁아졌을 때 셋이
+            제각기 다른 줄로 흩어져, 지금 보고 있는 건수와 그 합계가 서로 다른
+            줄에 적힌다.
+
+            ml-auto 는 **이 묶음이 놓인 줄에서만** 민다. 넓으면 검색칸과 한 줄에
+            서서 오른쪽 끝으로 가고, 좁아 줄이 접히면 제 줄에서 오른쪽에 붙는다
+            — 어느 쪽이든 합계가 오른쪽이라는 사실은 변하지 않는다.
+
+            안쪽 gap-y 가 바깥(2)보다 작은 것은 이 셋이 한 덩어리라서다. 덩어리
+            안에서 접힐 때는 덩어리 사이보다 좁게 벌어져야 한 묶음으로 읽힌다. */}
+        <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+          <p aria-live="polite" className="text-sm text-zinc-600 dark:text-zinc-400">
+            {/* 검색 중에는 년도를 앞에 적지 않는다 — 모든 해에서 찾는 중이라
+                "2026년 3건"은 사실이 아니다. */}
+            {isSearching ? "검색 결과 " : activeYear !== null ? `${activeYear}년 ` : null}
+            {visibleRows.length}건
+            {visibleRows.length !== rows.length && (
+              <span className="ml-1 text-xs text-zinc-500 dark:text-zinc-500">
+                (전체 {rows.length}건)
+              </span>
+            )}
+          </p>
+          {canEdit && !isFormOpen && (
+            <button
+              type="button"
+              onClick={() => setEditTarget({ kind: "new" })}
+              className="rounded-md bg-primary-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-800 dark:bg-primary-50 dark:text-zinc-900 dark:hover:bg-primary-200"
+            >
+              행 추가
+            </button>
+          )}
+          <p className="text-sm text-zinc-700 dark:text-zinc-300">
+            합계 <span className="font-semibold tabular-nums">{total}</span>{" "}
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">(부가세미포함)</span>
+            {skipped > 0 && (
+              <span className="ml-2 text-xs text-red-600 dark:text-red-400">
+                금액을 읽을 수 없는 {skipped}건은 합계에서 빠졌습니다
+              </span>
+            )}
+          </p>
+        </div>
+
+        {/* ── 안내 두 줄. **w-full 이라 언제나 제 줄에서 시작한다** ────────
+            둘 다 "지금 보이는 것이 왜 이런가"를 말하는 참고 문장이라 한 자리에
+            모았다. 조작 사이에 끼워 두면 폭에 따라 어떤 때는 고르개 옆에, 어떤
+            때는 합계 아래에 붙어 같은 화면이 창 크기마다 달리 읽힌다.
+
+            바깥 상자 안에 있으므로 이 줄과 조작 줄 사이는 gap-y-2(8px)다 —
+            예전처럼 바깥 gap-4(16px)로 벌어지지 않는다. 표에 8px 이 더 간다.
+
+            **조건도 문구도 예전 그대로다**(위 showAlwaysVisibleNote ·
+            showDeliveredDateNote). 둘 다 안 적을 때는 이 상자 자체를 그리지
+            않는다 — w-full 짜리 빈 항목은 제 줄을 차지하고 위 여백만 남긴다. */}
+        {(showAlwaysVisibleNote || showDeliveredDateNote) && (
+          <div className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1">
+            {/* 년도로 거르는 중일 때만 하는 말이다 — 검색 중에는 어느 줄도
+                년도로 가려지지 않으므로, 그대로 두면 지금 걸려 있지도 않은
+                조건을 설명하는 문장이 된다. */}
+            {showAlwaysVisibleNote && (
+              <p className="text-xs text-amber-800 dark:text-amber-300">
+                {NO_ORDER_DATE_LABEL} {alwaysVisibleCount}건은 어느 년도를 골라도 함께
+                보입니다.
+              </p>
+            )}
+            {/* ⚠️ 납품일이 왜 빈칸일 수 있는지 **늘 보이게** 적어 둔다. 이 칸은
+                연결된 줄에서는 수리 건의 실제 출하일이라 아직 안 나간 줄이 비어
+                보이고, 연결 없는 줄은 날짜를 안 적었으면 비어 있다 — 아무 말이
+                없으면 자료가 사라진 것으로 읽힌다(파일 헤더).
+
+                같은 글자가 표 머리말과 카드 이름표의 title 로도 간다. 22칼럼을
+                옆으로 밀어 보는 표라, 이 한 줄만으로는 그 칸에 닿았을 때 설명이
+                화면 밖이다.
+
+                줄이 하나도 없을 때는 적지 않는다 — 그때 화면에 있는 것은
+                "등록된 …이 없습니다" 한 줄뿐이라, 없는 표의 없는 칸을 설명하는
+                문장이 된다. */}
+            {showDeliveredDateNote && (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{DELIVERED_DATE_NOTE}</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 검색 중에 다른 해의 줄이 말없이 섞여 나오면 년도 고르개가 고장 난
+          것으로 읽힌다. 그 한 줄을 여기서 적는다(파일 헤더). role="status" 로
+          두어 화면 낭독기에도 같은 사실이 전해지게 한다. */}
+      {isSearching && (
+        <p
+          role="status"
+          className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200"
+        >
+          검색 중에는 발주 년도를 가리지 않고 모든 해에서 찾습니다.
+          {activeYear !== null
+            ? ` 검색어를 지우면 ${activeYear}년으로 돌아갑니다.`
+            : " 검색어를 지우면 원래 목록으로 돌아갑니다."}
+        </p>
+      )}
+
+      {completionError && (
+        <p
+          role="status"
+          className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+        >
+          {completionError}
+        </p>
+      )}
+
+      {rows.length === 0 ? (
+        <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+          등록된 내자 정리 항목이 없습니다.
+        </div>
+      ) : isSearching && visibleRows.length === 0 ? (
+        // 아무것도 안 걸렸다는 사실을 말해 준다. 머리말만 남은 빈 표를 두면
+        // 자료가 없는 것인지 화면이 덜 그려진 것인지 구분할 길이 없다.
+        // 위의 "등록된 …이 없습니다"와 같은 말투를 쓴다 — 같은 자리에 나오는
+        // 두 문장이 서로 다른 투로 적히면 다른 화면처럼 읽힌다.
+        <div
+          role="status"
+          className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+        >
+          검색어에 맞는 내자 정리 항목이 없습니다. 검색어를 지우면 전체 {rows.length}건이 다시
+          보입니다.
+        </div>
+      ) : (
+        <ResponsiveList
+          listId="domestic-orders"
+          // 년도를 바꾸면 줄 수가, 완료 버튼이 붙고 떨어지면 순번 칸의 폭이
+          // 달라진다 — 표가 지금 폭에 들어가는지 다시 재야 하는 조건들이다.
+          measureKey={[visibleRows.length, groups.length, canEdit]}
+          // 목록이 위 요소들이 쓰고 **남은 높이**를 받고, 표 껍데기가 그 안에서
+          // 굴러가게 한다 — 아래 <thead> 의 sticky top-0 이 붙을 자리를 만드는
+          // 유일한 장치다(파일 헤더 '열 제목은 화면에 붙어 있다'). 남는 높이를
+          // 셀 수 있는 것은 맨 바깥 상자의 h-full 덕이므로 **둘은 한 짝이고,
+          // 한쪽만 있으면 페이지가 다시 굴러간다.** 이 서비스에서 이것을 켠
+          // 목록은 여기 하나뿐이다.
+          stickyHeader
+          table={
+            <table className="w-full border-collapse text-sm">
+              {/* z-10 은 머리글이 지나가는 줄 **위**에 그려지게 한다. 배경은
+                  아래 <tr> 이 이미 갖고 있어(bg-white dark:bg-zinc-900) 밝은
+                  화면·어두운 화면 모두 글자가 겹쳐 보이지 않는다. */}
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-zinc-200 bg-white text-left text-xs font-semibold whitespace-nowrap text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                  <th className="px-3 py-2">순번</th>
+                  <th className="px-3 py-2">고객사</th>
+                  <th className="px-3 py-2">발주서번호</th>
+                  <th className="px-3 py-2">PJT</th>
+                  <th className="px-3 py-2">발주발행일</th>
+                  {/* 이 칸에도 머리말 설명이 붙는다 — 비어 있는 줄에는 연결된
+                      수리 건의 고객 요청 납기일이 대신 보이고, 그 값에는 꼬리표가
+                      붙는다는 사실을 칸에 닿았을 때 알 수 있어야 한다. 카드
+                      이름표도 **같은 글자**를 title 로 받는다(CARD_FIELD_GROUPS
+                      의 hint) — 납품일 칸이 쓰는 것과 같은 나눔이다. */}
+                  <th className="px-3 py-2" title={DOMESTIC_ORDER_DUE_DATE_LINK_NOTE}>
+                    납기요청일
+                  </th>
+                  <th className="px-3 py-2">인수번호</th>
+                  <th className="px-3 py-2">형식</th>
+                  <th className="px-3 py-2">L/N</th>
+                  <th className="px-3 py-2">S/N</th>
+                  <th className="px-3 py-2">고장내역</th>
+                  <th className="px-3 py-2">견적발행일</th>
+                  <th className="px-3 py-2">견적서번호</th>
+                  <th className="px-3 py-2">현황</th>
+                  {/* 이 칸만 머리말에 설명이 붙는다 — 여기 보이는 날짜의 출처가
+                      연결된 줄은 수리 건의 출하일, 연결 없는 줄은 그 줄에 적은
+                      날짜로 다르고, 그래서 빈칸이 될 수 있다는 사실을 칸에 닿았을
+                      때 알 수 있어야 한다. 표 위의 한 줄만으로는 22칼럼을 옆으로
+                      밀어 본 뒤에는 화면 밖이다. */}
+                  <th className="px-3 py-2" title={DELIVERED_DATE_NOTE}>
+                    납품일
+                  </th>
+                  <th className="px-3 py-2">납품자</th>
+                  <th className="px-3 py-2">세금계산서발행일</th>
+                  <th className="px-3 py-2 text-right">금액(VAT별도)</th>
+                  <th className="px-3 py-2">입금완료 여부</th>
+                  <th className="px-3 py-2">일본 송금</th>
+                  <th className="px-3 py-2">이력</th>
+                  <th className="px-3 py-2">기타</th>
+                </tr>
+              </thead>
+              {/* 고객사마다 <tbody> 를 하나씩 둔다. 한 표 안에 tbody 가 여럿인
+                  것은 표준 그대로이고, 소제목 줄이 그 묶음에 속한다는 사실이
+                  구조로 드러난다. */}
+              {groups.map((group) => {
+                // 묶음의 색은 그 묶음에 든 줄의 색이다 — 고객사 이름으로 묶었고
+                // 이름은 고객사마다 유일하므로, 한 묶음의 줄들은 같은 색이다.
+                // 소제목과 줄이 같은 색이라야 한 덩어리로 읽힌다(파일 헤더).
+                const groupColorClass = customerRowColorClass(group.rows[0]?.customerRowColor);
+                // 직접 고른 색이면 위 클래스가 읽을 색을 CSS 변수로 곁들인다.
+                // 팔레트 색·없음이면 undefined 라 아무것도 붙지 않는다.
+                const groupColorStyle = customerRowColorStyle(group.rows[0]?.customerRowColor);
+                return (
+                <tbody key={group.customerName ?? "__unassigned__"}>
+                  {/* 색이 있으면 기본 회색 소제목 배경을 **대신한다.** 두 배경
+                      클래스를 함께 두면 어느 쪽이 이길지는 클래스 이름의 순서가
+                      아니라 만들어진 CSS 의 순서가 정하므로, 겹쳐 쓰지 않는다. */}
+                  <tr
+                    className={`border-y border-zinc-200 dark:border-zinc-800 ${
+                      groupColorClass === ""
+                        ? "bg-zinc-50 dark:bg-zinc-800/60"
+                        : groupColorClass
+                    }`}
+                    style={groupColorStyle}
+                  >
+                    <th
+                      colSpan={TABLE_COLUMN_COUNT}
+                      // 이 머리글은 뒤따르는 줄 묶음 전체에 걸린다 — colgroup 이
+                      // 아니라 rowgroup 이다. 화면 낭독기가 각 줄을 읽을 때
+                      // 어느 고객사의 줄인지 함께 말해 준다.
+                      scope="rowgroup"
+                      className="px-3 py-1.5 text-left text-xs font-semibold whitespace-nowrap text-zinc-700 dark:text-zinc-200"
+                    >
+                      {/* 22칼럼짜리 표라 옆으로 밀어 보는 일이 많다. 소제목만
+                          왼쪽에 붙여 두면 어느 고객사의 줄을 보고 있는지
+                          스크롤 중에도 놓치지 않는다. */}
+                      <span className="sticky left-0 inline-flex items-baseline gap-2">
+                        {group.label}
+                        <span className="font-normal text-zinc-500 dark:text-zinc-400">
+                          {group.rows.length}건
+                        </span>
+                      </span>
+                    </th>
+                  </tr>
+                  {group.rows.map((row) => {
+                    const completed = isDomesticOrderCompleted(row);
+                    // 완료가 아닌 줄에만 고객사 색이 붙는다 — 아래 세 갈래의
+                    // 순서가 곧 "완료 회색이 이긴다"는 규칙이다(파일 헤더).
+                    const rowColorClass = customerRowColorInteractiveClass(row.customerRowColor);
+                    const rowColorStyle = customerRowColorStyle(row.customerRowColor);
+                    return (
+                      <tr
+                        key={row.id}
+                        // 줄 아무 데나 눌러도 열린다. 다만 이것만으로는 키보드로
+                        // 닿을 수 없으므로, 순번 칸에 진짜 <button>을 둔다
+                        // (EditRowButton) — 칼럼을 하나 더 만들지 않고 22칼럼을
+                        // 지키면서 포커스 가능한 조작을 주는 방법이다. 완료
+                        // 버튼도 같은 이유로 같은 칸에 있다.
+                        onClick={canEdit ? () => openRow(row.id) : undefined}
+                        className={`border-b border-zinc-100 whitespace-nowrap last:border-0 dark:border-zinc-800 ${
+                          // 완료된 줄은 회색이지만 **글자를 흐리게 하지 않는다** —
+                          // 흐리게 하면 못 누르는 줄로 읽힌다. hover 도 그대로
+                          // 살아 있어서 여전히 누를 수 있다는 것이 보인다.
+                          completed
+                            ? "bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                            : rowColorClass === ""
+                              ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                              : rowColorClass
+                        } ${canEdit ? "cursor-pointer" : ""}`}
+                        // 완료된 줄은 고객사 색 클래스를 받지 않으므로 변수도 싣지 않는다.
+                        style={completed ? undefined : rowColorStyle}
+                      >
+                        <td className="px-3 py-2">
+                          <span className="flex items-center gap-2">
+                            <span className="tabular-nums">{dash(row.displayOrder)}</span>
+                            {completed && <CompletedBadge />}
+                            {canEdit && <EditRowButton row={row} onOpen={openRow} />}
+                            {canEdit && <CompletionToggle row={row} onError={setCompletionError} />}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">{dash(row.customerName)}</td>
+                        {/* 여기부터 열두 칸(발주서번호 · PJT · 발주발행일 ·
+                            고장내역 · 견적발행일 · 견적서번호 · 현황 · 납품자 ·
+                            세금계산서발행일 · 일본 송금 · 이력 · 기타)은 **칸을
+                            눌러 그 자리에서** 고친다(파일 헤더).
+                            못 고치는 사람에게는 누를 것이 아예 없어야 하므로,
+                            버튼을 그려 놓고 막지 않고 글자만 그린다 — 보이는
+                            글자는 양쪽이 똑같다.
+
+                            wrapping 은 그 칸이 지금 쓰고 있는 것을 그대로
+                            넘긴다: 한 줄짜리 값과 날짜는 nowrap(`<tr>` 이 이미
+                            그렇다), 현황·이력·기타는
+                            whitespace-pre(noteCellContentClass 와 같은 값).
+                            날짜 셋은 numeric 도 함께 넘긴다(`<td>` 의
+                            tabular-nums 가 버튼 안까지 안 내려온다). 눌러서 고칠
+                            수 있게 되었다는 이유로 표의 생김새가 바뀌면 안 된다. */}
+                        <td className="px-3 py-2">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="purchaseOrderNumber"
+                              displayText={dash(row.purchaseOrderNumber)}
+                              wrapping="whitespace-nowrap"
+                            />
+                          ) : (
+                            dash(row.purchaseOrderNumber)
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="projectName"
+                              displayText={dash(row.projectName)}
+                              wrapping="whitespace-nowrap"
+                            />
+                          ) : (
+                            dash(row.projectName)
+                          )}
+                        </td>
+                        {/* 발주일이 없는 줄은 "-" 대신 이유를 적는다 — 이 줄이
+                            년도와 상관없이 늘 보이는 근거가 이 칸이다
+                            (OrderIssuedDateContent).
+
+                            ⚠️ 날짜 칸 셋은 numeric 을 함께 넘긴다. `<td>` 의
+                            tabular-nums 는 버튼 안까지 안 내려오므로
+                            (inline-edit-cell-button.ts), 넘기지 않으면 고칠 수
+                            있는 사람의 화면에서만 날짜 자릿수가 어긋난다.
+
+                            ⚠️ 이 칸을 고치면 **그 줄이 지금 고른 년도에서 사라질
+                            수 있다.** 그 사실은 편집칸 아래 두 줄이 미리 말해
+                            준다(도메인의 domesticOrderInlineEditYearNotice). */}
+                        <td className="px-3 py-2 tabular-nums">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="orderIssuedDate"
+                              displayText={<OrderIssuedDateContent row={row} />}
+                              wrapping="whitespace-nowrap"
+                              numeric="tabular-nums"
+                            />
+                          ) : (
+                            <OrderIssuedDateContent row={row} />
+                          )}
+                        </td>
+                        {/* 날짜가 여럿이면 한 줄에 하나씩 전부 — 칼럼은 늘리지
+                            않고 줄 높이만 늘어난다(DueDateCellContent).
+
+                            고칠 수 있으면 그 줄들 자체가 버튼이고, 누르면 이
+                            자리에 **날짜 목록 편집**이 열린다
+                            (DomesticOrderDueDatesCell). 칸이 넓어지는 것은
+                            편집하는 동안뿐이다. numeric 은 날짜 칸 셋과 같은
+                            이유로 넘긴다(`<td>` 의 tabular-nums 가 버튼 안까지 안
+                            내려온다). */}
+                        <td className="px-3 py-2 tabular-nums">
+                          {canEdit ? (
+                            <DomesticOrderDueDatesCell
+                              row={row}
+                              displayText={<DueDateCellContent row={row} />}
+                              wrapping="whitespace-nowrap"
+                              numeric="tabular-nums"
+                            />
+                          ) : (
+                            <DueDateCellContent row={row} />
+                          )}
+                        </td>
+                        {/* 연결이 없는 줄은 시트에 적혀 있던 글자를 그대로 보여 준다
+                            (queries 의 displayIntakeNumber). 빈 줄로 두면 이어 붙일
+                            단서가 화면에서 사라진다. */}
+                        <td className="px-3 py-2 font-medium text-zinc-900 dark:text-zinc-50">
+                          <IntakeNumberLink row={row} />
+                        </td>
+                        <td className="px-3 py-2">{dash(row.modelName)}</td>
+                        <td className="px-3 py-2">{dash(row.lotNumber)}</td>
+                        <td className="px-3 py-2">{dash(row.serialNumber)}</td>
+                        {/* ⚠️ 보여 주는 것은 **계산된 값**(reportedSymptom),
+                            고쳐 보내는 것은 **원본 칸**(faultDescriptionText)
+                            이다 — 열두 칸 중 둘이 다른 칸은 여기 하나뿐이고,
+                            그 어긋남은 편집칸 아래 한 줄이 설명한다
+                            (DomesticOrderTextCell 의 FaultDescriptionHint).
+                            wrapping 이 nowrap 인 것은 이 칸의 표시 규칙이 아직
+                            줄바꿈을 살리지 않기 때문이다(noteCellContentClass
+                            의 '고장내역은 아직 켜지 않았다') — 지금 보이는
+                            그대로다. */}
+                        <td className="px-3 py-2">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="faultDescriptionText"
+                              displayText={dash(row.reportedSymptom)}
+                              wrapping="whitespace-nowrap"
+                            />
+                          ) : (
+                            dash(row.reportedSymptom)
+                          )}
+                        </td>
+                        {/* 견적발행일 — 발주발행일과 달리 **년도 거르기와 아무
+                            상관이 없다.** 고쳐도 줄이 사라지지 않으므로 그
+                            안내도 붙지 않는다(도메인이 칸별로 정한다).
+                            ⚠️ 이 칸과 다음 견적서번호 · 뒤의 금액은 **그리는
+                            값**(display* — 연결된 견적서가 이긴다)과 **편집칸을
+                            채우고 저장되는 원본 칸**(field)이 다르다(queries 의
+                            mapDomesticOrderRow 머리말). 연결된 줄의 두 칸은
+                            눌러도 열리지 않는다(domesticOrderInlineEditQuoteLock). */}
+                        <td className="px-3 py-2 tabular-nums">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="quoteIssuedDate"
+                              displayText={dash(row.displayQuoteIssuedDate)}
+                              wrapping="whitespace-nowrap"
+                              numeric="tabular-nums"
+                            />
+                          ) : (
+                            dash(row.displayQuoteIssuedDate)
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="quoteNumber"
+                              displayText={dash(row.displayQuoteNumber)}
+                              wrapping="whitespace-nowrap"
+                            />
+                          ) : (
+                            dash(row.displayQuoteNumber)
+                          )}
+                        </td>
+                        {/* 사람이 줄바꿈을 섞어 적는 칸 — 적은 그대로 여러 줄로
+                            그린다(noteCellContentClass). 고칠 수 있으면 그 글자
+                            자체가 버튼이고, 버튼이 같은 값을 자기 것으로 다시
+                            선언한다(상속을 믿지 않는 이유는 그 파일 주석). */}
+                        <td className="px-3 py-2">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="progressNote"
+                              displayText={dash(row.progressNote)}
+                              wrapping={noteCellContentClass}
+                            />
+                          ) : (
+                            <div className={noteCellContentClass}>{dash(row.progressNote)}</div>
+                          )}
+                        </td>
+                        {/* ⚠️ 연결된 줄은 그 줄의 deliveredDate 가 아니라 수리
+                            건의 실제 출하일, 연결 없는 줄은 그 deliveredDate 다
+                            (파일 헤더). 눌러서 고칠 수 없는 칸이라
+                            DomesticOrderTextCell 이 붙지 않는다. */}
+                        <td className="px-3 py-2 tabular-nums">
+                          {dash(row.displayDeliveredDate)}
+                        </td>
+                        <td className="px-3 py-2">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="deliveredBy"
+                              displayText={dash(row.deliveredBy)}
+                              wrapping="whitespace-nowrap"
+                            />
+                          ) : (
+                            dash(row.deliveredBy)
+                          )}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="taxInvoiceDate"
+                              displayText={dash(row.taxInvoiceDate)}
+                              wrapping="whitespace-nowrap"
+                              numeric="tabular-nums"
+                            />
+                          ) : (
+                            dash(row.taxInvoiceDate)
+                          )}
+                        </td>
+                        {/* 금액 — 연결된 견적서가 이긴 값을 그린다(위 견적발행일 주석). */}
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatAmount(row.displayAmountExcludingVat)}
+                        </td>
+                        <td className="px-3 py-2">{paymentLabel(row.paymentCompleted)}</td>
+                        <td className="px-3 py-2">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="japanRemittanceNote"
+                              displayText={dash(row.japanRemittanceNote)}
+                              wrapping="whitespace-nowrap"
+                            />
+                          ) : (
+                            dash(row.japanRemittanceNote)
+                          )}
+                        </td>
+                        {/* 현황과 같은 칸이다 — 사람이 친 줄바꿈만 살리고,
+                            폭이 모자라도 접지 않는다. */}
+                        <td className="px-3 py-2">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="historyNote"
+                              displayText={dash(row.historyNote)}
+                              wrapping={noteCellContentClass}
+                            />
+                          ) : (
+                            <div className={noteCellContentClass}>{dash(row.historyNote)}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {canEdit ? (
+                            <DomesticOrderTextCell
+                              row={row}
+                              field="etcNote"
+                              displayText={dash(row.etcNote)}
+                              wrapping={noteCellContentClass}
+                            />
+                          ) : (
+                            <div className={noteCellContentClass}>{dash(row.etcNote)}</div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                );
+              })}
+            </table>
+          }
+          cards={
+            // 카드에서도 같은 묶음이 보여야 한다 — 표에서 보던 것과 다른 순서로
+            // 읽히면 좁은 화면으로 옮긴 순간 다른 자료처럼 보인다.
+            <div className="flex flex-col gap-5">
+              {groups.map((group) => {
+                // 표와 같은 규칙이다 — 좁은 화면이라고 색이 달라지면 같은 자료가
+                // 다른 화면처럼 읽힌다(파일 헤더).
+                const groupColorClass = customerRowColorClass(group.rows[0]?.customerRowColor);
+                const groupColorStyle = customerRowColorStyle(group.rows[0]?.customerRowColor);
+                return (
+                <section key={group.customerName ?? "__unassigned__"} className="flex flex-col gap-2">
+                  {/* 카드 보기의 소제목에는 원래 배경이 없다. 색이 있을 때만
+                      배경을 주므로, 색을 안 쓰는 고객사의 화면은 이 변경 전과
+                      완전히 같다. */}
+                  <h2
+                    className={`flex items-baseline gap-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100 ${
+                      groupColorClass === "" ? "" : `rounded-md px-2 py-1 ${groupColorClass}`
+                    }`}
+                    style={groupColorStyle}
+                  >
+                    {group.label}
+                    <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                      {group.rows.length}건
+                    </span>
+                  </h2>
+                  <div className={LIST_CARD_GRID}>
+                    {group.rows.map((row) => {
+                      const completed = isDomesticOrderCompleted(row);
+                      // 표의 줄과 같은 세 갈래 — 완료 회색이 고객사 색을 이긴다.
+                      // 카드에는 원래 hover 색이 없으므로 배경만 칠한다.
+                      const rowColorClass = customerRowColorClass(row.customerRowColor);
+                      const rowColorStyle = customerRowColorStyle(row.customerRowColor);
+                      return (
+                        <div
+                          key={row.id}
+                          onClick={canEdit ? () => openRow(row.id) : undefined}
+                          className={`flex flex-col gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800 ${
+                            completed
+                              ? "bg-zinc-200 dark:bg-zinc-800"
+                              : rowColorClass === ""
+                                ? "bg-white dark:bg-zinc-900"
+                                : rowColorClass
+                          } ${canEdit ? "cursor-pointer" : ""}`}
+                          style={completed ? undefined : rowColorStyle}
+                        >
+                          {/* 표와 같은 원칙이다 — 인수번호는 수리 건으로 가는
+                              링크, 폼을 여는 것은 순번 옆의 수정 버튼. 좁은
+                              화면이라고 조작이 달라지면 같은 자료가 다른
+                              화면처럼 읽힌다. */}
+                          <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <span className="font-semibold text-zinc-900 dark:text-zinc-50">
+                              <IntakeNumberLink row={row} />
+                            </span>
+                            <span className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                              순번 {dash(row.displayOrder)}
+                              {completed && <CompletedBadge />}
+                              {canEdit && <EditRowButton row={row} onOpen={openRow} />}
+                              {canEdit && (
+                                <CompletionToggle row={row} onError={setCompletionError} />
+                              )}
+                            </span>
+                          </div>
+                          <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                            {dash(row.customerName)}
+                          </p>
+                          {CARD_FIELD_GROUPS.map((fieldGroup) => (
+                            <div key={fieldGroup.label} className="flex flex-col gap-1">
+                              <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-500">
+                                {fieldGroup.label}
+                              </p>
+                              <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+                                {fieldGroup.fields.map((field) => (
+                                  <div key={field.label}>
+                                    {/* 설명이 있는 칸은 표 머리말과 **같은
+                                        글자**를 title 로 받는다(field.hint) —
+                                        좁은 화면으로 옮겼다고 설명이 사라지면
+                                        안 된다. */}
+                                    <dt
+                                      className="text-xs text-zinc-500 dark:text-zinc-500"
+                                      title={field.hint}
+                                    >
+                                      {field.label}
+                                    </dt>
+                                    <dd
+                                      className={
+                                        field.multiline
+                                          ? "break-words whitespace-pre-line"
+                                          : "break-words"
+                                      }
+                                    >
+                                      {/* 표에서 눌러 고치는 열두 칸은 카드에서도
+                                          똑같이 눌러 고친다(파일 헤더). 못 고치는
+                                          사람에게는 표와 마찬가지로 누를 것이
+                                          없고, 보이는 글자는 양쪽이 똑같다.
+                                          접는 방식은 바로 위 <dd> 가 쓰는 것과
+                                          결과가 같은 값을 넘긴다(edit.wrapping). */}
+                                      {canEdit && field.dueDatesEdit ? (
+                                        // 납기요청일 — 날짜 목록을 고친다(표와 같은 부품).
+                                        <DomesticOrderDueDatesCell
+                                          row={row}
+                                          displayText={field.of(row)}
+                                          wrapping={field.dueDatesEdit.wrapping}
+                                        />
+                                      ) : canEdit && field.edit ? (
+                                        <DomesticOrderTextCell
+                                          row={row}
+                                          field={field.edit.field}
+                                          displayText={field.of(row)}
+                                          wrapping={field.edit.wrapping}
+                                        />
+                                      ) : (
+                                        field.of(row)
+                                      )}
+                                    </dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+                );
+              })}
+            </div>
+          }
+        />
+      )}
+      </>
+      )}
+
+      {/* 공용 확인 창 셋(고객사·견적서·부품과 같은 창). native <dialog> 라 닫혀
+          있는 동안은 display: none — flex 항목도 아니고 gap 도 만들지 않는다.
+          열리면 최상위 층(top layer)에 뜨므로 표 높이 계산과 무관하다.
+
+          보관 문구(retentionNote)는 넘기지 않는다 — 기본 문장(15일 뒤 자동 완전
+          삭제)이 이 표에도 **사실이다**. 견적서만 자기 문장을 넘기는 것은 그쪽
+          규칙이 달라서다.
+
+          지울 수 없는 세션에는 창 자체를 그리지 않는다 — 그 세션의 화면은 이
+          변경 전과 DOM 까지 같다. */}
+      {canDelete && (
+      <>
+      <MasterDataDeleteDialog
+        isOpen={trash.kind === "DELETE"}
+        entityLabel="내자 정리 항목"
+        names={trash.names}
+        cascadeNote={
+          <>
+            납기요청일도 함께 휴지통에 들어가고, 복원하면 같이 돌아옵니다. 휴지통에 있는 동안에는
+            주간보고 · 수리 건 상세 · 고객 안내 현황에서도 이 줄이 빠집니다.
+          </>
+        }
+        reason={trash.reason}
+        isSubmitting={trash.isSubmitting}
+        submitError={trash.submitError}
+        onReasonChange={trash.setReason}
+        onConfirm={trash.submit}
+        onCancel={trash.close}
+      />
+
+      <MasterDataRestoreDialog
+        isOpen={trash.kind === "RESTORE"}
+        entityLabel="내자 정리 항목"
+        names={trash.names}
+        restoreNote={
+          <>복원하면 내자 정리 목록에 다시 나타나고, 주간보고 · 수리 건 상세 · 고객 안내 현황에도 다시 잡힙니다.</>
+        }
+        cascadeNote={<>함께 휴지통에 들어갔던 납기요청일도 같이 돌아옵니다.</>}
+        isSubmitting={trash.isSubmitting}
+        submitError={trash.submitError}
+        onConfirm={trash.submit}
+        onCancel={trash.close}
+      />
+
+      <MasterDataPermanentDeleteDialog
+        isOpen={trash.kind === "PERMANENT_DELETE"}
+        entityLabel="내자 정리 항목"
+        names={trash.names}
+        cascadeNote={
+          <>
+            이 줄의 납기요청일도 함께 지워지고, 세금계산서 · 입금 기록을 포함한 이 줄의 모든 값이
+            데이터베이스에서 사라집니다.
+          </>
+        }
+        reason={trash.reason}
+        isSubmitting={trash.isSubmitting}
+        submitError={trash.submitError}
+        onReasonChange={trash.setReason}
+        onConfirm={trash.submit}
+        onCancel={trash.close}
+      />
+      </>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,1178 @@
+"use client";
+
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import { useRouter } from "next/navigation";
+import { showSavePopup } from "@/components/common/SavePopup";
+import EditSectionActions, {
+  editErrorClass,
+  editInputClass,
+  editLabelClass,
+} from "@/components/repair-cases/detail/edit/EditSectionActions";
+import type { SectionEditConflictError } from "@/components/repair-cases/detail/edit/useSectionEditSubmit";
+import { buildDraftText } from "@/lib/domain/edit-draft-text";
+import { generateClientUuid } from "@/lib/client-uuid";
+import {
+  foldBlankToNull,
+  formatDomesticOrderDueDates,
+} from "@/lib/domain/domestic-order-list";
+import {
+  filterRepairCaseLinkOptions,
+  keepSelectedRepairCaseOption,
+} from "@/lib/domain/repair-case-link-search";
+import { selectQuoteLinkChoices } from "@/lib/domain/quote-link-options";
+import type {
+  CustomerOption,
+  DomesticOrderListItem,
+  RepairCaseLinkOption,
+} from "@/lib/db/queries/domestic-orders";
+import {
+  createDomesticOrderAction,
+  updateDomesticOrderAction,
+} from "@/lib/server/actions/domestic-orders";
+
+/**
+ * ============================================================================
+ * 내자 정리 — 한 줄을 통째로 고치는 폼
+ * ============================================================================
+ * 칸 하나씩 고치는 방식이 아니다. 한 줄의 값 전부(칸 22개 + 납기요청일
+ * 목록)를 한 화면에서 고치고 한 번에
+ * 저장한다 — 이 시트는 원래 한 줄이 한 건의 이야기(발주 → 견적 → 납품 →
+ * 세금계산서 → 입금)라서, 칸 단위로 저장하면 "견적은 들어갔는데 현황은 아직
+ * 옛날 값"인 중간 상태가 표에 남는다.
+ *
+ * ── 고객사·형식·L/N·S/N·고장내역은 비워 두는 것이 기본이다 ──────────────
+ * 그 다섯에는 입력칸이 있다. **수리 건 연결이 없는 줄**에는 그 칸이 값을 적을
+ * 유일한 자리이기 때문이다(schema/domestic-orders.ts 의 '여기에도 있다').
+ *
+ * 연결이 있는 줄에서는 **수리 건의 값을 흐린 글씨로 보여만 주고 입력칸은
+ * 비워 둔다.** 미리 채워 넣지 않는 것이 이 폼에서 가장 중요한 규칙이다:
+ * 채워 넣으면 사용자가 아무것도 고치지 않고 저장만 해도 그 값이 이 행에
+ * 복사되고, 그때부터 "일부러 다르게 적었다"와 "그냥 안 건드렸다"를 구분할 수
+ * 없게 된다. 그 뒤로 수리 건 쪽에서 모델명 오타를 고쳐도 이 줄은 따라가지
+ * 않는다 — 화면에는 아무 흔적도 남지 않은 채로.
+ *
+ * 그래서 비어 있음이 곧 "수리 건을 따른다"는 뜻이고, 적는 것은 **일부러 다르게
+ * 적을 때뿐**이다(발주서의 형식이 수리 건의 형식과 다른 경우 — 그때 청구 근거는
+ * 발주서 쪽이다).
+ *
+ * ── 흐린 글씨는 placeholder 다. value 가 아니다 ─────────────────────────
+ * 예전에는 그 힌트를 칸 **아래** 회색 한 줄로 그렸다. 지금은 칸 **안**의 흐린
+ * 글씨로 옮겼다 — 빈칸 옆에 놓인 회색 줄보다, 그 칸에 무엇이 보이게 되는지를
+ * 훨씬 곧바로 읽히게 한다.
+ *
+ * **위 규칙은 그대로다.** placeholder 는 브라우저가 그리는 표시일 뿐 입력값이
+ * 아니라서, 사용자가 직접 치지 않는 한 state 에 들어가지 않고 collectFields 에도
+ * 실리지 않는다. 이 파일에서 수리 건 값이 닿는 곳은 `placeholder=` 하나뿐이고
+ * `value=` 에는 어떤 경로로도 닿지 않는다 — 그 성질이 깨지는 순간 "안 건드렸다"와
+ * "일부러 다르게 적었다"의 구분이 사라진다.
+ *
+ * 흐린 글씨는 **지금 고른 건**을 따라간다(아래 linkedRepairCase). 고르개가 그
+ * 건의 형식·L/N·S/N·납기일을 함께 들고 있어서 고르는 즉시 바뀐다.
+ *
+ * ── 납기요청일만 칸이 아니라 묶음이다 ───────────────────────────────────
+ * 한 발주를 나눠 납품하면 납기일이 여럿이라, 그 자리는 칸 하나가 아니라
+ * **더하고 뺄 수 있는 줄들**이다(schema/domestic-order-due-dates.ts). 줄마다
+ * 날짜와 짧은 메모("1차분")가 있고, 저장되는 것은 화면에 늘어놓은 차례
+ * 그대로다.
+ *
+ * 연결된 수리 건의 고객 요청 납기일은 여기서도 **힌트일 뿐**이다. 다른 칸들이
+ * placeholder 로 보여 주는 것을 이 묶음은 아래 한 줄로 보여 주는데
+ * (requestedDueDateHint), 성질은 똑같다 — 어떤 경로로도 입력값이 되지 않는다.
+ *
+ * ⚠️ **목록이 그 날짜를 대신 보여 주게 된 뒤에도 이 폼은 그대로다.** 이 줄에
+ * 납기요청일이 하나도 없으면 목록의 그 칸에는 수리 건의 날짜가 꼬리표와 함께
+ * 보이지만(domain/requested-due-date-link.ts), 그것은 **그릴 값**이지 이 줄에
+ * 저장된 값이 아니다. 그 날짜를 여기 dueDates 에 미리 채워 두면, 아무것도 고치지
+ * 않고 저장만 눌러도 빌려 오던 날짜가 이 줄에 박제된다.
+ *
+ * ── ⚠️ 납품일 — 연결이 있으면 입력칸이 아니고, 없으면 입력칸이다 ─────────
+ * 수리 건이 연결된 줄의 `납품일` 은 그 건의 **실제 출하일**이고, 그 값은
+ * 워크플로가 출하 완료 시점에 자동으로 찍는다(mutations/workflow-transitions.ts).
+ * 사람이 적을 수 있는 값이 아니라서 이 폼에서도 받지 않는다 — 그 자리에는 지금
+ * 값과 "왜 못 적는지"를 읽기 전용 한 줄로 적어 둔다(deliveredDateText).
+ *
+ * **연결이 없는 줄에는 출하일이 없다.** 그 줄의 납품일을 적을 자리는 이 줄의
+ * delivered_date 뿐이라, `수리 건 연결` 을 '연결 없음'으로 두면 날짜 입력칸이
+ * 열린다(2026-09-11 사용자 요청). 초기값은 **원본 칸**(row.deliveredDate)이다 —
+ * 목록이 그리는 계산된 값(displayDeliveredDate)이 아니다. 그것으로 채우면 연결을
+ * 풀고 저장만 눌러도 수리 건의 출하일이 이 줄에 박제된다(위 'placeholder 다.
+ * value 가 아니다'와 같은 함정).
+ *
+ * ⚠️ **어느 쪽이든 collectFields 에서는 빼면 안 된다.** 이 화면의 저장은 보낸
+ * 칸만 고치지 않는다: 검증이 키 없음(undefined)을 null 로 접고
+ * (validation/domestic-order-input.ts) mutation 이 모든 칼럼을 SET 한다
+ * (mutations/domestic-orders.ts). 즉 payload 에서 `deliveredDate` 를 빼면 DB 에
+ * 남아 있는 납품일이 **저장 한 번에 지워진다** — 화면에서 안 보여 주기로 한
+ * 것이 자료를 버리는 것으로 바뀐다. 입력칸이 없는 동안에도 state 는 그대로
+ * 실려 간다.
+ *
+ * 연결을 켰다 껐다 해도 적어 둔 날짜는 사라지지 않는다 — state 를 비우는 길이
+ * 없다. 연결을 켠 채로 저장하면 그 날짜도 이 줄에 남고(목록에는 출하일이
+ * 보인다), 그 사실을 납품일 자리에 한 줄로 알린다(linkedDeliveredDateDraftHint).
+ * 견적서 연결이 손으로 적은 번호·금액을 지우지 않는 것과 같은 규칙이다.
+ *
+ * ── 수리 건은 검색해서 고른다 ───────────────────────────────────────────
+ * 접수 건이 수백 건이라 `<select>` 하나로는 원하는 건을 찾을 수 없다. 검색 칸을
+ * 앞에 두고 목록을 걸러 내되, **고르는 것은 여전히 `<select>`** 다 — 직접 만든
+ * 드롭다운과 달리 키보드·스크린리더 동작을 브라우저가 이미 맞게 해 주고,
+ * 지금 무엇이 골라져 있는지도 늘 보인다. 무엇이 남는지 정하는 규칙은 화면이
+ * 아니라 domain/repair-case-link-search.ts 에 있다(시험할 수 있어야 해서).
+ *
+ * ── 충돌하면 얼린다 ─────────────────────────────────────────────────────
+ * 저장이 CONFLICT 로 돌아오면 이 폼은 더 이상 저장하지 않는다. 낡은 값을 그대로
+ * 덮어쓰면 남이 방금 적은 입금 사실이 조용히 사라진다. 얼리는 방식도, "최신
+ * 정보 다시 불러오기" 하나만 남는 것도 접수 건 구간 편집과 같다
+ * (EditSectionActions) — 이 시스템에서 충돌은 늘 같은 모양으로 보여야 한다.
+ *
+ * ── 다시 불러올 때 적어 둔 값을 잃지 않는다 ─────────────────────────────
+ * 다시 불러오면 이 폼은 언마운트되고 손으로 친 글이 통째로 사라진다. 그래서
+ * 얼리기 직전에 저장하려던 값에서 **사람이 직접 친 글만** 뽑아 붙잡아 둔다
+ * (buildDraftText + 아래 DRAFT_LABELS). 상자는 읽기 전용 textarea 라 사내망
+ * http 환경처럼 navigator.clipboard 가 아예 없는 브라우저에서도 길게 눌러
+ * 선택할 수 있다 — 그 판단은 EditSectionActions 가 이미 하고 있다.
+ * ============================================================================
+ */
+
+/**
+ * 충돌 상자에 보여 줄 항목과 이름표. **여기 없는 항목은 보여 주지 않는다.**
+ *
+ * 날짜 다섯과 고르는 값 둘(수리 건 연결 · 고객사 — 둘 다 UUID), 입금완료 체크는
+ * 뺐다 — 다시 고르는 데 몇 초면 되고, UUID 는 사람이 읽을 수 없어 보여 주면
+ * 오히려 방해다(edit-draft-text.ts 의 '왜 자유 입력만인가'). 금액은 뺄 수 없다:
+ * 손으로 친 값이고, 잘못 다시 적으면 합계가 세금계산서와 어긋난다. 형식·L/N·
+ * S/N·고장내역도 손으로 친 값이라 함께 붙잡는다 — 특히 이 넷은 **일부러 수리
+ * 건과 다르게 적은 값**이라 다시 불러온 화면 어디에도 남아 있지 않다.
+ */
+const DRAFT_LABELS: Readonly<Record<string, string>> = {
+  /**
+   * 납기요청일 목록. **collectFields 가 만드는 값이 아니다** — 그쪽은 배열이라
+   * buildDraftText 가 통째로 걸러 낸다(그 함수의 '문자열이 아닌 것은 전부').
+   * 충돌한 순간에만 한 줄 글자로 만들어 함께 넘긴다(handleSubmit).
+   *
+   * 다른 날짜 다섯과 달리 붙잡는 이유는 **메모가 손으로 친 글**이기 때문이다.
+   * 날짜만이면 다시 고르면 그만이지만, "2차분(김 과장 확인)" 같은 메모는 다시
+   * 불러온 화면 어디에도 남아 있지 않다.
+   */
+  dueDatesText: "납기요청일",
+  intakeNumberText: "인수번호(직접 입력)",
+  modelNameText: "형식",
+  lotNumberText: "L/N",
+  serialNumberText: "S/N",
+  faultDescriptionText: "고장내역",
+  purchaseOrderNumber: "발주서번호",
+  projectName: "PJT",
+  quoteNumber: "견적서번호",
+  progressNote: "현황",
+  deliveredBy: "납품자",
+  amountExcludingVat: "금액(VAT별도)",
+  japanRemittanceNote: "일본 송금",
+  historyNote: "이력",
+  etcNote: "기타",
+};
+
+/**
+ * 연결할 수 있는 견적서 하나. `summaryLine` 은 목록 한 줄 그대로다
+ * (domain/quote-list.ts) — 번호만 보여 주면 같은 모델의 여러 장 중 어느
+ * 것인지 가릴 수 없다.
+ *
+ * `repairCaseId` 는 그 견적서가 붙은 수리 건이다(NULL = 붙은 건 없음). 드롭다운은
+ * **폼에서 지금 고른 수리 건의 견적서만** 후보로 남긴다(아래 quoteChoices).
+ */
+export type QuoteOption = {
+  id: string;
+  summaryLine: string;
+  quoteDate: string;
+  repairCaseId: string | null;
+};
+
+const textAreaClass = `${editInputClass} min-h-20 resize-y`;
+
+const hintClass = "mt-1 text-xs text-zinc-500 dark:text-zinc-400";
+
+/**
+ * 폼이 편집하는 납기 요청일 한 줄.
+ *
+ * `key` 는 저장된 행의 id 이거나, 방금 추가한 줄에 붙인 임시 UUID 다. **배열
+ * index 를 React key 로 쓰지 않기 위해서** 있다 — 가운데 줄을 지우면 그 뒤
+ * 줄들의 index 가 하나씩 당겨지고, index 를 key 로 쓰면 React 는 "지워진 것은
+ * 마지막 줄"이라고 읽어 남은 입력칸에 엉뚱한 값이 남는다.
+ *
+ * 값은 둘 다 문자열이다(빈 문자열 = 안 적음). 검증이 그 빈 값을 접는다
+ * (validation/domestic-order-input.ts 의 '완전히 빈 줄은 거절하지 않고 뺀다').
+ */
+type DueDateDraft = { key: string; dueDate: string; note: string };
+
+/** 납기일 한 줄의 date 입력칸 id. 추가한 뒤 그리로 포커스를 옮기는 데 쓴다. */
+function dueDateInputId(key: string): string {
+  return `domestic-order-dueDate-${key}`;
+}
+
+export default function DomesticOrderEditForm({
+  row,
+  repairCaseOptions,
+  customerOptions,
+  quoteOptions,
+  onDone,
+  onRequestDelete,
+}: {
+  /** 고칠 줄. null 이면 새 줄을 추가하는 중이다. */
+  row: DomesticOrderListItem | null;
+  repairCaseOptions: RepairCaseLinkOption[];
+  customerOptions: CustomerOption[];
+  quoteOptions: QuoteOption[];
+  onDone: () => void;
+  /**
+   * 이 줄을 휴지통으로 보내는 확인 창을 연다(2026-09-11). **지울 수 있는
+   * 세션에서만** 부르는 쪽이 넘긴다 — 넘기지 않으면 버튼이 없고, 폼은 이 변경
+   * 전과 똑같다. 버튼을 감추는 것은 편의일 뿐이고, 서버 액션이
+   * hasPermission("domesticOrders", "MANAGE") 로 다시 본다.
+   *
+   * 폼은 지우지 않는다 — 창을 여는 것까지만 하고, 창·사유·결과는 목록 화면이
+   * 소유한다(공용 휴지통 창의 원칙: master-data-trash-dialogs.tsx 머리말).
+   * `행 추가` 중에는 지울 줄이 없으므로 row 가 있을 때만 그린다.
+   */
+  onRequestDelete?: () => void;
+}) {
+  const router = useRouter();
+
+  const [repairCaseId, setRepairCaseId] = useState(row?.repairCaseId ?? "");
+  /**
+   * 수리 건 검색어. **저장되는 값이 아니다** — 목록에서 무엇을 보여 줄지만
+   * 정한다. 그래서 collectFields 에도 DRAFT_LABELS 에도 없다.
+   */
+  const [repairCaseQuery, setRepairCaseQuery] = useState("");
+  const [intakeNumberText, setIntakeNumberText] = useState(row?.intakeNumberText ?? "");
+  /**
+   * 이 다섯은 **이 행에 적힌 값만** 담는다(row.customerId · row.modelNameText …).
+   * 화면 표가 그리는 row.customerName · row.modelName 은 이미 수리 건 값이 섞여
+   * 정해진 값이라, 그것을 초기값으로 쓰면 저장하는 순간 수리 건의 값이 이 행에
+   * 복사된다(파일 헤더).
+   */
+  const [customerId, setCustomerId] = useState(row?.customerId ?? "");
+  const [modelNameText, setModelNameText] = useState(row?.modelNameText ?? "");
+  const [lotNumberText, setLotNumberText] = useState(row?.lotNumberText ?? "");
+  const [serialNumberText, setSerialNumberText] = useState(row?.serialNumberText ?? "");
+  const [faultDescriptionText, setFaultDescriptionText] = useState(
+    row?.faultDescriptionText ?? ""
+  );
+  const [displayOrder, setDisplayOrder] = useState(
+    row?.displayOrder === null || row?.displayOrder === undefined ? "" : String(row.displayOrder)
+  );
+  const [purchaseOrderNumber, setPurchaseOrderNumber] = useState(row?.purchaseOrderNumber ?? "");
+  const [projectName, setProjectName] = useState(row?.projectName ?? "");
+  const [orderIssuedDate, setOrderIssuedDate] = useState(row?.orderIssuedDate ?? "");
+  /**
+   * 납기 요청일 **목록**. 저장된 차례 그대로 시작하고, 빈 목록이 정상이다 —
+   * 납기일이 아직 없는 줄이 실제로 있다.
+   *
+   * 다른 칸들과 달리 여기에는 수리 건의 값이 어떤 경로로도 들어오지 않는다.
+   * 연결된 건의 고객 요청 납기일은 **아래 힌트 한 줄로만** 보여 준다 —
+   * 내자의 납기 요청일은 발주서에 적힌 날짜라 뜻이 다르고(queries 주석), 여기
+   * 미리 채워 넣으면 아무것도 안 고치고 저장만 해도 그 날짜가 이 줄에
+   * 박제된다(파일 헤더의 'placeholder 다. value 가 아니다').
+   */
+  const [dueDates, setDueDates] = useState<DueDateDraft[]>(() =>
+    (row?.dueDates ?? []).map((dueDate) => ({
+      key: dueDate.id,
+      dueDate: dueDate.dueDate,
+      note: dueDate.note ?? "",
+    }))
+  );
+  const [quoteIssuedDate, setQuoteIssuedDate] = useState(row?.quoteIssuedDate ?? "");
+  const [quoteNumber, setQuoteNumber] = useState(row?.quoteNumber ?? "");
+  const [quoteId, setQuoteId] = useState<string | null>(row?.quoteId ?? null);
+  const [progressNote, setProgressNote] = useState(row?.progressNote ?? "");
+  /**
+   * 이 줄에 **손으로 적는** 납품일(domestic_orders.delivered_date).
+   *
+   * ⚠️ **입력칸은 수리 건 연결이 없을 때만 있다**(아래 납품일 자리). 연결된
+   * 줄의 납품일은 그 건의 실제 출하일이라(deliveredDateText) 이 폼이 받지
+   * 않는다. 예전에는 이 값이 상수였다 — 입력칸이 아예 없었기 때문이다. 연결
+   * 없는 줄에는 출하일이 없어 적을 자리가 이 칸뿐이라 setter 를 되살렸고
+   * (2026-09-11), 그 setter 를 부르는 곳은 연결이 없을 때만 그리는 입력칸 하나다.
+   *
+   * 초기값은 **원본 칸**이다. row.displayDeliveredDate 는 수리 건에서 계산된
+   * 값이라 여기 들이면 저장 한 번에 이 줄에 박제된다(파일 헤더).
+   *
+   * 입력칸이 없는 동안에도 collectFields 는 이 값을 싣는다 — 이 화면의 저장은
+   * 모든 칼럼을 SET 하므로 키가 빠지면 DB 의 값이 지워진다(파일 헤더). 연결을
+   * 켰다 껐다 해도 이 state 를 비우는 길은 없다.
+   */
+  const [deliveredDate, setDeliveredDate] = useState(row?.deliveredDate ?? "");
+  /**
+   * 불러온 그대로의 원본 칸. **저장에 쓰지 않는다** — 연결을 켠 채로 이 폼에서
+   * 고친 날짜가 있는지(linkedDeliveredDateDraftHint), 입력칸에 보이는 날짜가 예전
+   * 연결 시절의 손 값인지(unlinkedDeliveredDateHint) 가리는 데만 쓴다.
+   */
+  const savedDeliveredDate = row?.deliveredDate ?? "";
+  const [deliveredBy, setDeliveredBy] = useState(row?.deliveredBy ?? "");
+  const [taxInvoiceDate, setTaxInvoiceDate] = useState(row?.taxInvoiceDate ?? "");
+  const [amountExcludingVat, setAmountExcludingVat] = useState(row?.amountExcludingVat ?? "");
+  const [paymentCompleted, setPaymentCompleted] = useState(row?.paymentCompleted ?? false);
+  const [japanRemittanceNote, setJapanRemittanceNote] = useState(row?.japanRemittanceNote ?? "");
+  const [historyNote, setHistoryNote] = useState(row?.historyNote ?? "");
+  const [etcNote, setEtcNote] = useState(row?.etcNote ?? "");
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState<string | SectionEditConflictError | null>(null);
+  const [isConflict, setIsConflict] = useState(false);
+
+  const disabled = isSubmitting || isConflict;
+
+  /**
+   * 방금 추가한 줄로 포커스를 옮기기 위한 자리. **키보드만으로 쓸 수 있어야
+   * 하기 때문**이다 — '추가'를 누르면 새 줄이 폼 중간에 생기는데, 포커스가
+   * 버튼에 남아 있으면 그 줄까지 Tab 을 거꾸로 세어 가야 한다.
+   *
+   * state 가 아니라 ref 인 것은 일부러다. 이 값은 **그리는 데 쓰이지 않으므로**
+   * 바뀐다고 다시 그릴 이유가 없고, state 로 두면 effect 안에서 그것을 비우는
+   * setState 가 필요해져 렌더가 한 번 더 돈다. 아래 effect 는 목록이 바뀔 때만
+   * 돌면서, 옮길 곳이 적혀 있으면 옮기고 그 자리를 비운다.
+   */
+  const pendingDueDateFocusRef = useRef<string | null>(null);
+  const addDueDateButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const key = pendingDueDateFocusRef.current;
+    if (key === null) return;
+    pendingDueDateFocusRef.current = null;
+    document.getElementById(dueDateInputId(key))?.focus();
+  }, [dueDates]);
+
+  function addDueDate() {
+    // 저장된 행의 id 와 섞이지 않는 임시 key 다. LAN 평문 HTTP 에서도
+    // 만들어져야 해서 crypto.randomUUID 를 직접 부르지 않는다(client-uuid.ts).
+    const key = generateClientUuid();
+    pendingDueDateFocusRef.current = key;
+    setDueDates((previous) => [...previous, { key, dueDate: "", note: "" }]);
+  }
+
+  function updateDueDate(key: string, patch: Partial<Omit<DueDateDraft, "key">>) {
+    setDueDates((previous) =>
+      previous.map((entry) => (entry.key === key ? { ...entry, ...patch } : entry))
+    );
+  }
+
+  function removeDueDate(key: string) {
+    setDueDates((previous) => previous.filter((entry) => entry.key !== key));
+    // 지운 줄과 함께 포커스가 사라지면 키보드 사용자는 갈 곳을 잃는다.
+    // 남은 줄의 번호가 당겨지므로 어느 줄로 보내도 어색하고, '추가' 버튼은
+    // 이 묶음에 늘 있는 자리라 그리로 돌려보낸다.
+    addDueDateButtonRef.current?.focus();
+  }
+
+  /**
+   * 저장돼 있는 연결. 지금 고른 것과 다를 수 있다.
+   *
+   * 고장내역 힌트는 **이 값을 그대로 두고 있을 때만** 그린다 — 고르개가 실어
+   * 오는 항목에는 고장내역이 없어서(조회 쪽 RepairCaseLinkOption), 다른 건을
+   * 고르면 그 건의 고장내역을 알 길이 없다. 그때도 옛 힌트를 띄우면 사용자는
+   * 방금 고른 건의 값이라고 읽는다 — 틀린 값을 보여 주느니 아무것도 보여 주지
+   * 않는 편이 낫다.
+   */
+  const savedRepairCaseId = row?.repairCaseId ?? "";
+  const showSavedFaultHint = repairCaseId !== "" && repairCaseId === savedRepairCaseId;
+
+  /**
+   * 검색어로 걸러 낸 목록과, 실제로 `<select>` 에 그릴 목록.
+   *
+   * 둘을 나눠 두는 이유: 지금 고른 건은 검색어에 걸리지 않아도 목록에 남아야
+   * 하는데(안 남기면 select 가 '연결 없음'을 보여 주면서 state 에는 연결이
+   * 남는다), 그 붙잡아 둔 항목까지 세면 "맞는 수리 건이 없습니다"를 낼 수
+   * 없게 된다.
+   */
+  const matchedRepairCases = useMemo(
+    () => filterRepairCaseLinkOptions(repairCaseOptions, repairCaseQuery),
+    [repairCaseOptions, repairCaseQuery]
+  );
+  const visibleRepairCases = useMemo(
+    () => keepSelectedRepairCaseOption(repairCaseOptions, matchedRepairCases, repairCaseId),
+    [repairCaseOptions, matchedRepairCases, repairCaseId]
+  );
+
+  /**
+   * 견적서 드롭다운의 후보 — **지금 고른 수리 건의 견적서만**이다(2026-09-11).
+   * 무엇이 남는지 정하는 규칙은 domain/quote-link-options.ts 에 있다.
+   *
+   * 🔴 지금 연결된 견적서는 다른 건의 것이어도 남는다. 수리 건을 바꿨다고
+   * 연결을 조용히 풀지 않는다 — 풀면 "견적서를 따르던" 번호·발행일·금액이
+   * 저장 한 번에 손으로 적어 둔 옛 값으로 되돌아가는데, 화면에서는 수리 건만
+   * 바꿨으니 그 일이 일어났다는 것을 알 길이 없다. 대신 그 항목에 표시를 달고
+   * 경고를 띄워(아래 견적서 연결 칸), 풀지 말지는 사람이 정하게 한다.
+   */
+  const quoteChoices = useMemo(
+    () => selectQuoteLinkChoices(quoteOptions, repairCaseId, quoteId),
+    [quoteOptions, repairCaseId, quoteId]
+  );
+
+  /**
+   * 붙잡아 둔(고른 수리 건의 것이 아닌) 견적서 항목 앞에 붙일 말. 요약 줄
+   * **앞**에 둔다 — 요약 줄이 길어 select 가 뒤를 자르므로 뒤에 달면 안 보인다.
+   *
+   * 그 견적서가 붙은 건의 인수번호를 고르개 목록에서 찾아 적는다. 휴지통에 든
+   * 건은 거기 없으므로 인수번호 없이 적는다 — 없는 번호를 지어내지 않는다.
+   */
+  function outsideQuotePrefix(option: QuoteOption): string {
+    if (option.repairCaseId === null) return "(수리 건 없는 견적서)";
+    const intakeNumber = repairCaseOptions.find(
+      (candidate) => candidate.id === option.repairCaseId
+    )?.intakeNumber;
+    return intakeNumber ? `(다른 수리 건 ${intakeNumber})` : "(다른 수리 건)";
+  }
+
+  /**
+   * 흐린 글씨의 출처 — **지금 고른 수리 건**이다.
+   *
+   * 고르개 목록에서 먼저 찾는다(고르는 즉시 그 건의 값으로 바뀐다). 목록에
+   * 없는데 저장돼 있는 연결이면 목록 조회가 실어 온 값으로 내려온다 — 휴지통에
+   * 들어간 수리 건이 그렇다. 그런 줄도 연결은 살아 있고(조회의 LEFT JOIN),
+   * 힌트가 사라질 이유는 없다.
+   *
+   * 여기서 나온 값이 닿는 곳은 placeholder 뿐이다(파일 헤더).
+   */
+  const linkedRepairCase = useMemo(() => {
+    if (repairCaseId === "") return null;
+    const picked = repairCaseOptions.find((option) => option.id === repairCaseId);
+    if (picked) {
+      return {
+        intakeNumber: picked.intakeNumber,
+        customerName: picked.customerName,
+        modelName: picked.modelName,
+        lotNumber: picked.lotNumber,
+        serialNumber: picked.serialNumber,
+        requestedDueDate: picked.customerRequestedDueDate,
+      };
+    }
+    if (!row || repairCaseId !== savedRepairCaseId) return null;
+    return {
+      intakeNumber: row.intakeNumber,
+      customerName: row.repairCaseCustomerName,
+      modelName: row.repairCaseModelName,
+      lotNumber: row.repairCaseLotNumber,
+      serialNumber: row.repairCaseSerialNumber,
+      requestedDueDate: row.repairCaseCustomerRequestedDueDate,
+    };
+  }, [repairCaseId, repairCaseOptions, row, savedRepairCaseId]);
+
+  /**
+   * 흐린 글씨 한 줄. 값이 없으면 undefined 를 돌려준다 — 빈 문자열을 넘기면
+   * placeholder 속성이 붙은 채로 아무것도 안 보여서, 나중에 이 칸을 읽는 쪽이
+   * "힌트가 있다"고 잘못 읽는다.
+   */
+  function repairCasePlaceholder(value: string | null | undefined): string | undefined {
+    return foldBlankToNull(value) ?? undefined;
+  }
+
+  /**
+   * 검색 칸에서 Enter 를 눌렀을 때.
+   *
+   * **먼저 폼 저장을 막는다.** 입력칸 하나에서 Enter 를 누르면 브라우저가 폼을
+   * 제출한다 — 검색어를 치다 습관적으로 Enter 를 누른 사람이 아직 고르지도
+   * 않은 상태의 줄을 저장하게 된다.
+   *
+   * 그 자리를 놀리지 않고, 걸린 건이 **딱 하나면** 그것을 고른다. 인수번호를
+   * 끝까지 치면 늘 하나만 남으므로, 마우스는 물론 Tab 도 없이 고를 수 있다.
+   */
+  function handleRepairCaseSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (matchedRepairCases.length === 1) setRepairCaseId(matchedRepairCases[0].id);
+  }
+
+  /** 고객사 드롭다운의 '연결 없음'에 덧붙일 이름. 연결이 없으면 null 이다. */
+  const linkedCustomerName = repairCasePlaceholder(linkedRepairCase?.customerName) ?? null;
+
+  /**
+   * 납기요청일 묶음 아래 한 줄. **흐린 글씨로는 안 된다** — `<input
+   * type="date">` 에는 placeholder 를 넘겨도 브라우저가 그리지 않고(칸 안이
+   * 이미 `연도-월-일` 같은 자기 글자로 차 있다), 이제는 칸이 여럿이라 어느
+   * 칸에 넣어야 할지도 말할 수 없다. 그래서 묶음 밑에 한 줄로 둔다.
+   *
+   * ⚠️ **이 값은 저장되지 않는다.** 내자의 납기 요청일은 발주서에 적힌
+   * 날짜라 수리 건의 고객 요청 납기일과 같아야 할 이유가 없고(조회 쪽 주석),
+   * 목록의 값을 대신하지도 않는다. 그래서 여기서 나온 글자가 닿는 곳은 이
+   * 안내 문장 하나뿐이다 — 위 dueDates state 에는 어떤 경로로도 들어가지
+   * 않는다. 비워 둔다고 이 날짜가 표에 뜨지 않으므로 "그대로 보입니다"가
+   * 아니라 "적혀 있습니다"라고 적는다.
+   */
+  function requestedDueDateHint(): ReactNode {
+    const hint = repairCasePlaceholder(linkedRepairCase?.requestedDueDate);
+    if (hint === undefined) return null;
+    return <p className={hintClass}>연결된 수리 건의 고객 요청 납기일: {hint}</p>;
+  }
+
+  /**
+   * 고장내역 칸 아래 한 줄. 이 칸만 흐린 글씨를 못 쓰는 이유는 자료가 없어서다
+   * — 고르개 항목에는 고장내역이 없어서 **저장돼 있는 연결을 그대로 둘 때만**
+   * 값을 안다(위 showSavedFaultHint).
+   */
+  function faultDescriptionHint(): ReactNode {
+    if (!showSavedFaultHint) return null;
+    const hint = foldBlankToNull(row?.repairCaseReportedSymptom);
+    if (hint === null) return null;
+    return (
+      <p className={hintClass}>
+        연결된 수리 건{row?.intakeNumber ? ` ${row.intakeNumber}` : ""}: {hint}
+        <br />
+        비워 두면 이 값이 그대로 보입니다.
+      </p>
+    );
+  }
+
+  /**
+   * 납품일 자리에 **글자로** 적을 값. 입력칸이 아니라 읽기 전용 한 줄이다.
+   * **수리 건이 연결돼 있을 때만** 부른다 — 연결이 없으면 그 자리는 날짜
+   * 입력칸이다(2026-09-11, 아래 납품일 자리).
+   *
+   * 두 가지 경우를 서로 다른 말로 적는다 — 둘 다 화면에는 "날짜가 없다"로
+   * 똑같이 보이지만, 사람이 다음에 해야 할 일이 다르기 때문이다:
+   *
+   *  - 방금 **다른** 건을 골랐다 → 저장하기 전에는 그 건의 출하일을 알 수 없다.
+   *    고르개가 실어 오는 항목에 실제 출하일이 없어서다(조회 쪽
+   *    RepairCaseLinkOption) — 그때 저장돼 있던 옛 날짜를 그대로 두면 사용자는
+   *    방금 고른 건의 값이라고 읽는다. 고장내역 힌트가 같은 이유로 같은 조건을
+   *    쓴다(위 showSavedFaultHint).
+   *  - 연결은 그대로인데 날짜가 없다 → 그 건이 아직 안 나갔다. 기다리는 것 말고
+   *    이 폼에서 할 수 있는 일이 없다.
+   */
+  function deliveredDateText(): string {
+    if (repairCaseId !== savedRepairCaseId) {
+      return "저장하면 지금 고른 수리 건의 실제 출하일이 보입니다";
+    }
+    return foldBlankToNull(row?.repairCaseActualShipmentDate) ?? "아직 출하 기록이 없습니다";
+  }
+
+  /**
+   * 연결이 없을 때 납품일 입력칸 아래 한 줄.
+   *
+   * 저장돼 있던 줄이 **연결된 채였고**, 입력칸에 보이는 날짜가 불러온 그대로라면
+   * 그 날짜는 목록에 보이던 출하일이 아니라 **예전에 이 줄에 손으로 적어 둔
+   * 값**이다(파일 헤더 — 연결된 줄은 그 값을 목록에 그리지 않는다). 방금 연결을
+   * 푼 사람은 목록에서 보던 날짜와 다른 날짜를 보게 되므로, 까닭을 함께 적는다.
+   * 이 말이 없으면 "연결을 풀었더니 날짜가 바뀌었다"로 읽힌다.
+   */
+  function unlinkedDeliveredDateHint(): ReactNode {
+    const showsSavedHandValue =
+      savedRepairCaseId !== "" && deliveredDate !== "" && deliveredDate === savedDeliveredDate;
+    return (
+      <p className={hintClass}>
+        수리 건 연결이 없는 줄이라 납품일을 직접 적습니다. 수리 건을 연결하면 그 건의 실제
+        출하일이 대신 보입니다.
+        {showsSavedHandValue && (
+          <>
+            <br />
+            지금 칸의 날짜는 이 줄에 손으로 적혀 있던 값입니다 — 연결돼 있던 수리 건의 출하일이
+            아닙니다.
+          </>
+        )}
+      </p>
+    );
+  }
+
+  /**
+   * 연결된 채로 납품일 자리 아래 붙는 한 줄 — **이 폼에서 연결을 풀고 날짜를
+   * 고친 뒤 다시 연결했을 때만** 보인다. 불러온 그대로라면 아무것도 그리지
+   * 않는다(연결된 줄의 모양은 이 기능 전과 같다).
+   *
+   * 입력칸은 사라졌지만 고친 날짜는 버리지 않고 저장에 실린다(파일 헤더). 말없이
+   * 실으면 사용자는 "연결했으니 그 날짜는 없어졌다"고 읽고, 말없이 버리면 적은
+   * 값이 사라진다 — 둘 다 조용한 일이라 한 줄로 알린다.
+   */
+  function linkedDeliveredDateDraftHint(): ReactNode {
+    if (deliveredDate === savedDeliveredDate) return null;
+    return (
+      <p className={hintClass} role="status">
+        {deliveredDate === ""
+          ? "연결 없음일 때 지운 납품일은 저장하면 이 줄에서 지워집니다."
+          : `연결 없음일 때 적은 납품일 ${deliveredDate} 은(는) 지워지지 않고 이 줄에 저장됩니다.`}{" "}
+        수리 건이 연결돼 있는 동안 목록에는 그 건의 실제 출하일이 보입니다.
+      </p>
+    );
+  }
+
+  /**
+   * 충돌 상자에 넣을 납기일 한 줄 — "2026-01-20 (1차분), 2026-02-15".
+   *
+   * 아무것도 안 적은 줄은 뺀다(붙잡을 글이 없다). 날짜 없이 메모만 친 줄은
+   * 남긴다 — 그 메모가 바로 다시 불러온 화면에서 사라지는 글이다. 목록을
+   * 글자로 만드는 규칙은 표와 같은 함수를 쓴다.
+   */
+  function dueDatesDraftText(): string {
+    const written = dueDates.filter(
+      (entry) => entry.dueDate.trim() !== "" || entry.note.trim() !== ""
+    );
+    if (written.length === 0) return "";
+    return (
+      formatDomesticOrderDueDates(
+        written.map((entry) => ({
+          dueDate: entry.dueDate.trim() === "" ? "(날짜 없음)" : entry.dueDate.trim(),
+          note: entry.note,
+        }))
+      ) ?? ""
+    );
+  }
+
+  function collectFields(): Record<string, unknown> {
+    return {
+      repairCaseId: repairCaseId || null,
+      intakeNumberText,
+      customerId: customerId || null,
+      modelNameText,
+      lotNumberText,
+      serialNumberText,
+      faultDescriptionText,
+      displayOrder,
+      purchaseOrderNumber,
+      projectName,
+      orderIssuedDate,
+      // 폼에 늘어놓은 **차례 그대로** 보낸다 — 차례는 저장하는 쪽이 이 배열의
+      // index 로 매긴다(validation 의 DomesticOrderDueDateInput 주석). 여기서
+      // 빈 줄을 걸러 내지 않는 것은 일부러다: 무엇이 빈 줄인지 정하는 규칙은
+      // 검증 한 곳에 있어야 하고, 화면이 미리 걸러 내면 두 곳이 어긋난다.
+      dueDates: dueDates.map((entry) => ({ dueDate: entry.dueDate, note: entry.note })),
+      quoteIssuedDate,
+      quoteNumber,
+      quoteId,
+      progressNote,
+      // ⚠️ **입력칸이 없을 때(수리 건이 연결돼 있을 때)도 반드시 실어 보낸다.**
+      // 이 저장은 모든 칼럼을 SET 하므로, 여기서 빼면 DB 에 남아 있는 납품일이
+      // 저장 한 번에 지워진다(위 deliveredDate 선언의 주석). 값은 원본 칸에서
+      // 시작한 state 그대로다 — 계산된 출하일이 섞일 길은 없다.
+      deliveredDate,
+      deliveredBy,
+      taxInvoiceDate,
+      amountExcludingVat,
+      paymentCompleted,
+      japanRemittanceNote,
+      historyNote,
+      etcNote,
+    };
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (disabled) return;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setFieldErrors({});
+    const fields = collectFields();
+    try {
+      const result = row
+        ? await updateDomesticOrderAction({ id: row.id, expectedVersion: row.version, fields })
+        : await createDomesticOrderAction({ fields });
+
+      if (!result.ok) {
+        if (result.code === "CONFLICT") {
+          // 얼리기 **전에** 적어 둔 글을 붙잡는다 — 곧 폼이 사라지기 때문이다.
+          setIsConflict(true);
+          setSubmitError({
+            message: result.message,
+            // 납기일 목록은 배열이라 buildDraftText 가 걸러 낸다. 손으로 친
+            // 메모를 잃지 않도록 여기서만 한 줄 글자로 만들어 얹는다
+            // (DRAFT_LABELS 의 dueDatesText). 서버로 가는 fields 는 그대로다.
+            draftText: buildDraftText(
+              { ...fields, dueDatesText: dueDatesDraftText() },
+              DRAFT_LABELS
+            ),
+          });
+          return;
+        }
+        setFieldErrors(result.fieldErrors ?? {});
+        setSubmitError(result.message);
+        return;
+      }
+
+      router.refresh();
+      onDone();
+      // 내자 목록 위의 폼이라 그 자리가 곧 목록이다 — 팝업만 띄운다(common/SavePopup.tsx).
+      showSavePopup({ message: row ? "내자 줄을 저장했습니다." : "내자 줄을 등록했습니다.", redirectTo: null });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function reloadAfterConflict() {
+    router.refresh();
+    onDone();
+  }
+
+  function renderText(
+    key: string,
+    label: string,
+    value: string,
+    onChange: (next: string) => void,
+    options: {
+      type?: string;
+      long?: boolean;
+      inputMode?: "numeric" | "decimal";
+      /** 입력칸 아래 회색으로 붙는 안내. 값은 건드리지 않는다(파일 헤더). */
+      hint?: ReactNode;
+      /**
+       * 칸 안의 흐린 글씨. **value 와 섞이지 않는다** — 브라우저가 그리는
+       * 표시일 뿐이라 사용자가 직접 치지 않으면 state 에 들어가지 않는다
+       * (파일 헤더의 'placeholder 다. value 가 아니다').
+       */
+      placeholder?: string;
+    } = {}
+  ) {
+    return (
+      <div className={options.long ? "sm:col-span-2 lg:col-span-3" : undefined}>
+        <label className={editLabelClass} htmlFor={`domestic-order-${key}`}>
+          {label}
+        </label>
+        {options.long ? (
+          <textarea
+            id={`domestic-order-${key}`}
+            className={textAreaClass}
+            value={value}
+            placeholder={options.placeholder}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        ) : (
+          <input
+            id={`domestic-order-${key}`}
+            type={options.type ?? "text"}
+            inputMode={options.inputMode}
+            className={editInputClass}
+            value={value}
+            placeholder={options.placeholder}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        )}
+        {fieldErrors[key] && <p className={editErrorClass}>{fieldErrors[key]}</p>}
+        {options.hint}
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      noValidate
+      className="rounded-lg border border-zinc-300 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900"
+    >
+      {/* 제목 줄 오른쪽 끝에 `휴지통으로 보내기` 가 선다(지울 수 있는 세션에서
+          고치는 중일 때만). 제목과 한 줄이라 폼의 높이는 이 변경 전과 같고,
+          표의 22칼럼·순번 칸도 건드리지 않는다 — 한 줄의 조작이 모이는 자리가
+          이 폼이다. 저장 단추 옆에 두지 않는 것은 일부러다: 저장과 지우기가
+          나란히 서면 손이 미끄러지는 자리가 된다.
+
+          -my-0.5 는 단추(22px)가 제목 줄(20px)보다 높아 줄이 2px 자라는 것을
+          되돌린다 — 이 화면은 위쪽 높이가 그대로 표에서 빠지는 구조다(목록 화면
+          머리말의 '표 위쪽은 자리를 적게 쓴다'). */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+          {row ? "줄 수정" : "행 추가"}
+        </h2>
+        {row && onRequestDelete && (
+          <button
+            type="button"
+            onClick={onRequestDelete}
+            disabled={disabled}
+            className="-my-0.5 rounded-md border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+          >
+            휴지통으로 보내기
+          </button>
+        )}
+      </div>
+
+      {/* 비워 두는 것이 기본이라는 사실을 폼 맨 위에 적는다 — 입력칸만 보면
+          "채워야 하는 칸"으로 읽히고, 그렇게 채운 값은 수리 건 쪽이 바뀌어도
+          따라가지 않는다(파일 헤더).
+
+          흐린 글씨가 무엇인지도 여기서 한 번 말한다. placeholder 만 보면
+          "왜 안 채워지지?"로 읽혀서, 사용자가 굳이 그대로 옮겨 적게 된다 —
+          그 순간 그 값은 이 줄에 박제되어 수리 건을 따라가지 않는다.
+
+          ⚠️ 위 두 줄은 **수리 건이 연결돼 있을 때의 말**이다. 연결이 없으면
+          따라갈 값도 흐린 글씨도 없어서 "비워 두면 따라갑니다 · 다를 때만
+          적으세요"가 거꾸로 적지 말라는 말로 읽힌다 — 그런 줄에는 이 칸들이
+          값을 적을 유일한 자리다(파일 헤더). 그래서 연결이 없을 때는 적으라는
+          말로 바꿔 보여 준다(2026-09-11). 줄 수가 같아 폼 높이도 같다. */}
+      {repairCaseId === "" ? (
+        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+          <strong className="font-semibold">수리 건 연결이 없는 줄</strong>입니다. 고객사 · 인수번호
+          · 형식 · L/N · S/N · 고장내역 · 납품일을 이 줄에 직접 적습니다.
+          <br />
+          나중에 수리 건을 연결하면 비워 둔 칸은 그 건의 값을 따라가고, 납품일은 그 건의 실제
+          출하일이 보입니다.
+        </p>
+      ) : (
+        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+          고객사 · 형식 · L/N · S/N · 고장내역은 <strong className="font-semibold">비워 두면</strong>{" "}
+          연결된 수리 건의 값을 그대로 따라갑니다. 발주서에 다르게 적힌 경우에만 직접 입력하세요.
+          <br />
+          칸 안의 <strong className="font-semibold">흐린 글씨</strong>는 연결된 수리 건에 적혀 있는
+          값입니다. 그대로 두면(비워 두면) 목록에 그 값이 보이며, 저장되지는 않습니다.
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+        {renderText("displayOrder", "순번", displayOrder, setDisplayOrder, { inputMode: "numeric" })}
+
+        <div>
+          <label className={editLabelClass} htmlFor="domestic-order-repairCaseId">
+            수리 건 연결
+          </label>
+          {/* 검색 칸이 먼저다. 여기서 무엇을 치든 저장되는 값은 아니고,
+              아래 select 에 무엇이 남는지만 정한다. */}
+          <input
+            type="search"
+            className={`${editInputClass} mb-1`}
+            value={repairCaseQuery}
+            disabled={disabled}
+            placeholder="인수번호로 검색 (고객사 · 형식도 됩니다)"
+            aria-label="수리 건 검색"
+            aria-controls="domestic-order-repairCaseId"
+            autoComplete="off"
+            onChange={(e) => setRepairCaseQuery(e.target.value)}
+            onKeyDown={handleRepairCaseSearchKeyDown}
+          />
+          <select
+            id="domestic-order-repairCaseId"
+            className={editInputClass}
+            value={repairCaseId}
+            disabled={disabled}
+            onChange={(e) => setRepairCaseId(e.target.value)}
+          >
+            {/* 연결 없는 줄이 정상이다 — 수리 없이 납품만 있는 줄, 발주는
+                받았지만 아직 접수 전인 줄이 실제로 있다(schema 헤더).
+                검색어가 무엇이든 이 항목은 **절대 걸러지지 않는다.** 연결을
+                끊을 길이 검색어에 따라 사라지면 안 된다. */}
+            <option value="">연결 없음</option>
+            {visibleRepairCases.map((option) => (
+              <option key={option.id} value={option.id}>
+                {[option.intakeNumber, option.customerName, option.modelName]
+                  .filter((part): part is string => Boolean(part))
+                  .join(" · ")}
+              </option>
+            ))}
+          </select>
+          {/* 아무것도 안 걸렸다는 사실을 말해 준다. 이 말이 없으면 '연결 없음'
+              하나만 남은 목록이 "연결할 수 있는 건이 없다"로 읽힌다. */}
+          {matchedRepairCases.length === 0 && repairCaseOptions.length > 0 && (
+            <p className={hintClass} role="status">
+              맞는 수리 건이 없습니다. 검색어를 지우면 전체 {repairCaseOptions.length}건이 다시
+              보입니다.
+            </p>
+          )}
+          {fieldErrors.repairCaseId && <p className={editErrorClass}>{fieldErrors.repairCaseId}</p>}
+        </div>
+
+        <div>
+          <label className={editLabelClass} htmlFor="domestic-order-customerId">
+            고객사
+          </label>
+          <select
+            id="domestic-order-customerId"
+            className={editInputClass}
+            value={customerId}
+            disabled={disabled}
+            onChange={(e) => setCustomerId(e.target.value)}
+          >
+            {/* '연결 없음'이 기본값이다 — 고르지 않으면 연결된 수리 건의
+                고객사를 따르고, 연결도 없으면 목록에서 '(고객사 미지정)'
+                묶음에 들어간다. 값을 지울 길이 없으면 한 번 잘못 고른 고객사를
+                되돌릴 방법이 없어진다.
+
+                여기만은 흐린 글씨를 쓸 수 없다(select 에는 placeholder 가
+                없다). 그래서 **고르지 않았을 때 무엇이 보이게 되는지를 그
+                항목 이름에 적는다** — 이 말이 없으면 '연결 없음'이 "고객사가
+                비어 있는 줄"로 읽힌다. */}
+            <option value="">
+              {linkedCustomerName === null
+                ? "연결 없음"
+                : `연결 없음 (수리 건: ${linkedCustomerName})`}
+            </option>
+            {customerOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+          {fieldErrors.customerId && <p className={editErrorClass}>{fieldErrors.customerId}</p>}
+        </div>
+
+        {renderText("intakeNumberText", "인수번호(직접 입력)", intakeNumberText, setIntakeNumberText, {
+          placeholder: repairCasePlaceholder(linkedRepairCase?.intakeNumber),
+        })}
+        {renderText("modelNameText", "형식", modelNameText, setModelNameText, {
+          placeholder: repairCasePlaceholder(linkedRepairCase?.modelName),
+        })}
+        {renderText("lotNumberText", "L/N", lotNumberText, setLotNumberText, {
+          placeholder: repairCasePlaceholder(linkedRepairCase?.lotNumber),
+        })}
+        {renderText("serialNumberText", "S/N", serialNumberText, setSerialNumberText, {
+          placeholder: repairCasePlaceholder(linkedRepairCase?.serialNumber),
+        })}
+        {renderText("purchaseOrderNumber", "발주서번호", purchaseOrderNumber, setPurchaseOrderNumber)}
+        {renderText("projectName", "PJT", projectName, setProjectName)}
+        {renderText("orderIssuedDate", "발주발행일", orderIssuedDate, setOrderIssuedDate, { type: "date" })}
+        {/* 납기요청일은 **여러 개**다 — 분할 납품이면 같은 발주에 날짜가
+            각각 붙는다(schema/domestic-order-due-dates.ts). 다른 칸들과 달리
+            한 칸이 아니라 묶음이라 표 너비를 다 쓴다.
+
+            추가·삭제 버튼과 각 줄의 입력칸이 전부 진짜 <button>/<input> 이라
+            마우스 없이도 다룰 수 있다. */}
+        <fieldset className="sm:col-span-2 lg:col-span-3">
+          <legend className={editLabelClass}>납기요청일</legend>
+
+          {dueDates.length === 0 ? (
+            // 빈 목록이 정상이라는 사실을 적어 둔다 — 아무것도 없는 자리는
+            // "고장 났나?"로 읽힌다.
+            <p className={hintClass}>납기요청일이 없습니다. 필요하면 아래에서 추가하세요.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {dueDates.map((entry, index) => {
+                const errorKey = `dueDates.${index}`;
+                return (
+                  // key 는 index 가 아니다 — 가운데 줄을 지웠을 때 남은 칸에
+                  // 엉뚱한 값이 남지 않게 한다(DueDateDraft 주석).
+                  <li key={entry.key} className="flex flex-col gap-1">
+                    {/* 폭은 감싸는 칸이 정한다 — editInputClass 에 이미
+                        w-full 이 있어서, 같은 문자열에 w-auto 를 덧붙여도
+                        어느 쪽이 이길지는 클래스 이름의 순서가 아니라
+                        만들어진 CSS 의 순서가 정한다(목록 화면이 배경색을
+                        겹쳐 쓰지 않는 것과 같은 이유). */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="w-44 flex-none">
+                        <input
+                          id={dueDateInputId(entry.key)}
+                          type="date"
+                          className={editInputClass}
+                          value={entry.dueDate}
+                          disabled={disabled}
+                          // 한 화면에 여러 개라 "납기요청일"만으로는 화면
+                          // 낭독기가 어느 줄인지 말할 수 없다.
+                          aria-label={`납기요청일 ${index + 1}`}
+                          onChange={(e) => updateDueDate(entry.key, { dueDate: e.target.value })}
+                        />
+                      </div>
+                      <div className="min-w-40 flex-1">
+                        <input
+                          type="text"
+                          className={editInputClass}
+                          value={entry.note}
+                          disabled={disabled}
+                          placeholder="메모 (예: 1차분)"
+                          aria-label={`납기요청일 ${index + 1} 메모`}
+                          onChange={(e) => updateDueDate(entry.key, { note: e.target.value })}
+                        />
+                      </div>
+                      {/* ⚠️ **relative 를 떼지 말 것 — 떼면 창 스크롤이 하나 더
+                          생긴다.** 아래 sr-only 는 position:absolute 다(Tailwind
+                          의 sr-only 가 그렇다). 이 버튼에 relative 가 없으면 그
+                          span 의 컨테이닝 블록을 만들어 주는 조상이 이 폼에도
+                          목록 화면에도 하나가 없어 기준이 문서가 되고, overflow
+                          는 자기보다 바깥에 컨테이닝 블록을 둔 절대위치 자손을
+                          자르지 못하므로 span 이 AppShell <main> 의 자르기를
+                          그대로 빠져나가 문서 바닥에 자리를 주장한다.
+
+                          **이 자리는 폼이 열렸을 때만 걸린다** — 그래서 눈에 잘
+                          안 띈다. 폼이 열리면 위쪽이 화면 절반을 먹어 이 줄들이
+                          <main> 의 접힌 자리 아래로 내려가는데, 그때 새어 나간
+                          span 이 그 깊이만큼 문서를 늘린다. 같은 표의 `수정`
+                          버튼·인수번호 링크가 방금 같은 고장으로 405px 을
+                          굴렸다(DomesticOrderListScreen 의 EditRowButton 주석에
+                          실측이 있다). 규모가 작다는 것은 안 고쳐도 된다는 뜻이
+                          아니라, 남겨 두면 다음에 같은 증상을 처음부터 다시
+                          진단하게 된다는 뜻이다.
+
+                          relative 는 좌표를 주지 않으면 아무것도 옮기지 않고
+                          z-index:auto 라 쌓임 맥락도 만들지 않는다 — 기준점만
+                          준다. 아래 `납기요청일 추가` 버튼에 없는 것은 그쪽에
+                          sr-only 가 없어서다. */}
+                      <button
+                        type="button"
+                        className="relative flex-none rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                        disabled={disabled}
+                        onClick={() => removeDueDate(entry.key)}
+                      >
+                        삭제
+                        <span className="sr-only"> — 납기요청일 {index + 1}</span>
+                      </button>
+                    </div>
+                    {fieldErrors[errorKey] && (
+                      <p className={editErrorClass}>{fieldErrors[errorKey]}</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <button
+            type="button"
+            ref={addDueDateButtonRef}
+            className="mt-2 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-700"
+            disabled={disabled}
+            onClick={addDueDate}
+          >
+            납기요청일 추가
+          </button>
+
+          {/* 목록 전체가 잘못된 경우(개수 상한 초과 등)의 자리. 줄마다의
+              오류는 위에서 그 줄 밑에 붙는다. */}
+          {fieldErrors.dueDates && <p className={editErrorClass}>{fieldErrors.dueDates}</p>}
+          {requestedDueDateHint()}
+        </fieldset>
+        {renderText("quoteIssuedDate", "견적발행일", quoteIssuedDate, setQuoteIssuedDate, { type: "date" })}
+        <div className="flex flex-col gap-1">
+          <label className={editLabelClass} htmlFor="domestic-order-quoteId">
+            견적서 연결
+          </label>
+          <select
+            id="domestic-order-quoteId"
+            className={editInputClass}
+            value={quoteId ?? ""}
+            onChange={(event) => setQuoteId(event.target.value === "" ? null : event.target.value)}
+            disabled={disabled}
+          >
+            {/* 고르면 아래 견적서번호·견적발행일과 금액이 **그 견적서를 따른다**.
+                손으로 적어 둔 값은 지우지 않으므로, 연결을 풀면 다시 보인다
+                (schema/domestic-orders.ts 의 quote_id 주석). */}
+            <option value="">연결 없음 (아래 칸에 직접 적습니다)</option>
+            {/* 후보는 지금 고른 수리 건의 견적서뿐이다(quoteChoices). 다른 건의
+                것이 하나 섞여 있다면 그것은 **지금 연결된 견적서**다 — 빼면
+                select 가 '연결 없음'을 보여 주면서 상태에는 연결이 남는다.
+                그래서 남기되 앞에 표시를 단다. */}
+            {quoteChoices.visible.map((option) => (
+              <option key={option.id} value={option.id}>
+                {quoteChoices.selectedOutsideRepairCase && option.id === quoteId
+                  ? `${outsideQuotePrefix(option)} ${option.summaryLine}`
+                  : option.summaryLine}
+              </option>
+            ))}
+          </select>
+          {fieldErrors.quoteId && <p className={editErrorClass}>{fieldErrors.quoteId}</p>}
+          {/* 후보가 비어 있는 까닭을 말해 준다. 이 말이 없으면 '연결 없음'
+              하나만 남은 목록이 "견적서가 사라졌다"로 읽힌다. 수리 건 연결의
+              '맞는 수리 건이 없습니다'와 같은 이유다. */}
+          {repairCaseId === "" ? (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              수리 건을 먼저 고르면 그 건의 견적서가 나옵니다.
+            </p>
+          ) : (
+            quoteChoices.sameRepairCase.length === 0 && (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                이 수리 건에 만든 견적서가 없습니다.
+              </p>
+            )
+          )}
+          {/* 🔴 수리 건을 바꿨거나 옛 줄이 다른 건의 견적서를 물고 있을 때.
+              연결은 풀지 않고(quoteChoices 주석) 사실만 알린다 — 그대로
+              저장하면 이 연결이 남는다는 것까지 적어야, 경고를 보고도 "저장하면
+              알아서 정리되겠지"로 넘기지 않는다. 수리 건을 안 고른 줄은 '이
+              수리 건'이 없으므로 이 경고 대신 위 안내 한 줄만 보인다. */}
+          {repairCaseId !== "" && quoteChoices.selectedOutsideRepairCase && (
+            <p className="text-xs text-amber-800 dark:text-amber-300" role="status">
+              고른 견적서가 이 수리 건의 것이 아닙니다. 그대로 저장하면 이 연결이 남습니다 —{" "}
+              {quoteChoices.sameRepairCase.length > 0
+                ? "이 건의 견적서를 고르거나 ‘연결 없음’으로 바꾸세요."
+                : "풀려면 ‘연결 없음’으로 바꾸세요."}
+            </p>
+          )}
+          {quoteId && (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              견적서번호 · 견적발행일 · 금액은 연결된 견적서를 따릅니다. 아래 칸에 적은 값은 지워지지 않고, 연결을 풀면 다시 보입니다.
+            </p>
+          )}
+        </div>
+
+        {renderText("quoteNumber", "견적서번호", quoteNumber, setQuoteNumber)}
+        {/* ⚠️ **수리 건이 연결돼 있으면 납품일에는 입력칸이 없다.** 빈 자리로
+            두지 않고 지금 값과 까닭을 함께 적는 이유는, 있던 칸이 그냥 사라지면
+            "고장 났다"로 읽히기 때문이다 — 이 폼의 납기요청일 빈 묶음에도 같은
+            이유로 한 줄이 붙어 있다.
+
+            값은 손으로 적는 것이 아니라 워크플로가 출하 완료 때 자동으로 찍는다
+            (mutations/workflow-transitions.ts). 여기서 받을 방법이 없으므로 받는
+            척도 하지 않는다.
+
+            **연결이 없으면 날짜 입력칸이다**(2026-09-11) — 출하일이 없는 줄이라
+            이 줄에 적는 값이 그 줄의 납품일이다. 입력칸은 원본 칸(deliveredDate
+            state)만 담고, 계산된 출하일은 어떤 경로로도 들어오지 않는다.
+
+            ⚠️ 어느 쪽이든 **저장에는 그 state 가 실린다**(collectFields 의
+            deliveredDate) — 이 저장은 모든 칼럼을 SET 하므로, 안 보여 주는 것과
+            지우는 것은 다르게 다뤄야 한다. */}
+        {repairCaseId === "" ? (
+          renderText("deliveredDate", "납품일", deliveredDate, setDeliveredDate, {
+            type: "date",
+            hint: unlinkedDeliveredDateHint(),
+          })
+        ) : (
+          <div>
+            <span className={editLabelClass}>납품일</span>
+            <p className={`${editInputClass} text-zinc-600 dark:text-zinc-300`}>
+              {deliveredDateText()}
+            </p>
+            <p className={hintClass}>
+              납품일은 연결된 수리 건의{" "}
+              <strong className="font-semibold">실제 출하일</strong>이라 여기서 직접 적을 수
+              없습니다. 출하 완료 처리를 하면 그 날짜가 자동으로 적힙니다.
+            </p>
+            {fieldErrors.deliveredDate && (
+              <p className={editErrorClass}>{fieldErrors.deliveredDate}</p>
+            )}
+            {linkedDeliveredDateDraftHint()}
+          </div>
+        )}
+        {renderText("deliveredBy", "납품자", deliveredBy, setDeliveredBy)}
+        {renderText("taxInvoiceDate", "세금계산서발행일", taxInvoiceDate, setTaxInvoiceDate, { type: "date" })}
+        {/* type="number" 를 쓰지 않는다 — 목록이 1,234,567 처럼 끊어 보여 주므로
+            사용자가 그 모양 그대로 붙여 넣는 일이 실제로 있고, number 입력은
+            그런 값을 조용히 빈칸으로 만든다. 쉼표는 검증 쪽이 걷어 낸다. */}
+        {renderText("amountExcludingVat", "금액(VAT별도)", amountExcludingVat, setAmountExcludingVat, {
+          inputMode: "decimal",
+        })}
+        {renderText("japanRemittanceNote", "일본 송금", japanRemittanceNote, setJapanRemittanceNote)}
+
+        <div className="flex items-end">
+          <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              checked={paymentCompleted}
+              disabled={disabled}
+              onChange={(e) => setPaymentCompleted(e.target.checked)}
+            />
+            입금완료
+          </label>
+          {fieldErrors.paymentCompleted && (
+            <p className={editErrorClass}>{fieldErrors.paymentCompleted}</p>
+          )}
+        </div>
+
+        {renderText(
+          "faultDescriptionText",
+          "고장내역",
+          faultDescriptionText,
+          setFaultDescriptionText,
+          { long: true, hint: faultDescriptionHint() }
+        )}
+        {renderText("progressNote", "현황", progressNote, setProgressNote, { long: true })}
+        {renderText("historyNote", "이력", historyNote, setHistoryNote, { long: true })}
+        {renderText("etcNote", "기타", etcNote, setEtcNote, { long: true })}
+      </div>
+
+      <EditSectionActions
+        isSubmitting={isSubmitting}
+        isConflict={isConflict}
+        submitError={submitError}
+        onCancel={onDone}
+        onReloadAfterConflict={reloadAfterConflict}
+      />
+    </form>
+  );
+}

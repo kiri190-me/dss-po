@@ -27,6 +27,11 @@ import {
   lowerPermissionLevel,
   type PermissionLevel,
 } from "./permission-areas";
+import {
+  canDeleteDomesticOrders,
+  canEditDomesticOrders,
+  canViewDomesticOrders,
+} from "./domestic-order-authorization";
 import { canDeleteQuotes, canViewQuotes } from "./quote-authorization";
 import type { Role } from "./session";
 
@@ -43,6 +48,20 @@ function ladder(params: { manage?: boolean; write?: boolean; read: boolean }): P
 
 function rawBaseline(areaKey: string, role: Role): PermissionLevel {
   switch (areaKey) {
+    case "domesticOrders":
+      // 🔴 A/S 의 같은 case 와 **같은 세 줄**이다. 여기서도 역할 목록을 옮겨
+      // 적지 않고 *-authorization.ts 를 **호출해서** 구한다(이 파일 맨 위 주석).
+      //
+      // ⚠️ 이 값은 permission-areas.ts 의 domesticOrders.maxMeaningfulLevel 로
+      // **한 번 더 잘린다**(아래 baselinePermissionLevel). 둘 중 하나만 관리로
+      // 올리면 상한은 쓰기에 머물고, 휴지통은 누구에게도 열리지 않는다 —
+      // A/S 가 실제로 한 번 그 상태였다.
+      return ladder({
+        manage: canDeleteDomesticOrders(role),
+        write: canEditDomesticOrders(role),
+        read: canViewDomesticOrders(role),
+      });
+
     case "repairLabor":
       // 보는 것은 견적서와 같다 — 견적을 내려면 어떤 작업이 얼마인지 알아야 하고,
       // 못 보게 하면 사람은 다시 Excel 을 연다.

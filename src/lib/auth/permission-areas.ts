@@ -69,10 +69,10 @@ export type PermissionArea = {
 /**
  * 이 사이트가 판정하는 영역.
  *
- * 🔴 지금은 하나다 — 조각 1 이 「작업 비용」만 옮겨 왔기 때문이다. 내자 정리
- * (`domesticOrders`)와 견적서(`quotes`)는 그 화면이 오는 조각에서 **그 화면과 함께**
- * 더한다. 미리 적어 두면 아무도 못 들어가는 메뉴가 생기거나, 더 나쁘게는 화면이
- * 없는데 권한만 열린 상태가 된다.
+ * 🔴 지금은 둘이다 — 조각 1 이 「작업 비용」을, 조각 2 가 「내자 정리」를 옮겨
+ * 왔다. 견적서(`quotes`)는 그 화면이 오는 조각 3 에서 **그 화면과 함께** 더한다.
+ * 미리 적어 두면 아무도 못 들어가는 메뉴가 생기거나, 더 나쁘게는 화면이 없는데
+ * 권한만 열린 상태가 된다.
  *
  * 🔴 세 영역 모두 A/S 에서 **하위 기능이 없는 잎(leaf)** 이다(저쪽
  * `permission-features.ts` 의 PERMISSION_LEAF_KEYS 에 점 없는 키로 들어 있다).
@@ -80,6 +80,21 @@ export type PermissionArea = {
  * 하위 기능이 있는 영역(전체 A/S 현황 · 고객사 …)은 이쪽으로 올 일이 없다.
  */
 export const PERMISSION_AREAS: readonly PermissionArea[] = [
+  {
+    key: "domesticOrders",
+    // 🔴 열쇠(`domesticOrders`)·이름표·설명 모두 A/S 와 **글자 하나까지 같다**
+    // (저쪽 permission-areas.ts). 설명이 갈리면 저쪽 [역할별 접근 권한] 화면이
+    // 말하는 「관리」와 여기서 실제로 열리는 것이 어긋나 보인다.
+    label: "내자 정리",
+    // 추가·수정은 영업까지고(WRITE), 휴지통으로 보내기·복원·완전 삭제는 관리자
+    // 이상이다(MANAGE — domestic-order-authorization.ts 의
+    // canDeleteDomesticOrders). 쓰기와 갈리는 조작이 실제로 있으므로 상한이
+    // 관리다. 🔴 여기를 쓰기로 내리면 휴지통이 누구에게도 열리지 않는다 —
+    // A/S 가 실제로 한 번 그 상태였다.
+    description:
+      "국내 수주 진행 상황표(발주·견적·납품·입금). 금액과 입금 정보가 있습니다. 관리는 휴지통(삭제·복원·완전 삭제)",
+    maxMeaningfulLevel: "MANAGE",
+  },
   {
     key: "repairLabor",
     // 🔴 열쇠(`repairLabor`)는 A/S 와 같은 값이다(2026-09-04 에 이름표만 넓혔다).
