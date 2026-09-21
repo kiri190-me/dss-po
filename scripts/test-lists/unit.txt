@@ -5,9 +5,9 @@
 #   - tsx 가 TypeScript 를 그대로 읽고 tsconfig 의 `@/*` · `@dss/*` 경로도 풀어 준다.
 #   - 부트스트랩을 싣지 않는다 — 환경변수도, DB 도 없다. 🔴 이 목록의 시험은
 #     DB 에 닿을 길이 없어야 한다. 🔴 이 사이트의 DB 는 **A/S 와 같은 dss_as** 라
-#     시험이 거기 닿으면 실제 업무 자료를 건드리게 된다. DB 에 붙는 시험이
-#     필요해지면 목록을 하나 더 만들고(db.txt) package.json 에 그 목록을 부르는
-#     스크립트를 더한다. 본보기는 RF_Service_System/scripts/test-lists/db.txt.
+#     시험이 거기 닿으면 실제 업무 자료를 건드리게 된다. DB 에 붙는 시험은
+#     목록 db.txt 에 적고 `npm run test:db` 로 돌린다 — **그 목록을 만들었다**
+#     (안전장치는 db-safety.txt · 준비 순서는 docs/DB_TESTS.md).
 #
 # 적는 법:
 #   - 한 줄에 한 경로. 저장소 뿌리 기준 상대경로, 구분자는 슬래시, 대소문자까지 정확히.

@@ -130,9 +130,14 @@ test("🔴 로그인이 A/S 의 users 표를 고치지 않는다 — 역할 클�
 });
 
 test("🔴 DB 에 쓰는 곳은 세션 끊기 한 곳뿐이다 — 늘어나면 여기서 걸린다", () => {
-  const writers = sourceFiles().filter((file) =>
-    /\bdb\s*\.(insert|update|delete)\b/.test(withoutComments(read(file))),
-  );
+  const writers = sourceFiles()
+    // 🔴 이 시험이 지키는 것은 **앱 코드**다 — 화면·서버가 실제 업무 DB(dss_as)에
+    // 무엇을 쓰는지. 시험 파일은 다른 관문이 지킨다: DB 에 쓰는 시험은
+    // DATABASE_URL 이 dss_as_test 로 바뀐 뒤에만 돌고(scripts/load-test-env.ts),
+    // 바뀌지 않으면 src/lib/db/index.ts 의 관문이 접속 자체를 막는다
+    // (docs/DB_TESTS.md). 그래서 여기서는 시험 파일을 세지 않는다.
+    .filter((file) => !/\.test\.tsx?$/.test(file))
+    .filter((file) => /\bdb\s*\.(insert|update|delete)\b/.test(withoutComments(read(file))));
   assert.deepEqual(
     writers,
     ["src/lib/auth/session.ts"],

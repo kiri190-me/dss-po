@@ -1,0 +1,16 @@
+# 목록 db-safety — `npm run test:db:safety` 가 돌린다.
+#
+# `npm run test:db` 의 첫 단계이기도 하다(package.json 의 "pretest:db"): 여기가
+# 통과해야 DB 시험으로 넘어간다. 🔴 순서가 핵심이다 — 안전장치를 확인하는 시험이
+# 시험 DB 에 **붙기 전에** 돌아야 뜻이 있다.
+#
+# 플래그(package.json 의 "test:db:safety"):
+#   --require ./scripts/node-windows-test-preload.cjs --import tsx --test --test-concurrency=1
+#   - 🔴 DB 부트스트랩(--import ./scripts/test-db-bootstrap.ts)을 **싣지 않는다.**
+#     이 목록의 시험은 순수 함수와 파일 글자만 본다.
+#   - node-windows-test-preload.cjs: Windows 에서 Node 24 가 내는 uv_os_get_passwd
+#     ENOMEM 을 시험 도구 안에서만 우회한다.
+#
+# 적는 법은 unit.txt 머리를 볼 것.
+
+src/lib/db/test-database-safety.test.ts
