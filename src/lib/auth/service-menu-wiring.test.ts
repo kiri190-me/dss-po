@@ -254,15 +254,11 @@ test("🔴 머리말이 그리는 자리 — 시스템 이름 다음, 사용자�
   );
 });
 
-test("🔴 메뉴 단추는 제 폭만 쓰고 이름 옆에 붙어 있는다 — shrink-0 mr-auto", () => {
+test("🔴 메뉴 단추는 제 폭만 쓴다 — shrink-0", () => {
   // 그리는 것은 `white-space: nowrap` 인 **단추 하나**라 줄어들지 못한다 —
   // 기준 폭 0 인 칸(`min-w-0 flex-1`)에 두면 자리가 모자랄 때 단추가 칸 밖으로
   // 삐져나와 사용자명·나가는 단추와 겹친다.
-  //
-  // `mr-auto` 가 짝이다: 이 줄은 justify-between 이라, 가운데 항목이 남는 자리를
-  // 먹지 않게 되면 단추가 줄 한가운데로 밀린다. 자동 여백은 justify-content 보다
-  // 먼저 남는 자리를 가져가므로 단추가 이름 옆에 그대로 붙어 있는다.
-  assert.match(appHeaderBare, /<div className="shrink-0 mr-auto">\{serviceMenu\}<\/div>/);
+  assert.match(appHeaderBare, /<div className="shrink-0">\{serviceMenu\}<\/div>/);
 
   // 되돌아가는 것을 막는다 — 단추에는 뜻이 어긋난다.
   assert.equal(
@@ -271,16 +267,75 @@ test("🔴 메뉴 단추는 제 폭만 쓰고 이름 옆에 붙어 있는다 —
     "메뉴 칸에 flex-1/flex-auto 가 돌아왔다 — 단추는 줄어들지 못해 글자와 겹친다",
   );
 
-  // 🔴 폰(360px) 속폭 328 에 들어간다: 단추 59 + gap-4 16 + 나가는 단추 둘 222.
+  // 🔴 이 칸에 `mr-auto` 가 돌아오면 안 된다(2026-09-21 에 뺐다). 그때는 이 줄이
+  // justify-between 이라 단추가 줄 한가운데로 밀리는 것을 막는 장치였는데, 지금은
+  // 남는 자리를 **나가는 묶음의 ml-auto** 하나가 가져간다. 여기 자동 여백이 다시
+  // 생기면 그쪽보다 먼저 남는 자리를 다 먹어, 사이에 있는 **화면 메뉴가 오른쪽
+  // 끝의 나가는 단추에 가서 붙는다.**
+  const menuCell = appHeaderBare.match(/<div className="([^"]*)">\{serviceMenu\}/);
+  assert.ok(menuCell, "메뉴 칸을 찾지 못했다");
+  assert.equal(
+    /\bmr-auto\b/.test(menuCell[1]),
+    false,
+    "메뉴 칸에 mr-auto 가 돌아왔다 — 화면 메뉴가 나가는 단추 쪽으로 딸려 간다",
+  );
+});
+
+test("🔴 남는 자리를 가져가는 자동 여백은 나가는 묶음 **하나**다 — ml-auto", () => {
+  // 항목이 다섯인 줄에서 justify-between 은 남는 자리를 **항목 사이마다** 고르게
+  // 나눈다 — 이름 · 메뉴 단추 · 화면 메뉴가 줄 전체에 흩뿌려진다. 자동 여백은 한
+  // 자리에만 걸리므로 「왼쪽에 붙은 셋 + 오른쪽 끝의 나가는 묶음」이 된다.
+  assert.equal(
+    /\bjustify-between\b/.test(appHeaderBare),
+    false,
+    "머리말에 justify-between 이 돌아왔다 — 왼쪽 셋이 줄 전체에 흩어진다",
+  );
+
+  assert.match(
+    appHeaderBare,
+    /<div className="ml-auto flex flex-wrap items-center justify-end gap-3 text-sm">/,
+    "나가는 묶음이 ml-auto 로 오른쪽 끝에 서지 않는다",
+  );
+
+  // 자동 여백이 여럿이면 남는 자리를 나눠 갖게 되어 「오른쪽 끝」이 흔들린다.
+  assert.equal(
+    (appHeaderBare.match(/\bm[lr]-auto\b/g) ?? []).length,
+    1,
+    "머리말에 자동 여백이 둘 이상이다 — 남는 자리를 나눠 먹어 자리가 흔들린다",
+  );
+});
+
+test("🔴 이 줄은 flex-wrap 이다 — 없으면 폰에서 단추 안 글자가 접힌다", () => {
+  // 2026-09-21 에 화면 메뉴(알약 단추 셋 ~242px)가 이 줄로 들어오면서 켰다.
+  // 줄바꿈이 없으면 넘칠 때 flex 가 칸을 min-content 까지 눌러 단추 안에서
+  // 글자를 접는다 — "통합 / 로그인으로", "내자 / 정리".
+  assert.match(
+    appHeaderBare,
+    /<div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 md:px-6">/,
+  );
+
+  // 🔴 폰(360px) 속폭 328 에서 **윗줄**이 들어간다: 메뉴 단추 59 + gap-x-3 12 +
+  //    화면 메뉴 단추 셋 242 = 313. 나가는 단추 둘(222)은 아랫줄로 내려간다.
   //    (이름과 사용자명은 폰에서 sr-only 라 position:absolute — flex 항목에서
   //     빠지므로 앞뒤 여백까지 함께 사라진다. 아래 시험이 그것을 못 박는다.)
   const INNER = 360 - 16 * 2;
+  const GAP = 12; // gap-x-3
   const BUTTON = 24 + 19 + 6 + 8 + 2; // @dss/ui .dss-menu__summary, pointer: coarse
+  // 알약 단추 = 글자(14px·한글 1em) + px-3 24. 「내자 정리」·「작업 비용」은
+  // 빈칸까지 5칸, 「견적서」는 3칸. 사이 여백은 gap-1 4px 두 번.
+  const SCREEN_NAV = 84 + 66 + 84 + 4 * 2;
   const EXITS = 128 + 12 + 82; // 통합 로그인으로 + gap-3 + 로그아웃
+
   assert.ok(
-    BUTTON + 16 + EXITS <= INNER,
-    `폰에서 ${BUTTON + 16 + EXITS}px 이라 속폭 ${INNER}px 을 넘는다 — ` +
-      "이 머리말은 flex-wrap 이 없어서 단추 안에서 글자가 접힌다",
+    BUTTON + GAP + SCREEN_NAV <= INNER,
+    `폰 윗줄이 ${BUTTON + GAP + SCREEN_NAV}px 이라 속폭 ${INNER}px 을 넘는다`,
+  );
+  assert.ok(EXITS <= INNER, `나가는 묶음이 ${EXITS}px 이라 한 줄에 못 들어간다`);
+  // 셋이 한 줄에 다 들어가지는 않는다 — 그래서 flex-wrap 이 필요하다는 것을
+  // 함께 못 박는다. 들어가게 되는 날이 오면 이 시험이 알려 준다.
+  assert.ok(
+    BUTTON + GAP + SCREEN_NAV + GAP + EXITS > INNER,
+    "폰에서 한 줄에 다 들어간다 — flex-wrap 이 필요한 까닭을 다시 적어라",
   );
 });
 

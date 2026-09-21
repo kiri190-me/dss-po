@@ -50,6 +50,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // 화면 메뉴. 🔴 **들어갈 수 있는 것만** 세운다 — 권한 판정은 화면마다의 가드
   // (auth/area-guard.ts)가 따로 하고, 여기서는 같은 창구로 보이는 것을 맞춘다.
   // 둘이 갈리면 「메뉴에 있는데 누르면 막힌다」가 되고, 사용자는 고장으로 여긴다.
+  //
+  // 🔴 이 목록은 루트(`/`)가 「들어오면 띄울 화면」을 고를 때 쓰는 것과 **같은
+  // 창구**다((app)/page.tsx 의 landingHref). 거르는 규칙이 갈리면 「메뉴에는
+  // 없는데 첫 화면은 거기로 간다」가 된다.
   const accessibleNavItems = filterNavItemsForAccess(
     navItems,
     await listAccessibleAreaKeys(user)
@@ -93,8 +97,21 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             variant="inline"
           />
         }
+        screenNav={
+          /*
+            이 사이트 **안**의 화면 메뉴 — 「내자 정리 · 견적서 · 작업 비용」
+            알약 단추 셋. 🔴 2026-09-21 에 머리말 **아래 띠**에서 머리말 **안**
+            으로 들어왔다(사용자 지정: "PO의 메뉴바는 휴가관리에서 메뉴바 안에
+            버튼들이 있었던 것 처럼 만들어줘"). 위의 ServiceMenuBar 를 머리말
+            위에서 안으로 넣은 2026-09-18 결정과 같은 방향이다 — 화면 맨 위가
+            두 층이면 답답하고 본문이 한 줄만큼 줄어든다.
+
+            🔴 거르는 일은 **여기서** 한다. 조각에 권한을 알려 주지 않는다 —
+            그러면 「보이는데 막힌다」를 만들 자리가 하나 더 생긴다.
+          */
+          <AppNav items={accessibleNavItems} />
+        }
       />
-      <AppNav items={accessibleNavItems} />
       {/*
         본문. 🔴 **폭 제한이 없다** — 창이 넓으면 넓은 만큼 다 쓴다.
 

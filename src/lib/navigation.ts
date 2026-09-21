@@ -58,3 +58,54 @@ export function filterNavItemsForAccess(
 export function permissionAreaLabel(areaKey: string): string | null {
   return PERMISSION_AREAS.find((area) => area.key === areaKey)?.label ?? null;
 }
+
+/**
+ * 지금 보고 있는 화면인가 — 머리말의 단추를 짙게 칠할지 정한다.
+ *
+ * 🔴 **앞부분이 같으면 켠다**(`/quotes` 와 `/quotes/3`). 아직 상세 화면은 없지만
+ * 조각 3b(견적서 편집 폼)가 오면 곧바로 생긴다 — 그때 「정확히 같을 때만」이면
+ * 상세로 들어가는 순간 단추 불이 **전부 꺼져** 사람은 제가 어디 있는지 알 수
+ * 없게 된다.
+ *
+ * 🔴 토막 경계(`/`)까지 함께 본다. `startsWith(href)` 만 보면 `/quotes` 가
+ * `/quotes-archive` 까지 켠다 — proxy 의 isGuardedPath 가 같은 이유로 같은
+ * 모양을 쓴다(auth/proxy-rules.ts).
+ *
+ * 🔴 휴가 관리(dss-leave)의 같은 조각에는 `exact` 프롭이 있지만 **가져오지
+ * 않았다.** 저쪽에는 `/` 를 가리키는 항목(달력)이 있어서 필요했다 — `/` 는 모든
+ * 주소의 앞부분이라 그것 하나는 정확히 같을 때만 켜야 한다. 이 사이트의 메뉴에는
+ * 루트가 없고 세 주소가 서로의 앞부분도 아니다. 영원히 false 인 갈래를 베껴 두면
+ * 읽는 사람이 「어디선가 쓰겠거니」 하고 남겨 두게 된다(이 저장소가 mock 모드
+ * 갈래를 안 베낀 것과 같은 판단 — domestic-orders/page.tsx 머리말).
+ */
+export function isNavItemActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/**
+ * 이 사이트에 들어왔을 때(루트 `/`) 띄울 화면.
+ *
+ * 🔴 **내자 정리다**(사용자 결정 2026-09-21 — "PO/내자에 들어오면 내자정리가
+ * 띄워져 있도록 해줘"). 세 화면 가운데 날마다 열어 보는 것이 그것이고, 지금까지
+ * 루트에는 "위 메뉴에서 화면을 고르세요"라는 빈 안내판만 있어서 들어올 때마다
+ * 한 번씩 더 눌러야 했다.
+ *
+ * 🔴 **받는 것은 「들어갈 수 있는 항목」이다** — 권한으로 이미 걸러진 목록을
+ * 받는다(filterNavItemsForAccess). 내자 정리를 볼 수 없는 사람을 그리로 보내면
+ * 첫 화면이 곧바로 /no-access 안내판이 되고, 그 사람에게 이 사이트는 「들어가면
+ * 권한 없다고 뜨는 곳」이 된다. 그래서 못 가면 **그 사람이 갈 수 있는 첫
+ * 화면**으로 대신 보낸다(차례는 A/S 사이드바의 차례 그대로 — 위 navItems).
+ *
+ * 하나도 없으면 null 이다. 그때 루트는 되돌리지 않고 **제자리에서** 사정을
+ * 적어 준다 — 갈 곳이 없는데 어디론가 보내면 그것이 곧 무한 되돌기다.
+ *
+ * 🔴 이 판정을 순수 함수로 떼어 둔 것은 시험 때문이다. 루트 화면 안에 두면
+ * 세션·DB 없이는 확인할 길이 없고, 이 저장소의 unit 목록은 DB 에 닿을 수 없다
+ * (scripts/test-lists/unit.txt).
+ */
+export const LANDING_NAV_KEY = "domesticOrders";
+
+export function landingHref(accessibleItems: readonly NavItem[]): string | null {
+  const preferred = accessibleItems.find((item) => item.key === LANDING_NAV_KEY);
+  return (preferred ?? accessibleItems[0])?.href ?? null;
+}
