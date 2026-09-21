@@ -1,10 +1,11 @@
 import { headers } from "next/headers";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { ServiceMenuBar } from "@dss/ui";
 
 import { AppHeader } from "@/components/AppHeader";
 import { AppNav } from "@/components/AppNav";
+import { PortalNotificationBell } from "@/components/PortalNotificationBell";
 import SavePopupHost from "@/components/common/SavePopup";
 import { requireSession } from "@/lib/auth/guards";
 import { portalAppsUrl, thisServiceId } from "@/lib/auth/oidc";
@@ -110,6 +111,36 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             그러면 「보이는데 막힌다」를 만들 자리가 하나 더 생긴다.
           */
           <AppNav items={accessibleNavItems} />
+        }
+        notificationBell={
+          /*
+            다른 시스템들의 알림을 모아 그리는 종(@dss/ui). 목록은 포털이
+            합쳐 준다 — 부르는 자리는 PortalNotificationBell 안이다.
+            🔴 이 사이트 자체의 알림은 없다: 견적서 결재 알림은 **A/S 의 종**에
+            계속 뜨고 링크 주소만 이쪽으로 바뀐다(설계서 F절 2번 ·
+            lib/navigation.ts). 그래서 이어 붙일 것이 없고 받은 것이 곧 전부다.
+
+            🔴 `<Suspense>` 가 이 조각의 전부다. 이 레이아웃은 모든 화면에
+            딸려 오므로, 감싸지 않으면 **모든 화면 이동이 포털 왕복만큼
+            느려진다**(포털이 느리면 더). 감싸면 머리말과 본문이 먼저 뜨고
+            종만 나중에 흘러 들어온다.
+
+            fallback 이 null 인 이유: 알림이 없을 때 종이 아예 안 그려지는
+            것과 **같은 모습**이라 자리가 들썩이지 않는다. 뼈대(skeleton)를
+            두면 알림이 없는 사람에게는 「있다가 사라지는 종」이 된다.
+
+            🔴 실패는 이 자리에 오지 않는다 — fetchPortalNotifications 가
+            어떤 거절(401·403·429·503·시간 초과)도 삼키고 빈 목록을 돌려준다.
+            그래서 error boundary 가 필요 없고, 포털이 죽어도 이 머리말은
+            예전과 똑같이 뜬다.
+
+            🔴 묻는 열쇠는 검증된 세션의 `ssoSubject` 다. 그 칸은 **비어 있을
+            수 있어서**(포털 계정과 아직 안 이어진 사람) `?? ""` 로 받는다 —
+            빈 값이면 oidc 가 아예 묻지 않고 빈 목록을 돌려준다.
+          */
+          <Suspense fallback={null}>
+            <PortalNotificationBell subject={user.ssoSubject ?? ""} />
+          </Suspense>
         }
       />
       {/*

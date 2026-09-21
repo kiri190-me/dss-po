@@ -83,6 +83,7 @@ export function AppHeader({
   portalUrl,
   serviceMenu = null,
   screenNav = null,
+  notificationBell = null,
 }: {
   user: PoUser;
   portalUrl: string;
@@ -111,6 +112,19 @@ export function AppHeader({
    * 들어가는 차례라야 눈이 헤매지 않는다 — 휴가 관리도 같은 차례다.
    */
   screenNav?: ReactNode;
+  /**
+   * 알림 종(@dss/ui 의 NotificationBell). 위 둘과 **같은 방식**으로 받는다 —
+   * 다 그려진 노드다. 이 파일은 @dss/ui 도, 알림을 어디서 구하는지도 모른다.
+   *
+   * (app)/layout.tsx 가 `<Suspense>` 로 감싼 조각을 내려보내므로, 포털이
+   * 느려도 이 머리말은 기다리지 않는다 — 종만 나중에 흘러 들어온다.
+   *
+   * 🔴 그릴 알림이 없으면 그 조각이 **스스로 null** 이다(@dss/ui 의 판단 —
+   * 눌러도 아무것도 없는 단추를 머리말에 남기지 않는다). 그래서 래퍼 <div> 로
+   * 감싸지 않고 **flex 항목으로 그대로** 둔다: 감싸면 알림이 없을 때도 빈
+   * 항목과 그 앞 여백(gap-3 12px)이 남아 머리말이 예전과 달라진다.
+   */
+  notificationBell?: ReactNode;
 }) {
   return (
     <header className="border-b border-slate-200 bg-white">
@@ -221,6 +235,30 @@ export function AppHeader({
               로그아웃
             </button>
           </form>
+
+          {/*
+            알림 종. 🔴 **줄의 맨 오른쪽 끝**이다 — 펼친 목록은 종에 오른쪽
+            끝을 맞춰 왼쪽으로 펼쳐지므로(@dss/ui 의
+            `.dss-bell__list { right: 0 }`), 가운데쯤에 앉으면 폰에서 목록
+            왼쪽이 화면 밖으로 잘린다. 목록 폭은 `min(20rem, 100vw - 2rem)` 이라
+            폰(360px)에서 320px 이고, 종이 이 묶음의 끝에 있어야 그 320px 이
+            화면 안에 그대로 들어온다(이 묶음은 `ml-auto justify-end` 라 어느
+            줄에 놓이든 오른쪽 끝에 붙는다).
+
+            🔴 폰(360px)의 폭 셈에 더해지는 것 — 종은 40px 이다(@dss/ui 는
+            손가락 화면에서 36 → 40 으로 키운다):
+
+              알림이 없을 때  종이 **아예 안 그려진다** → 예전 그대로
+              알림이 있을 때  이 묶음 222 + gap-3 12 + 종 40 = 274 ≤ 328 ✔
+                              (첫 줄의 「메뉴 단추 + 화면 메뉴」 313 은 그대로)
+
+            래퍼 <div> 로 감싸지 않는다: 알림이 없으면 조각이 스스로 null 이라
+            항목 자체가 사라져야 하는데, 감싸면 빈 항목과 그 앞 여백이 남는다.
+
+            인쇄에는 나오지 않는다 — @dss/ui 의 종 CSS 가
+            `@media print { display: none }` 을 제 안에 갖고 있다.
+          */}
+          {notificationBell}
         </div>
       </div>
     </header>
