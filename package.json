@@ -1,0 +1,32 @@
+{
+  "name": "dss-po",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --webpack --port 3600",
+    "build": "next build --webpack",
+    "start": "next start --port 3600",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/run-test-list.mjs unit -- --import tsx --test"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "jose": "^6.2.10",
+    "next": "16.3.3",
+    "postgres": "^3.4.9",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.3",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.12",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+/*
+ * 사무실 PC 에서 표를 읽고 적는 화면이다. 밝은 배경 하나로 고정한다.
+ * (기기마다 색이 달라지면 "내 화면에서는 이렇게 보인다" 를 맞춰 보기 어렵다)
+ */
+:root {
+  color-scheme: light;
+}
+
+@theme inline {
+  --font-sans:
+    "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic",
+    "맑은 고딕", sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", "D2Coding", ui-monospace, monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: #f1f5f9;
+  color: #0f172a;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * 팝업(native `<dialog>` + `showModal()`)을 화면 가운데에 세운다.
+ *
+ * 브라우저 기본 스타일시트는 최상위 레이어에 뜬 `<dialog>` 에 `margin: auto` 를
+ * 걸어 가로·세로 가운데로 보낸다. 그런데 Tailwind 의 preflight 가 전체 선택자로
+ * 모든 요소에 `margin: 0` 을 다시 깔면서 그 `auto` 를 지운다 — 그러면 어두운
+ * 덮개는 화면을 다 덮는데 흰 상자만 왼쪽 위 구석에 붙는다.
+ *
+ * 아직 이 사이트에 팝업은 없다. 그래도 지금 넣어 두는 이유: 옮겨 올 화면들
+ * (내자 정리 · 견적서)이 native `<dialog>` 팝업을 여럿 쓰고, 이웃 저장소
+ * (dss-improvements)가 그 증상을 실제로 겪은 뒤에야 이 줄을 더했다. 팝업마다
+ * 손보는 것보다 여기 한 번이 싸다. **이 규칙을 지우면 팝업 전부가 구석에 붙는다.**
+ */
+dialog {
+  margin: auto;
+}
+
+/*
+ * 좁은 화면에서 팝업 양옆에 숨 쉴 틈을 준다.
+ *
+ * 팝업들은 저마다 `w-full max-w-md` · `w-full max-w-4xl` 로 너비를 잡는데,
+ * max-width 아래로 내려가면 너비가 정확히 화면의 100% 가 되어 양 끝에 딱 붙는다.
+ * `dialog:modal` 은 유틸리티 클래스 하나(`w-full`)보다 우선순위가 높아서
+ * (타입 선택자 + 의사 클래스 > 클래스 하나) `!important` 없이, 또 개별 컴포넌트를
+ * 건드리지 않고 작은 화면에서만 상자를 조금 좁힌다.
+ */
+@media (max-width: 30rem) {
+  dialog:modal {
+    width: calc(100% - 2rem);
+  }
+}

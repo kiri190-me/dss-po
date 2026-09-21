@@ -1,0 +1,47 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"],
+      // 서브모듈로 들어온 사내 공용 화면 조각(vendor/dss-ui, 별도 저장소).
+      // 저장소 안의 소스라 Next 가 제 앱 코드처럼 컴파일한다 —
+      // transpilePackages 도 Tailwind @source 도 필요 없다(그쪽 README 5절).
+      "@dss/ui": ["./vendor/dss-ui/src/index.ts"],
+      "@dss/ui/styles.css": ["./vendor/dss-ui/src/service-menu/service-menu.css"],
+      // 서브모듈로 들어온 사내 공용 DB 스키마(vendor/dss-core, 별도 저장소).
+      // A/S 관리 시스템과 이 사이트가 같은 dss_as 를 **같은 타입**으로 본다 —
+      // 손으로 베낀 복제본이 아니라 한 벌이라 컴파일러가 어긋남을 잡아 준다.
+      //
+      // 🔴 마이그레이션은 여기에 없다. `drizzle/` 과 `drizzle.config.ts` 는
+      //    A/S 가 소유하고, 칸을 더하거나 고치는 일은 언제나 A/S 에서 한다
+      //    (설계서 PO_DOMESTIC_SPLIT_DESIGN.md E-2절).
+      "@dss/core/schema": ["./vendor/dss-core/src/schema/index.ts"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules"]
+}
