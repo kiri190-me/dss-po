@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import type { ReactNode } from "react";
 
 import { ServiceMenuBar } from "@dss/ui";
@@ -5,6 +6,7 @@ import { ServiceMenuBar } from "@dss/ui";
 import { AppHeader } from "@/components/AppHeader";
 import { requireSession } from "@/lib/auth/guards";
 import { portalAppsUrl, thisServiceId } from "@/lib/auth/oidc";
+import { RETURN_TO_HEADER } from "@/lib/auth/proxy-rules";
 import { readServiceMenu } from "@/lib/auth/service-menu-cookie";
 
 /**
@@ -16,7 +18,18 @@ import { readServiceMenu } from "@/lib/auth/service-menu-cookie";
  * 돌지, 액션이 불릴 때 도는 것이 아니다.
  */
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const user = await requireSession();
+  // 🔴 서버 레이아웃은 **지금 주소가 무엇인지 알 방법이 없다.** 그래서 proxy
+  // (src/proxy.ts)가 요청 머리말에 실어 준 것을 받아 넘긴다. 이것이 없으면
+  // 쿠키는 있으나 만료·위조된 세션으로 들어온 사람이 — proxy 가 통과시키고
+  // 여기서 걸리는 그 경우가 — 가려던 주소를 잃고 첫 화면으로 떨어진다.
+  //
+  // 🔴 이 값을 믿지 않는다. proxy 가 잡지 않는 주소에서는 브라우저가 보낸 같은
+  // 이름의 머리말이 그대로 닿을 수 있다. requireSession 이 받은 값을 반드시
+  // safeReturnTo 에 통과시키므로(auth/guards.ts), 밖을 가리키는 주소는
+  // 여기까지 와도 첫 화면으로 떨어진다. 이미 있는 함수를 한 번 더 부르는 값은
+  // 공짜고, 「우리가 넣었으니 믿는다」는 나중에 깨진다.
+  const requestedAddress = (await headers()).get(RETURN_TO_HEADER) ?? undefined;
+  const user = await requireSession(requestedAddress);
 
   // 머리말 **안**에 앉는 서비스 오가기 목록. 포털이 로그인 ID 토큰에 실어 보낸
   // 것을 콜백이 별도 서명 쿠키에 구워 두었다(auth/service-menu-cookie.ts).
