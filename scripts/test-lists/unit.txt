@@ -69,3 +69,28 @@ src/lib/domain/quote-list.test.ts
 src/components/common/responsive-list.test.ts
 src/components/domestic-orders/domestic-order-inline-cells.test.ts
 src/components/domestic-orders/domestic-order-trash.test.ts
+
+# ── 조각 3a — 견적서 목록 · 휴지통(A/S 에서 옮겨 옴) ──────────────────────
+# 🔴 목록 **화면 자체**는 이 저장소에 없다. `vendor/dss-core` 에 한 벌로 두고
+#    A/S 의 수리 건 상세 [견적서] 탭과 나눠 쓴다(설계서 F절 5번). 아래
+#    quote-list-screen-source.test.ts 가 **그 서브모듈 원본을 글자로 읽는다** —
+#    복사본이 생기지 않았는지까지 함께 본다.
+#
+# 🔴 A/S 의 통합 시험 둘(1,428줄)은 여기 없다. 조각 1·2 와 **같은 이유**다 —
+#    진짜 DB 에 쓰는 시험인데 이 저장소에는 시험용 DB 장치가 없고, 이 사이트의
+#    DB 는 A/S 와 같은 dss_as 라 장치 없이 붙이면 시험이 실제 업무 자료를
+#    건드린다. 못 옮긴 목록(A/S 쪽 경로 · 줄 수):
+#      lib/db/mutations/quote-trash.integration.test.ts        625
+#      lib/db/mutations/attachment-trash.integration.test.ts   803
+#    둘째 것은 첨부 휴지통 전체를 보는 시험이고, 그중 견적서 갈래가 이 조각이
+#    옮겨 온 네 함수를 덮는다. A/S 가 둘 다 그대로 갖고 있고 저장 코드는 같은
+#    벌이다(mutations/quote-trash.ts 머리말). 조각 4 에서 푼다.
+#
+# 🔴 A/S 의 `components/quotes/QuoteListScreen.test.ts`(326줄)도 그대로 옮기지
+#    못했다. 그 시험의 절반이 **이 조각에 없는 것**을 못 박는다 — 줄 링크가
+#    가는 수정 화면(3b) · [미리보기 · PDF](3f) · [새 견적서] 팝업(3b) · 수리 건
+#    상세 탭(A/S 화면). 아래 시험이 **이 조각에 있는 것**으로 다시 적은 것이고,
+#    나머지는 그 조각이 올 때 함께 온다.
+src/lib/auth/quote-permission.test.ts
+src/lib/validation/quote-kind.test.ts
+src/components/quotes/quote-list-screen-source.test.ts

@@ -37,15 +37,16 @@ describe("메뉴", () => {
     }
   });
 
-  test("조각 2 까지는 내자 정리 · 작업 비용 둘이다", () => {
-    // 🔴 견적서는 **그 화면이 오는 조각 3** 에서 더한다. 미리 적으면 없는
-    // 화면으로 가는 링크가 메뉴에 선다.
+  test("조각 3a 까지는 내자 정리 · 견적서 · 작업 비용 셋이다", () => {
+    // 🔴 항목은 **그 화면이 오는 조각** 에서 더한다. 미리 적으면 없는 화면으로
+    // 가는 링크가 메뉴에 선다(견적서는 조각 3a 에서 목록·휴지통과 함께 왔다).
     //
     // 🔴 차례도 함께 못 박는다 — A/S 사이드바의 「PO / 내자」 그룹과 같은
-    // 순서여야 한다(navigation.ts 머리말).
+    // 순서여야 한다(navigation.ts 머리말). 견적서는 **내자 정리와 작업 비용
+    // 사이**다.
     assert.deepEqual(
       navItems.map((item) => item.href),
-      ["/domestic-orders", "/repair-labor"]
+      ["/domestic-orders", "/quotes", "/repair-labor"]
     );
   });
 });
@@ -63,6 +64,9 @@ describe("들어갈 수 있는 것만 거른다", () => {
   });
 
   test("모르는 키를 줘도 없는 항목이 생기지 않는다", () => {
-    assert.deepEqual(filterNavItemsForAccess(navItems, ["quotes", "inventory"]), []);
+    // 🔴 같은 `role_permissions` 표에 A/S 의 영역 열넷이 함께 들어 있다 — 이
+    // 사이트에 없는 화면의 키가 그대로 넘어와도 메뉴가 생기면 안 된다.
+    // (`quotes` 는 조각 3a 에서 **아는 키가 되어** 이 목록에서 빠졌다.)
+    assert.deepEqual(filterNavItemsForAccess(navItems, ["inventory", "repairCases"]), []);
   });
 });

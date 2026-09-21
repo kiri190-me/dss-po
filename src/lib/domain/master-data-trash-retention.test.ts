@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   getMasterDataTrashRetentionStatus,
   MASTER_DATA_TRASH_RETENTION_DAYS,
-} from "./master-data-trash-retention";
+  // 🔴 재는 대상은 2026-09-21(조각 3a)부터 **서브모듈(vendor/dss-core)의 파일**이다.
+  //    시험은 이 저장소에 남겨 둔다 — 그쪽 묶음에는 시험 러너가 없다.
+} from "@dss/core/ui/common/master-data-trash-retention";
 
 test("삭제한 순간에는 15일이 통째로 남아 있고 만료가 아니다", () => {
   const deletedAt = "2026-08-01T00:00:00.000Z";

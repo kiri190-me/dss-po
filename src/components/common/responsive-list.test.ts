@@ -6,10 +6,14 @@ import {
   writeStoredChoice,
   type StoredChoiceFallback,
   type StoredChoiceStore,
-} from "./responsive-list";
+} from "@dss/core/ui/common/responsive-list";
 
 // 목록이 표를 보여 줄지 카드를 보여 줄지 정하는 단 하나의 판단. 이 규칙이
 // 흔들리면 13개 목록이 한꺼번에 흔들리므로 여기서 못 박아 둔다.
+//
+// 🔴 재는 대상은 2026-09-21(조각 3a)부터 **서브모듈(vendor/dss-core)의 파일**이다.
+//    시험은 이 저장소에 남겨 둔다 — 그쪽 묶음에는 시험 러너가 없고, 여기 두면
+//    `npm test` 가 **이 사이트에서 실제로 도는 그 코드**를 본다.
 
 test("고른 적이 없으면 폭이 정한다 — 예전 규칙 그대로", () => {
   assert.equal(resolveShowTable(null, true), true, "들어가면 표");

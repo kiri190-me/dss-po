@@ -4,20 +4,25 @@ import { useId, useMemo, useState, useTransition, type MouseEvent, type ReactNod
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { showSavePopup } from "@/components/common/SavePopup";
+// 🔴 아래 넷은 2026-09-21(조각 3a)에 **서브모듈(vendor/dss-core)로 옮겨 갔다.**
+//    견적서 목록 화면이 두 사이트 한 벌이라 그 화면이 쓰는 공용 조각도 거기 있어야
+//    했고(설계서 E-2절), 이 사이트가 두 벌을 들고 있을 이유가 없어 그쪽 것을 쓴다.
+//    파일 내용은 옮기기 전과 **글자 하나까지 같다**(import 한 줄만 상대 경로가 됐다).
+//    ⚠️ A/S 는 조각 4 까지 제 복사본을 계속 쓴다 — 그쪽을 고치면 서브모듈도 함께.
 import {
   LIST_CARD_GRID,
   ResponsiveList,
   setStoredChoice,
   useStoredChoice,
-} from "@/components/common/responsive-list";
+} from "@dss/core/ui/common/responsive-list";
 import {
   MasterDataDeleteDialog,
   MasterDataPermanentDeleteDialog,
   MasterDataRestoreDialog,
-} from "@/components/common/master-data-trash-dialogs";
-import MasterDataTrashRetentionBadge from "@/components/common/master-data-trash-retention-badge";
+} from "@dss/core/ui/common/master-data-trash-dialogs";
+import MasterDataTrashRetentionBadge from "@dss/core/ui/common/master-data-trash-retention-badge";
 import { useMasterDataTrash, type MasterDataTrashTarget } from "@/lib/hooks/useMasterDataTrash";
-import { MASTER_DATA_TRASH_RETENTION_DAYS } from "@/lib/domain/master-data-trash-retention";
+import { MASTER_DATA_TRASH_RETENTION_DAYS } from "@dss/core/ui/common/master-data-trash-retention";
 import type {
   CustomerOption,
   DeletedDomesticOrderRow,

@@ -32,7 +32,7 @@ import {
   canEditDomesticOrders,
   canViewDomesticOrders,
 } from "./domestic-order-authorization";
-import { canDeleteQuotes, canViewQuotes } from "./quote-authorization";
+import { canDeleteQuotes, canEditQuotes, canViewQuotes } from "./quote-authorization";
 import type { Role } from "./session";
 
 /**
@@ -61,6 +61,12 @@ function rawBaseline(areaKey: string, role: Role): PermissionLevel {
         write: canEditDomesticOrders(role),
         read: canViewDomesticOrders(role),
       });
+
+    case "quotes":
+      // 🔴 A/S 의 같은 case 와 **같은 한 줄**이다. 내자 정리와 같은 모양이다 —
+      // 만들기·고치기는 영업까지고, 지우고 되살리는 것은 관리자 이상이다. 여기서도
+      // 역할 목록을 옮겨 적지 않고 *-authorization.ts 를 **호출해서** 구한다.
+      return ladder({ manage: canDeleteQuotes(role), write: canEditQuotes(role), read: canViewQuotes(role) });
 
     case "repairLabor":
       // 보는 것은 견적서와 같다 — 견적을 내려면 어떤 작업이 얼마인지 알아야 하고,

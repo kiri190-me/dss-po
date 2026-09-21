@@ -32,7 +32,17 @@
       // 🔴 마이그레이션은 여기에 없다. `drizzle/` 과 `drizzle.config.ts` 는
       //    A/S 가 소유하고, 칸을 더하거나 고치는 일은 언제나 A/S 에서 한다
       //    (설계서 PO_DOMESTIC_SPLIT_DESIGN.md E-2절).
-      "@dss/core/schema": ["./vendor/dss-core/src/schema/index.ts"]
+      "@dss/core/schema": ["./vendor/dss-core/src/schema/index.ts"],
+      // 🔴 두 사이트가 **한 벌로 그리는** 화면 조각(같은 서브모듈). 견적서 목록은
+      //    이 사이트와 A/S 수리 건 상세 [견적서] 탭이 함께 그리는 화면이라,
+      //    복사본을 두면 「금액·요약 줄이 갈라지는 날」이 온다
+      //    (설계서 PO_DOMESTIC_SPLIT_DESIGN.md F절 5번).
+      //
+      // 배럴 한 줄(`@dss/core/ui`)로 묶지 않고 **깊은 경로**로 하나씩 들여온다 —
+      // 그쪽에는 `"use client"` 파일과 순수 함수가 섞여 있어, 배럴을 두면 순수 함수
+      // 하나를 부르려다 화면 조각 전부가 딸려 온다(시험 러너에서는 `next/navigation`
+      // 을 읽다 터진다). 그쪽 README 3절에 같은 말이 적혀 있다.
+      "@dss/core/ui/*": ["./vendor/dss-core/src/ui/*"]
     }
   },
   "include": [
