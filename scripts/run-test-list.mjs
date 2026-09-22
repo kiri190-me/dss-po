@@ -17,15 +17,40 @@
 // ── 🔴 이 스크립트가 막는 것 — 전부 「시험이 조용히 덜 도는」 경우다 ────
 //   - 목록에 적힌 파일이 없다(오타·옮긴 파일·대소문자 차이). node --test 는 다른
 //     파일이 하나라도 잡히면 못 찾은 경로를 **말없이 건너뛴다.**
+//   - 경로 줄에 대괄호가 있다(App Router 의 `[id]` 폴더). 아래 「대괄호」 절.
 //   - 목록이 비었다. 파일을 하나도 안 주면 node 가 기본 규칙으로 저장소 전체를
 //     훑어 엉뚱한 플래그로 모든 시험을 돌린다.
 //   - 플래그에 --test 가 없다. 그러면 node 는 첫 파일 하나만 스크립트로 실행한다.
 //   - 같은 줄이 두 번 있다.
 //
+// ── 🔴 대괄호 — 2026-09-22 에 실제로 당했다 ─────────────────────────────
+// 조각 3c-2 에서 라우트 인가 시험 11개가 하나도 돌지 않았다.
+// `src/app/api/quotes/[id]/xlsx/route-source.test.ts` 에 두었기 때문이다.
+// node --test 는 받은 경로를 글롭으로 읽어 `[id]` 를 「i 또는 d 한 글자」라는 문자
+// 클래스로 본다. 파일이 실재해도 아무것도 맞지 않아 `tests 0` 이다.
+//
+//   $ ls -la "src/app/api/quotes/[id]/xlsx/route.ts"      → 파일 있음
+//   $ node --test "src/app/api/quotes/[id]/xlsx/route.ts" → ℹ tests 0
+//
+// 오류가 아니라 침묵이다. `fail 0` 으로 통과하고, 등록 검사
+// (scripts/test-lists/test-list-registration.test.ts)도 파일이 정말 있으니 통과한다.
+// 그래서 여기서 **돌리기 전에 멈춘다.**
+//
 // ── 이웃 저장소와 다른 점 ───────────────────────────────────────────────
-// RF_Service_System 의 같은 이름 스크립트에는 글롭 패턴 펼치기와 명령줄 길이
-// 예산 검사가 더 있다. 여기는 시험이 몇 개뿐이고 패턴 줄이 없어 뺐다 — 필요해지면
-// 그 파일을 보고 가져오면 된다. **`*` 가 든 줄은 여기서 그냥 「없는 파일」이다.**
+// RF_Service_System 의 같은 이름 스크립트에는 글롭 패턴 펼치기(`*` 를 fs.globSync 로
+// 펼친다)와 명령줄 길이 예산 검사가 더 있다. 여기는 시험이 몇 개뿐이고 패턴 줄이 없어
+// 뺐다 — 필요해지면 그 파일을 보고 가져오면 된다.
+// **`*` 가 든 줄은 여기서 그냥 「없는 파일」이다.**
+//
+// 🔴 왜 대괄호를 「막기」만 하고 A/S 처럼 「펼치기」를 가져오지 않았나(2026-09-22 판단):
+//   - 지금 이 저장소에는 대괄호 폴더 안의 시험 파일이 **0개**다. 3c-2 가 그 시험을
+//     대괄호 폴더 밖(src/app/api/quotes/xlsx-route-source.test.ts)으로 옮겼고,
+//     읽는 원본만 `./[id]/xlsx/route.ts` 로 가리킨다.
+//   - 펼치기는 필요해질 때 A/S 에서 가져오면 된다(그 파일의 isPatternEntry ·
+//     expandPattern 두 함수). 지금 값이 큰 것은 **「안 돌고도 통과하는 길」을 없애는
+//     쪽**이다.
+//   - 그래서 이 조각은 검사 하나만 더했다. 「왜 A/S 와 다르냐」로 시간을 버리지 않게
+//     여기에 적어 둔다.
 //
 // 의존성 없는 순수 Node 다. scripts/test-lists/test-list-registration.test.ts 가
 // 아래 export 를 가져다 같은 규칙으로 목록을 검사한다.
@@ -39,6 +64,8 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 export const LIST_DIR = path.join(ROOT, "scripts", "test-lists");
 
 const LIST_NAME = /^[a-z0-9][a-z0-9-]*$/;
+/** 🔴 대괄호가 든 경로 줄은 node --test 가 글롭으로 읽는다 — 머리말의 「대괄호」 절. */
+const BRACKET = /[[\]]/;
 
 /** 목록 폴더에 있는 목록 이름들(.txt 를 뗀 것). */
 export function listNames() {
@@ -50,11 +77,12 @@ export function listNames() {
 }
 
 /**
- * 목록 파일을 읽어 경로 줄만 돌려준다. `#` 로 시작하는 줄과 빈 줄은 건너뛴다.
+ * 목록 파일의 경로 줄을 **파일 안 줄 번호와 함께** 돌려준다. `#` 로 시작하는 줄과 빈
+ * 줄은 건너뛴다. 줄 번호는 1부터다 — 오류 문구가 「몇째 줄」을 말할 수 있게 남긴다.
  * @param {string} name
- * @returns {string[]}
+ * @returns {{ lineNumber: number, entry: string }[]}
  */
-export function readTestList(name) {
+export function readTestListLines(name) {
   if (!LIST_NAME.test(name)) {
     throw new Error(`목록 이름이 올바르지 않습니다: "${name}" (소문자·숫자·하이픈만)`);
   }
@@ -68,8 +96,50 @@ export function readTestList(name) {
     .readFileSync(file, "utf8")
     .replace(/^﻿/, "")
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("#"));
+    .map((line, index) => ({ lineNumber: index + 1, entry: line.trim() }))
+    .filter(({ entry }) => entry !== "" && !entry.startsWith("#"));
+}
+
+/**
+ * 목록 파일을 읽어 경로 줄만 돌려준다. `#` 로 시작하는 줄과 빈 줄은 건너뛴다.
+ * @param {string} name
+ * @returns {string[]}
+ */
+export function readTestList(name) {
+  return readTestListLines(name).map(({ entry }) => entry);
+}
+
+/**
+ * 🔴 경로 줄에 대괄호가 있으면 돌리기 전에 멈춘다. 통과면 null, 아니면 그대로 찍을
+ * 여러 줄 문구를 돌려준다(어느 줄인지 · 왜 안 되는지 · 어떻게 하면 되는지).
+ *
+ * 까닭은 이 파일 머리말의 「대괄호」 절에 있다 — 한 줄로 줄이면: node --test 가 경로를
+ * 글롭으로 읽어 `[id]` 를 문자클래스로 보므로 그 시험은 **조용히 안 돈다.**
+ *
+ * @param {string} listName
+ * @param {{ lineNumber: number, entry: string }[]} lines
+ * @returns {string|null}
+ */
+export function findBracketProblem(listName, lines) {
+  const offenders = lines.filter(({ entry }) => BRACKET.test(entry));
+  if (offenders.length === 0) return null;
+  return [
+    `scripts/test-lists/${listName}.txt 의 경로 줄에 대괄호가 있어 시험을 돌리지 않았습니다:`,
+    ...offenders.map(({ lineNumber, entry }) => `  - ${lineNumber}째 줄: ${entry}`),
+    "",
+    "  왜 안 되는가: node --test 는 받은 경로를 글롭으로 읽습니다. `[id]` 는 「i 또는 d 한",
+    "  글자」라는 문자클래스가 되어 그 줄은 아무 파일도 가리키지 못합니다. 파일이 실재해도",
+    "  `tests 0` — 오류가 아니라 침묵입니다. `fail 0` 으로 통과하고 등록 검사",
+    "  (scripts/test-lists/test-list-registration.test.ts)도 파일이 정말 있으니 통과합니다.",
+    "  그래서 그 시험이 안 도는 것을 아무도 모르게 됩니다.",
+    "",
+    "  어떻게 하면 되는가: 시험 파일을 대괄호 폴더 **밖에** 두고, 읽는 원본만 그 안을",
+    "  `./[id]/…` 로 가리키세요. 본보기: src/app/api/quotes/xlsx-route-source.test.ts",
+    "  (조각 3c-2 — `./[id]/xlsx/route.ts` 를 글자로 읽습니다).",
+    "",
+    "  (A/S 저장소의 같은 실행기에는 `*` 펼치기가 있어 그 칸을 `*` 로 적습니다. 이 저장소에",
+    "   왜 안 가져왔는지는 scripts/run-test-list.mjs 머리말에 적어 두었습니다.)",
+  ].join("\n");
 }
 
 /**
@@ -141,12 +211,19 @@ function main() {
     fail("플래그에 --test 가 없습니다 — 없으면 node 가 첫 파일 하나만 실행합니다.", 2);
   }
 
-  let entries = [];
+  let lines = [];
   try {
-    entries = readTestList(listName);
+    lines = readTestListLines(listName);
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error), 2);
   }
+  const entries = lines.map(({ entry }) => entry);
+
+  // 🔴 대괄호는 다른 검사보다 먼저 본다 — 아래 findListProblems 는 이것을 못 잡는다.
+  // `[id]` 는 실제 폴더 이름이라 「없는 파일」 검사를 통과한다. 그것이 2026-09-22 에
+  // 시험 11개가 조용히 안 돈 까닭이다(머리말의 「대괄호」 절).
+  const bracketProblem = findBracketProblem(listName, lines);
+  if (bracketProblem) fail(bracketProblem);
 
   const problems = findListProblems(entries);
   if (problems.length > 0) {
