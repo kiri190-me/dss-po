@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import QuoteListSlots from "@/components/quotes/QuoteListSlots";
 import { requireAreaAccessForCurrentUser } from "@/lib/auth/area-guard";
@@ -56,15 +57,15 @@ export const dynamic = "force-dynamic";
  *                                이 사이트가 지어내지 않는다. 그 주소를 어디서
  *                                얻을지는 배포 설정의 일이고 조각 4·5 에서 정한다.
  *                                지금은 인수번호가 글자로 보인다.
- *   newQuoteControl            → 조각 3b-2 ([새 견적서] 팝업과 `/quotes/new`).
- *                                ReactNode 라 **여기서** 넘겨도 된다.
+ *   ✅ newQuoteControl          → 조각 3b-2 에서 채웠다. 🔴 **여기서** — ReactNode 라
+ *                                서버에서 넘어간다(함수 슬롯과 갈리는 자리다).
  *   notice                     → 조각 3c (받기 결과 알림). 이것도 ReactNode 다.
  *
  * ── canEdit 은 관문이 아니다 ────────────────────────────────────────────
- * 지금은 [새 견적서] 자리를 그릴지만 정하는데, 그 자리에 넣을 것이 아직 없어
- * 아무것도 그려지지 않는다. 실제 저장·삭제는 서버 액션이 세션부터 다시 확인한다 —
- * 단추를 감추는 것으로 막았다고 여기면, 액션을 직접 부르는 요청 앞에서 아무것도
- * 막지 못한다.
+ * canEdit 이 정하는 것은 [새 견적서] 자리를 그릴지뿐이다. 실제 저장·삭제는 서버
+ * 액션이 세션부터 다시 확인하고, 그 링크가 가는 `/quotes/new` 도 제 관문을 따로
+ * 지난다 — 단추를 감추는 것으로 막았다고 여기면, 주소를 직접 열거나 액션을 직접
+ * 부르는 요청 앞에서 아무것도 막지 못한다.
  * ============================================================================
  */
 export default async function QuotesPage() {
@@ -93,6 +94,28 @@ export default async function QuotesPage() {
       trashRows={trashRows}
       canEdit={canEdit}
       canDelete={canDelete}
+      /**
+       * 🔴 조각 3b-2 — **[새 견적서] 를 누르면 빈 작성 폼이 열린다.**
+       *
+       * 🔴 **팝업을 거치지 않는다**(2026-09-22 사용자 결정). A/S 는 여기서 「견적서
+       * 종류 · 엑셀 전용」을 먼저 고르는 창을 띄우는데, 그 엑셀 전용 스위치가 엑셀
+       * 읽기(3c)와 첨부(3d) 사슬을 통째로 끌고 온다. 종류는 폼 안에서 고른다.
+       *
+       * 🔴 **이 슬롯은 ReactNode 라 서버에서 넘어간다.** 함수 슬롯 넷과 갈리는
+       * 자리다 — 저쪽은 QuoteListSlots 에 걸어야 한다(그 파일 머리말).
+       *
+       * 그릴지 말지는 화면이 정한다(`{canEdit && newQuoteControl}`) — 여기서 다시
+       * 검사하면 같은 판정이 두 곳에 놓이고, 어긋나는 날 어느 쪽이 맞는지 모른다.
+       * 🔴 **그것은 관문이 아니다.** `/quotes/new` 가 제 관문을 따로 지난다.
+       */
+      newQuoteControl={
+        <Link
+          href="/quotes/new"
+          className="rounded-md bg-primary-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 dark:bg-primary-100 dark:text-zinc-900 dark:hover:bg-primary-300"
+        >
+          새 견적서
+        </Link>
+      }
       trashActions={{
         deleteQuote: deleteQuoteAction,
         restoreQuote: restoreQuoteAction,

@@ -46,6 +46,7 @@ const sliceBetween = (source: string, startMarker: string, endMarker: string) =>
 const SCREEN_PATH = "vendor/dss-core/src/ui/quotes/QuoteListScreen.tsx";
 const listSource = read(SCREEN_PATH);
 const pageSource = read("src/app/(app)/quotes/page.tsx");
+const newPageSource = read("src/app/(app)/quotes/new/page.tsx");
 const slotsSource = read("src/components/quotes/QuoteListSlots.tsx");
 const actionSource = read("src/lib/server/actions/quotes.ts");
 const dialogsSource = read("vendor/dss-core/src/ui/common/master-data-trash-dialogs.tsx");
@@ -141,12 +142,26 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     );
   });
 
+  test("🔴 조각 3b-2 — [새 견적서] 는 작성 화면으로 간다. 팝업을 거치지 않는다", () => {
+    // 🔴 **page.tsx 에서** 넘긴다 — 이 슬롯은 ReactNode 라 서버 경계를 넘는다.
+    // 함수 슬롯 넷(위 묶음)과 갈리는 자리라, 어느 파일에서 왔는지까지 본다.
+    const call = flat(sliceBetween(pageSource, "<QuoteListSlots", "/>\n  );"));
+    assert.ok(call.includes("newQuoteControl="), "[새 견적서] 자리가 비어 있다");
+    assert.ok(call.includes('href="/quotes/new"'), "[새 견적서] 가 작성 화면을 가리키지 않는다");
+    // 🔴 그 주소에 실제로 화면이 있어야 한다 — 없는 곳으로 보내는 링크는 3a 가 막던 그것이다.
+    assert.equal(
+      existsSync(fileURLToPath(new URL("src/app/(app)/quotes/new/page.tsx", repoUrl))),
+      true,
+      "[새 견적서] 링크가 가리키는 작성 화면이 없다"
+    );
+  });
+
   test("🔴 아직 없는 화면으로 가는 슬롯은 넘기지 않는다 — 없는 주소로 보내지 않는다", () => {
-    // 새 견적서(3b-2) · 발행(3c) · 첨부(3d) · 인쇄(3f) 가 오면 한 줄씩 더한다.
+    // 발행(3c) · 첨부(3d) · 인쇄(3f) 가 오면 한 줄씩 더한다.
     // 미리 넘기면 없는 화면으로 가는 링크·단추가 목록에 선다.
     // 🔴 두 파일을 함께 본다 — 함수 슬롯은 QuoteListSlots, 나머지는 page.tsx 다.
     const both = flat(sliceBetween(pageSource, "<QuoteListSlots", "/>\n  );")) + flat(slotsSource);
-    for (const slot of ["newQuoteControl=", "renderRowActions=", "renderFileBadges=", "notice="]) {
+    for (const slot of ["renderRowActions=", "renderFileBadges=", "notice="]) {
       assert.equal(both.includes(slot), false, `${slot} — 아직 그 조각이 오지 않았는데 슬롯이 채워져 있다`);
     }
     // 🔴 인수번호가 가는 곳(수리 건 상세)은 **A/S 의 화면**이다. 사이트를 건너가는
@@ -290,5 +305,53 @@ describe("page.tsx — 관문이 먼저다", () => {
       body.includes("canDelete ? listDeletedQuotes() : Promise.resolve([])"),
       "휴지통 조회가 canDelete 로 감싸여 있지 않다"
     );
+  });
+});
+
+/**
+ * ============================================================================
+ * 🔴 새 견적서 화면(3b-2)도 **제 관문을 따로 지난다**
+ * ============================================================================
+ * 목록이 [새 견적서] 를 감추는 것은 막은 것이 아니다 — 주소를 직접 입력하면 그대로
+ * 들어와진다. 저장은 `createQuoteAction` 이 세션부터 다시 보지만, 그때는 이미 폼을
+ * 다 채운 뒤다. 수정 화면(`[id]/page.tsx`)과 **같은 두 줄**이어야 하는 자리다.
+ * ============================================================================
+ */
+describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없다", () => {
+  test("🔴 영역 가드 → 쓰기 권한 → 조회 차례다. 권한이 없으면 목록으로 돌려보낸다", () => {
+    const body = flat(newPageSource);
+    const order = [
+      'await requireAreaAccessForCurrentUser("quotes");',
+      'if (!(await hasPermission(user, "quotes", "WRITE"))) redirect("/quotes");',
+      "await listRepairLabor();",
+    ].map((marker) => {
+      const at = body.indexOf(marker);
+      assert.ok(at >= 0, `원본에서 '${marker}' 를 찾지 못했다`);
+      return at;
+    });
+    for (let i = 1; i < order.length; i += 1) {
+      assert.ok(order[i] > order[i - 1], "권한 검사·조회 순서가 바뀌었다");
+    }
+  });
+
+  test("🔴 빈 폼으로 연다 — quote={null} 이 「새로 만들기」다", () => {
+    assert.ok(flat(newPageSource).includes("quote={null}"), "폼이 만들기 모드로 열리지 않는다");
+  });
+
+  test("🔴 아직 오지 않은 조각의 사슬을 끌고 오지 않는다 — 팝업 · 엑셀 · 첨부 · 부품 고르개", () => {
+    // 이 화면이 A/S 판을 그대로 베끼면 조각 3b-3·3c·3d 가 통째로 딸려 온다.
+    // 🔴 **들여오는 줄만** 본다 — 머리말 주석은 뺀 것들을 이름으로 적어 두고 있다.
+    const imports = flat(sliceBetween(newPageSource, 'import type { Metadata }', "export const metadata"));
+    for (const chain of [
+      "NewQuoteDialog",
+      "quote-new-link",
+      "quote-new-start",
+      "quote-template",
+      "queries/inventory",
+      "queries/attachments",
+      "lib/xlsx/",
+    ]) {
+      assert.equal(imports.includes(chain), false, `${chain} — 아직 오지 않은 조각을 끌고 왔다`);
+    }
   });
 });
