@@ -106,7 +106,6 @@ src/components/quotes/quote-list-screen-source.test.ts
 #        └ `lib/xlsx/cable-quote-template` 을 읽는다(엑셀 사슬 7,800여 줄).
 #          케이블 견적서에서 작업 구역이 접히고 값 일곱이 비워져 나가는지를 본다.
 #      domain/quote-new-link.test.ts · quote-new-start.test.ts   3b-2
-#      components/quotes/quote-part-picker.test.tsx             3b-3
 #
 # 🔴 옮겨 온 둘은 **단언 몇 줄을 덜어 냈다.** 어느 줄을 왜 덜었고 어느 조각이
 #    되돌려 놓아야 하는지는 각 파일 머리말에 적어 두었다:
@@ -117,14 +116,33 @@ src/lib/domain/quote-subject.test.ts
 src/lib/domain/quote-document-support.test.ts
 src/components/quotes/quote-edit-work-scope-suppression.test.ts
 
-# ── 조각 3b-3 앞쪽 절반 — 인수번호로 불러오기 ────────────────────────────
+# ── 조각 3b-3 — 인수번호로 불러오기 · 참고 목록 둘 · 담기 ─────────────────
 # 조회 · 서버 액션(문턱 READ) · 폼의 [불러오기] 한 자리를 글자로 본다. 🔴 그중
 # 하나가 이 조각의 요점이다: `repairCaseId` 를 채우는 곳이 handleLookup **하나**다 —
 # 그 값이 비면 저장된 견적서가 수리 건 상세의 「견적서」 탭에 영영 나타나지 않는다.
 #
+# 🔴 **뒤쪽 절반 · 커밋 ② 가 같은 파일에 들어갔다**(참고 목록 둘 · 담기 · 못 찾음 ·
+#    오류 갈래의 비우기). 앞쪽 절반이 친 울타리를 **뒤집은 자리**가 그 파일이라
+#    새 파일로 가르지 않았다 — 어느 단언이 왜 뜻을 바꿨는지가 그 곁에 적혀 있어야
+#    다음 사람이 읽을 수 있다. 각 묶음 머리말에 까닭을 적어 두었다.
+#
 # 🔴 **자료의 규칙은 진짜 DB 가 본다** — db.txt 의
 #    lib/db/queries/quote-intake-lookup.integration.test.ts(A/S 에서 옮겨 옴).
 #
-# 🔴 A/S 에서 함께 옮기지 못한 것: `components/quotes/quote-part-picker.test.tsx`
-#    (부품 고르개)는 **뒤쪽 절반**이다 — 위 3b-1 묶음의 주석에 적힌 그대로다.
 src/components/quotes/quote-intake-lookup-source.test.ts
+
+# ── 조각 3b-3 뒤쪽 절반 · 커밋 ① — 부품 고르개 ──────────────────────────
+# 품명 칸에서 재고의 부품을 찾아 고르고, 고르면 품명 · 단가가 채워진다.
+#
+# 🔴 **고르개는 공용 묶음에 한 벌로 있다**(@dss/core/ui/inventory/part-picker —
+#    설계서 F-3, A/S `a05ac46` · dss-core `d805b39`). 이 사이트가 갖는 것은 값을
+#    실어 보내는 **가벼운 조회 둘**뿐이다(lib/db/queries/inventory.ts). 아래 시험이
+#    그 경계를 본다: 사본을 선언하는 구현 파일이 없다 · 무거운 형제(getPartList ·
+#    소유구분별 가용량 · 재고 잔량 표)를 부르는 줄이 없다.
+#
+# 🔴 저쪽 `components/inventory/part-picker.test.tsx`(A/S 가 F-3 에서 옮겨 가며
+#    이름을 바꾼 그 시험)와 **겹치는 것을 알고 둔다** — 서브모듈 포인터는 두
+#    저장소가 따로 옮기므로, 이 사이트의 `npm test` 가 **이 사이트에서 실제로 도는
+#    그 코드**를 봐야 한다(common/responsive-list.test.ts 의 같은 판단). 베껴 오지
+#    않고 **금액에 닿는 규칙과 배선**만 잰다.
+src/components/quotes/quote-part-picker-wiring.test.ts

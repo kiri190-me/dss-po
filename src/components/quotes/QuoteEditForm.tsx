@@ -48,6 +48,30 @@ import {
   type QuoteWorkScopeSection,
 } from "@/lib/validation/quote-input";
 import OverhaulBadge from "@/components/common/OverhaulBadge";
+/**
+ * 🔴 **부품 고르개는 공용 묶음에서 가져다 쓴다 — 사본을 만들지 않는다**(설계서 F-3).
+ * 그 파일은 A/S 의 수리 건 상세(사용 부품 칸)도 함께 쓰고 있어, 2026-09-22 에
+ * `vendor/dss-core` 로 옮기고 이름을 `QuotePartSuggestionList` → `PartSuggestionList`
+ * 로 고쳤다. 여기 베껴 오면 두 벌이 되고, 한쪽만 고쳐지는 날이 온다.
+ *
+ * 🔴 **규칙을 여기 다시 적지 않는다** — 고르면 단가도 채우고(덮지 않는다 · null 은
+ * 빈칸 · O/H 줄은 O/H 단가로만) 그 판단 전부가 `partPickUnitPrice` 안에 있다.
+ */
+import {
+  PartSuggestionList,
+  filterPartOptions,
+  partPickPatch,
+} from "@dss/core/ui/inventory/part-picker";
+/* 조회 자체는 서버 것이지만(queries/inventory.ts) 줄의 생김새는 여기서도 알아야 한다 —
+   형 선언만 가져오므로 번들에는 아무것도 실리지 않는다. 🔴 조회 파일을 거치지 않고
+   **묶음에서 곧바로** 가져온다(그 파일 머리말의 「재수출하지 않는다」). */
+import type {
+  PartPickerPriceRow,
+  PartPickerRow,
+} from "@dss/core/ui/inventory/part-picker-rows";
+/* 단가를 칸에 넣을 글자로 바꾸는 규약도 고르개 곁에 있다 — 🔴 `null` 은 빈칸이고
+   `"0"` 은 "무상 부품"이라는 실제 값이다. 참고 목록 둘이 그 구분을 그대로 보인다. */
+import { isPriceUnset, toPriceFieldValue } from "@dss/core/ui/inventory/part-price-field";
 import { quoteTemplateKey } from "@/lib/domain/quote-template-variant";
 import type { QuoteEditData, QuoteIntakeLookup } from "@/lib/db/queries/quotes";
 import {
@@ -90,13 +114,16 @@ import {
  *  ④ 🔴 **`workScopeDefaults` 가 비어 있다** — 바로 아래 항목.
  *
  * 그리고 이 조각이 **3b 전체가 아니라 그 첫 조각**이라 함께 비운 것 셋:
- *  · **인수번호로 불러오기** → 🔴 **조각 3b-3 앞쪽 절반에서 들어왔다**(아래
- *    handleLookup · [불러오기] 단추). 그 조회는 출고 부품 · O/H 템플릿 부품까지
- *    함께 돌려주고(쪼개지 않았다 — queries/quotes.ts 머리말), 폼은 그 값을 **상태에만
- *    담아 둔다.** 늘어놓는 **참고 목록 둘**은 아직 없다 → **3b-3 뒤쪽 절반**.
- *  · **부품 고르개**(품명 칸에서 재고를 찾아 고르기) → **조각 3b-3 뒤쪽 절반**.
- *    그 파일은 A/S 의 부품 요청 화면도 쓰고 있어 설계서 F-3 이 「A/S 로 옮기고
- *    이름을 바꾼다」고 했다 — 지금 베끼면 두 벌이 된다.
+ *  · **인수번호로 불러오기** → 🔴 **조각 3b-3 에서 들어왔다**(아래 handleLookup ·
+ *    [불러오기] 단추). 그 조회는 출고 부품 · O/H 템플릿 부품까지 함께 돌려주고
+ *    (쪼개지 않았다 — queries/quotes.ts 머리말), 늘어놓는 **참고 목록 둘**과 거기서
+ *    부품 줄로 담는 길도 **뒤쪽 절반에서 함께 들어왔다**(아래 addUsedParts ·
+ *    addOhTemplateParts).
+ *  · **부품 고르개**(품명 칸에서 재고를 찾아 고르기) → 🔴 **조각 3b-3 뒤쪽 절반에서
+ *    들어왔다.** 🔴 **베끼지 않고 공용 묶음에서 가져다 쓴다**
+ *    (`@dss/core/ui/inventory/part-picker` — 설계서 F-3). 그 파일은 A/S 의 수리 건
+ *    상세(사용 부품 칸)도 함께 쓰는 한 벌이다. 값을 실어 보내는 조회 둘만 이 사이트가
+ *    갖는다(queries/inventory.ts — 무거운 형제 `getPartList` 는 옮겨 오지 않았다).
  *  · **[새 견적서] 팝업의 처음 값**(`initialKind` · `initialExcelOnly` ·
  *    `initialIntakeNumber` · `startNewQuoteLines`) → **조각 3b-2**.
  *    🔴 폼 자체는 `quote === null`(만들기)를 **그대로 다룰 수 있다** — 3b-2 는
@@ -327,18 +354,106 @@ function lineOrdinalsOf(rows: readonly ItemRow[]): number[] {
   });
 }
 
-/*
- * 🔴 **조각 3b-3 의 뒤쪽 절반이 여기에 넷을 더한다** — `usedPartKey` ·
- * `ohTemplatePartKey` · `usedPartToItem` · `ohTemplatePartToItem`. 인수번호로 불러온
- * **출고된 부품**과 **O/H 템플릿 부품**을 부품 줄로 바꾸는 함수들이고, 단가를 고르는
- * 규칙(`domain/quote-part-price.ts` 의 「출처가 정한다」)이 거기 붙는다.
- *
- * 🔴 **값 자체는 이미 온다**(앞쪽 절반 — handleLookup 이 상태에 담는다). 없는 것은
- * **담는 길**이다: 참고 목록에 늘어놓고 고른 것을 부품 줄로 옮기는 화면.
- *
- * 그래서 아래 `ItemRow.sourceKey` 는 **지금 늘 null 이다.** 칸은 남겨 둔다 —
- * 뒤쪽 절반이 「같은 것을 두 번 담지 않는다」를 그 값으로 판정한다.
+/**
+ * 출고 부품 목록의 한 줄을 가리키는 키. **부품 하나가 아니라 (부품, 소유구분)**
+ * 이다 — 같은 부품이 DSS 것과 교산 것으로 따로 나갔으면 목록에 두 줄로 보이고,
+ * 그 둘은 따로 담기고 따로 세어야 한다(queries/quotes.ts 의 같은 판단).
+ * 단가가 달라서가 아니다 — 단가는 부품마다 하나다(2026-09-17 사용자 정정).
  */
+function usedPartKey(part: QuoteIntakeLookup["usedParts"][number]): string {
+  return `issued:${part.partId}|${part.owner ?? ""}`;
+}
+
+/**
+ * O/H 템플릿 목록의 한 줄을 가리키는 키. 출고 줄과 **접두사로 갈라 둔다** —
+ * 같은 부품이 양쪽에 다 있을 수 있고, 그 둘은 단가가 다른 별개의 줄이다.
+ * 차례(index)로 세는 것은 템플릿 줄에 재고 연결이 없을 수 있어(part_id 가 NULL)
+ * 부품 id 만으로는 줄을 가릴 수 없기 때문이다.
+ */
+function ohTemplatePartKey(index: number): string {
+  return `ohtpl:${index}`;
+}
+
+/**
+ * 출고 부품 한 줄 → 견적서 부품 줄.
+ *
+ * 단가는 **부품 상세에 적어 둔 일반 단가**다. 실제로 나간 물건이라 O/H 단가가
+ * 아니라 이 값으로 청구한다(`@dss/core/ui/inventory/part-price-field.ts` 의
+ * 「출처가 정한다」 — 🔴 견적서 종류가 아니라 **줄의 출처**가 고른다).
+ *
+ * `isOverhaulPart` 는 false — 양식의 `1) 부품 비용` 칸으로 간다.
+ */
+function usedPartToItem(part: QuoteIntakeLookup["usedParts"][number]): ItemRow {
+  return {
+    key: generateClientUuid(),
+    partId: part.partId,
+    isOverhaulPart: false,
+    lineKind: "ITEM",
+    partNameText: part.partSpec ? `${part.partName} (${part.partSpec})` : part.partName,
+    // 규격 칸은 케이블 견적서에만 있다. 여기(출고 부품)는 내자 · OH 의 길이라
+    // 지금까지처럼 품명 뒤에 괄호로 붙인 그대로 둔다 — 문구를 바꾸지 않는다.
+    partSpecText: "",
+    quantity: String(part.quantity),
+    unitPrice: toPriceFieldValue(part.unitPrice),
+    sourceKey: usedPartKey(part),
+  };
+}
+
+/**
+ * O/H 템플릿 한 줄 → 견적서 부품 줄.
+ *
+ * 단가는 **템플릿 쪽에 적어 둔 O/H 단가**다. 아직 출고되지 않은 "쓸 예정인"
+ * 부품이라 일반 단가와 다른 값으로 청구한다.
+ *
+ * 🔴 `isOverhaulPart` 가 **true** 인 것이 핵심이다 — O/H 견적서 양식에는 부품
+ * 칸이 둘이고(`1) 부품 비용` · `2) OH 부품 비용`), 템플릿에서 온 줄은 뒤쪽으로
+ * 가야 한다.
+ *
+ * 작업비는 이 줄에 붙지 않는다. 작업비는 부품이 아니라 **수리 작업**에 붙고,
+ * 아래 「수리 작업 목록」에서 고른 것들로 따로 셈한다(2026-08-31 사용자 정정).
+ */
+function ohTemplatePartToItem(
+  part: QuoteIntakeLookup["ohTemplateParts"][number],
+  index: number
+): ItemRow {
+  return {
+    key: generateClientUuid(),
+    partId: part.partId,
+    isOverhaulPart: true,
+    lineKind: "ITEM",
+    partNameText: part.partNameText,
+    partSpecText: "",
+    quantity: String(part.quantity),
+    unitPrice: toPriceFieldValue(part.overhaulUnitPrice),
+    sourceKey: ohTemplatePartKey(index),
+  };
+}
+
+/**
+ * 출고 부품 줄의 소유구분 이름. **null 이 정상이다** — 이 칸이 생기기 전의 요청은
+ * 영영 NULL 로 남으므로(queries/quotes.ts 의 그 항목) 「미지정」이라 그린다.
+ *
+ * 🔴 A/S 의 `domain/inventory-types.ts` 의 `stockOwnerLabelOrUnspecified` 와 같은
+ * 규약이다. 그 파일을 옮겨 오지 않은 까닭은 그것이 재고 화면 전체(가용량 · 이동 ·
+ * 요청 · 반품)의 형과 규칙을 담고 있고 그 화면들이 A/S 에 남기 때문이다 —
+ * queries/quotes.ts 가 `StockOwner` 형을 스키마에서 좁혀 쓴 것과 같은 판단이다.
+ * 🔴 **이넘은 스키마에서 좁혀 온다** — 소유구분이 하나 늘면 tsc 가 여기서 멈춘다.
+ */
+const STOCK_OWNER_LABELS: Record<
+  NonNullable<QuoteIntakeLookup["usedParts"][number]["owner"]>,
+  string
+> = {
+  DSS: "DSS",
+  KYOSAN: "교산",
+  SERVICE_SPARE: "보수부재",
+  TEST: "TEST용",
+};
+
+function stockOwnerLabelOrUnspecified(
+  owner: QuoteIntakeLookup["usedParts"][number]["owner"]
+): string {
+  return owner ? STOCK_OWNER_LABELS[owner] : "미지정";
+}
 
 /** 작업 내역 한 줄. `key` 는 화면에서만 쓰는 값이고 저장되지 않는다. */
 type ScopeRow = { key: string; text: string };
@@ -426,6 +541,8 @@ export default function QuoteEditForm({
   quote,
   defaultQuoteDate,
   repairLabor,
+  partOptions,
+  partPrices,
   cableMaxLines,
   workScopeDefaults,
   returnHref = null,
@@ -439,16 +556,33 @@ export default function QuoteEditForm({
    * 셋 다 온다 — 사람이 장비 종류를 골라 그 목록에서 체크한다.
    */
   repairLabor: RepairLaborKindRow[];
-  /*
-   * 🔴 **조각 3b-3 이 여기에 `partOptions` · `partPrices` 를 더한다** — 품명 칸에서
-   * 재고의 부품을 찾아 고르고 단가까지 채우는 고르개가 쓰는 두 목록이다. 그 조각을
-   * 기다리는 까닭은 설계서 F-3 이다: 고르개 파일(`quote-part-picker.tsx`)을 A/S 의
-   * 부품 요청 화면도 쓰고 있어 「A/S 로 옮기고 이름을 바꾼다」가 먼저다. 지금 베끼면
-   * 두 벌이 되고, A/S 시험이 그 import 줄을 정규식으로 박아 두었다.
+  /**
+   * 부품 마스터 — 품명 칸에서 찾아 고르는 데 쓴다(queries/inventory.ts 의
+   * getPartPickerList).
    *
-   * 그때까지 품명 칸은 **지금까지의 자유 글자**다 — 마스터에 없는 부품을 손으로
-   * 적는 길은 어차피 그대로 남는다(고르개가 와도 그 길은 없어지지 않는다).
+   * 🔴 **재고 · 소유구분 · 내부 비고가 없는 가벼운 목록이다.** 그 값들은 재고
+   * 담당의 정보라 견적서 화면으로 내보내지 않는다 — 그래서 저쪽의 무거운
+   * `getPartList` 를 옮겨 오지 않고 형제 조회만 만들었다(그 함수의 머리말).
+   *
+   * 통째로 한 번 받아 **브라우저에서 거른다** — 부품 마스터가 백 줄 안쪽이라 글자마다
+   * 서버를 부를 까닭이 없다(공용 묶음 part-picker.tsx 의 filterPartOptions).
+   *
+   * 🔴 손으로 적는 길은 그대로다 — 마스터에 없는 부품 · 케이블 부속은 지금까지처럼
+   * 그냥 적으면 되고, 그 줄은 part_id 없이 저장된다.
    */
+  partOptions: PartPickerRow[];
+  /**
+   * 단가가 적혀 있는 부품들(queries/inventory.ts 의 getPartPickerUnitPrices) — 부품을
+   * 고르면 **단가 칸도 함께 채우는** 데 쓴다.
+   *
+   * 🔴 부품 목록과 **따로** 오는 까닭: 단가가 적힌 부품은 통틀어 열몇이고, 그 열몇
+   * 줄만 실으면 된다. 고를 때마다 서버를 다녀오지 않는 것은 부품 목록과 같은
+   * 판단이다 — 늦게 온 응답이 사람이 그새 적은 금액을 덮는 일이 없다.
+   *
+   * 채우는 규칙(덮지 않는다 · null 은 빈칸 · O/H 는 O/H 단가로만)은 고르개에 있다
+   * (공용 묶음 part-picker.tsx 의 partPickUnitPrice).
+   */
+  partPrices: PartPickerPriceRow[];
   /**
    * 케이블 견적서 한 장에 담을 수 있는 줄 수 — **품목 줄 + 설명 줄을 합쳐서**다
    * (xlsx/cable-quote-template.ts 의 `CABLE_QUOTE_MAX_LINES`). 넘치면 생성기가
@@ -530,6 +664,11 @@ export default function QuoteEditForm({
    * 견적서는 **이 값이 영영 null** 이라 수리 건 상세의 「견적서」 탭에 나타나지
    * 않았다. 지금은 인수번호를 불러오면 이어진다.
    *
+   * 🔴 **불러오기가 못 찾거나 오류로 끝나도 이 값은 비우지 않는다.** 사람이 손댄
+   * 결과로 남는 연결이라 조회 한 번이 실패했다고 끊으면 그 건의 「견적서」 탭에서
+   * 이 장이 소리 없이 사라진다. 그래서 「못 불러왔다」를 이 값으로 판정할 수 없고,
+   * 깃발을 따로 둔다(아래 `lookupMissed`).
+   *
    * 🔴 **서버에서 미리 받아 꽂지 말 것**(A/S 그 함수의 머리말). 폼을 채우는 길이 둘이
    * 되면 두 입구가 서로 다른 값을 채우기 시작하고, 그 차이는 한참 뒤에 금액으로
    * 드러난다. 저장된 값은 그대로 왕복한다(collectFields) — 편집해도 연결이 끊기지 않는다.
@@ -579,39 +718,57 @@ export default function QuoteEditForm({
       : [emptyItem()]
   );
 
-  /*
-   * 🔴 **조각 3b-3 뒤쪽 절반이 여기에 `partPickerKey` 를 되돌려 놓는다** — 부품 후보
-   * 목록을 지금 펴 둔 줄이다. 그 고르개 파일이 아직 이 사이트에 없다(위 파일 머리말).
+  /**
+   * 부품 후보 목록을 지금 펴 둔 줄(ItemRow.key). null 이면 아무 줄도 안 펴 둔 것이다.
+   *
+   * 🔴 **줄마다 두지 않고 한 값으로 둔다** — 여러 줄의 목록이 한꺼번에 떠 서로를
+   * 가리면 어느 줄을 고르는지 알 수 없다. 칸에 들어가면 그 줄이 열리고, 나오면 닫힌다.
    */
+  const [partPickerKey, setPartPickerKey] = useState<string | null>(null);
 
   /*
    * ============================================================================
-   * 🔴 불러온 값 셋 — **담아 두기만 하고 아직 그리지 않는다** (3b-3 앞쪽 절반)
+   * 🔴 불러온 값 셋 — 참고 목록 둘이 이것을 늘어놓는다 (3b-3 뒤쪽 절반)
    * ============================================================================
    * `usedParts`(그 접수 건에 출고된 부품) · `ohTemplateCode` · `ohTemplateParts`
    * (그 기종의 O/H 부품 템플릿). 셋 다 `lookupIntakeForQuote` 가 **한 번에** 돌려주는
    * 값이다 — 조회를 쪼개면 A/S 와 두 벌이 되므로 그대로 옮겨 왔다(queries/quotes.ts
    * 머리말).
    *
-   * 🔴 **읽는 쪽(getter)을 일부러 꺼내지 않았다.** 이 값을 늘어놓는 참고 목록 둘과
-   * 담기 단추가 **뒤쪽 절반**이라, 지금 읽을 곳이 한 군데도 없다 — 위
-   * `repairCaseId` 가 설정 함수 없이 꺼내져 있던 것과 **거울상**이다. 뒤쪽 절반이 올
-   * 때 `const [usedParts, setUsedParts]` 로 바꾸면 그 자리가 그대로 열린다.
+   * 🔴 **셋 다 사람이 칠 수 없는 값이고, 직전 불러오기가 서버에서 받아 온 것의
+   * 사본이다.** 그 사본에는 **어느 인수번호의 것인지가 적혀 있지 않다** — 그래서
+   * 불러오기가 못 찾거나 오류로 끝나면 함께 비운다(아래 handleLookup 의 두 갈래).
    * ============================================================================
    */
-  const [, setUsedParts] = useState<QuoteIntakeLookup["usedParts"]>([]);
+  const [usedParts, setUsedParts] = useState<QuoteIntakeLookup["usedParts"]>([]);
   /**
    * 이 장비의 기종에 정해 둔 O/H 부품 템플릿의 기종 코드.
    *
-   * null 이면 **이 모델에 템플릿이 안 이어져 있다**는 뜻이다 — 뒤쪽 절반의 화면이
-   * 그때 "모델을 이어 주세요"를 그린다.
+   * null 이면 **이 모델에 템플릿이 안 이어져 있다**는 뜻이다 — 그때 화면이
+   * "모델을 이어 주세요"를 그린다.
    */
-  const [, setOhTemplateCode] = useState<string | null>(null);
+  const [ohTemplateCode, setOhTemplateCode] = useState<string | null>(null);
   /**
    * 그 기종의 O/H 부품 목록. **O/H 견적은 부품을 출고하기 전에 내므로** 위
    * usedParts 가 비어 있는 것이 정상이고, 청구할 부품은 여기서 온다.
    */
-  const [, setOhTemplateParts] = useState<QuoteIntakeLookup["ohTemplateParts"]>([]);
+  const [ohTemplateParts, setOhTemplateParts] = useState<QuoteIntakeLookup["ohTemplateParts"]>([]);
+  /**
+   * 🔴 **직전 불러오기가 값 없이 끝났는가**(못 찾음 · 오류). O/H 구역의 빈 상태 문구가
+   * 이것으로 갈린다.
+   *
+   * 문구나 다른 값으로 가릴 수 없어 상태를 따로 두었다. `lookupMessage` 는 **찾았을
+   * 때도 채워지고** 오류일 때는 서버가 준 글자가 그대로 들어온다 — 글자를 견주면
+   * 문구를 한 자 고치는 순간 조용히 틀린 안내가 뜬다. `ohTemplateCode === null` 로도
+   * 못 가린다: 「못 불러와 비운 것」과 「찾았는데 모델에 템플릿이 안 이어진 것」이 둘 다
+   * null 이다. `repairCaseId` 는 **사람이 칠 수 있는 칸이라 일부러 안 비우므로**
+   * 앞 건의 값이 남아 그것으로도 갈라낼 수 없다.
+   *
+   * 🔴 **결과가 온 세 갈래에서만** 움직인다(오류 · 못 찾음 → 세움, 찾음 → 내림).
+   * 불러오기를 **시작할 때는 손대지 않는다** — 시작할 때 내리면 기다리는 동안 세
+   * 사본이 아직 앞 건의 것이라 문구가 「모델에 템플릿이 없다」로 되돌아가 깜빡인다.
+   */
+  const [lookupMissed, setLookupMissed] = useState(false);
 
   /**
    * 어느 장비의 작업 목록으로 작업비를 셈하는가. 목록이 장비 종류마다 통째로
@@ -1086,8 +1243,33 @@ export default function QuoteEditForm({
   }
 
   /**
+   * 이미 담은 출고 부품과 아직 안 담은 것.
+   *
+   * 일괄 담기가 이것으로 "몇 종이 남았는지"를 말하고, 목록 쪽은 담긴 줄의 단추를
+   * 「담김」으로 바꾼다. **두 번 담기는 것을 막는 것이 요점이다** — 두 번 담기면
+   * 같은 부품이 두 줄이 되어 청구가 두 배가 되는데, 화면만 보고는 그게 실수인지
+   * (두 줄로 나눠 적으려는) 뜻인지 구별되지 않는다.
+   */
+  const addedSourceKeys = useMemo(
+    () => new Set(items.map((row) => row.sourceKey).filter((key): key is string => key !== null)),
+    [items]
+  );
+  const unaddedUsedParts = useMemo(
+    () => usedParts.filter((part) => !addedSourceKeys.has(usedPartKey(part))),
+    [usedParts, addedSourceKeys]
+  );
+  /** 아직 안 담은 템플릿 줄. 차례(index)를 함께 들고 다녀야 키를 만들 수 있다. */
+  const unaddedOhTemplateParts = useMemo(
+    () =>
+      ohTemplateParts
+        .map((part, index) => ({ part, index }))
+        .filter(({ index }) => !addedSourceKeys.has(ohTemplatePartKey(index))),
+    [ohTemplateParts, addedSourceKeys]
+  );
+
+  /**
    * ============================================================================
-   * [불러오기] — 인수번호 하나로 상단 칸들을 채운다 (조각 3b-3 앞쪽 절반)
+   * [불러오기] — 인수번호 하나로 상단 칸들을 채운다 (조각 3b-3)
    * ============================================================================
    * 🔴 **`repairCaseId` 가 채워지는 자리가 여기 하나다.** 그 값이 비면 저장된
    * 견적서가 수리 건 상세의 「견적서」 탭에서 영영 보이지 않는다 — 여섯 칸을
@@ -1101,14 +1283,15 @@ export default function QuoteEditForm({
    * 담은 것이다 — 불러오기가 그것을 덮으면 「인수번호를 고쳐 다시 불렀더니 적어 둔
    * 줄이 사라진」다(A/S 의 quote-new-start.test.ts 가 같은 것을 못 박는다).
    *
-   * ── 🔴 아직 없는 것 (뒤쪽 절반) ──────────────────────────────────────────
-   * 받아 온 `usedParts` · `ohTemplateParts` 를 **늘어놓는 참고 목록 둘**과 거기서
-   * 부품 줄로 담는 길(`addUsedParts` · `addOhTemplateParts` · `addedSourceKeys` ·
-   * `unaddedUsedParts` · `unaddedOhTemplateParts`)이다. 값은 상태에 담아 두고 그리지
-   * 않는다 — 그래서 **아래 안내 문장은 「아래 목록」을 가리키지 않는다**(없는 화면을
-   * 가리키면 거짓말이 된다).
+   * ── 🔴 받아 온 세 사본은 근거가 없어지면 함께 없어진다 ──────────────────
+   * `usedParts` · `ohTemplateCode` · `ohTemplateParts` 는 사람이 칠 수 없고 **직전
+   * 불러오기가 서버에서 받아 온 것의 사본**이며, 그 사본에는 **어느 인수번호의
+   * 것인지가 적혀 있지 않다.** 그래서 **못 찾음 · 오류 두 갈래에서 비운다** — 비우지
+   * 않으면 앞 건의 부품이 [담기] 단추까지 살아 남아, 담으면 지금 칸에 적힌 번호와
+   * 아무 상관 없는 부품이 청구 줄로 들어간다(A/S 2026-09-22 실사용 결함 · `adb4e7e`
+   * 와 `85d21d3`).
    *
-   * 자동 불러오기 effect 도 없다 — `initialIntakeNumber` prop 이 있어야 뜻이 있고
+   * 자동 불러오기 effect 는 없다 — `initialIntakeNumber` prop 이 있어야 뜻이 있고
    * 그것은 **조각 4·5** 의 것이다(위 프롭 자리의 주석).
    * ============================================================================
    */
@@ -1124,12 +1307,46 @@ export default function QuoteEditForm({
       const result = await lookupIntakeForQuoteAction({ intakeNumber });
       if (!result.ok) {
         setLookupMessage(result.message);
+        /**
+         * 🔴 **오류로 끝나도 받아 온 세 사본을 비운다.** 인수번호를 고쳐 다시
+         * 눌렀는데 조회가 인가 실패나 DB 오류로 끝나면, 화면에 남은 두 목록은 지금
+         * 칸에 적힌 번호와 **아무 상관이 없는 앞 건의 부품**이 된다. 비우지 않으면
+         * [담기] 단추가 그대로 살아 있고, 담으면 관계없는 부품이 O/H 템플릿 단가까지
+         * 달고 청구 줄로 들어간다.
+         *
+         * 🔴 **사람이 칠 수 있는 칸은 하나도 건드리지 않는다**(아래 갈래와 같다) —
+         * 고객사명 · 모델명 · L/N · S/N · 신고증상 · 품명 · 종류 · 부품 줄 · 작업
+         * 내역. 조회가 오류로 끝났다고 손으로 다듬어 둔 값을 지우면 안 된다.
+         */
+        setUsedParts([]);
+        setOhTemplateCode(null);
+        setOhTemplateParts([]);
+        setLookupMissed(true);
         return;
       }
       if (!result.found) {
         // 오류가 아니다 — 아직 접수 전인 건으로 먼저 견적을 내는 일이 있다.
         setLookupMessage(`${intakeNumber} 로 접수된 건을 찾지 못했습니다. 아래 칸을 직접 입력해 주세요.`);
+        /**
+         * 🔴 **비우는 것은 조회가 받아 온 세 사본뿐이다.** 위 갈래와 같은 논리이고,
+         * 사람이 칠 수 있는 칸은 여기서도 하나도 건드리지 않는다 — 못 찾았다고 손으로
+         * 다듬어 둔 값을 지우면 안 된다.
+         *
+         * 🔴 **O/H 쪽을 비우지 않으면 청구 금액이 틀린다**(A/S 2026-09-22 실사용 결함).
+         * 출고 부품 구역은 `usedParts.length > 0` 일 때만 그려서 비우면 화면에서
+         * 사라지지만, O/H 구역은 `kind === "OVERHAUL"` 이기만 하면 값과 무관하게
+         * 그려진다 — 비우지 않으면 앞 건 기종의 부품 줄과 [담기] 단추가 그대로 살아
+         * 있다. 비워야 그 자리에 안내 문구만 남는다.
+         */
         setUsedParts([]);
+        setOhTemplateCode(null);
+        setOhTemplateParts([]);
+        /**
+         * 비운 까닭을 남긴다. 이것이 없으면 O/H 구역의 빈 상태 문구가 **「이 모델에
+         * O/H 부품 템플릿이 이어져 있지 않습니다」**를 띄운다 — 사실은 인수번호를
+         * 못 찾은 것인데 사람을 재고 관리 화면으로 보내는 거짓 안내다.
+         */
+        setLookupMissed(true);
         return;
       }
 
@@ -1156,18 +1373,53 @@ export default function QuoteEditForm({
           })
         );
       }
-      // 🔴 상태에만 담는다 — 늘어놓는 화면은 뒤쪽 절반이다(위 머리말).
       setUsedParts(found.usedParts);
       setOhTemplateCode(found.ohTemplateCode);
       setOhTemplateParts(found.ohTemplateParts);
+      // 받아 온 근거가 다시 생겼다 — 앞서 못 찾아 세워 둔 깃발을 내린다. 안 내리면
+      // 이번엔 제대로 찾았는데도 「인수번호를 불러오지 못했다」는 문구가 남는다.
+      setLookupMissed(false);
       setLookupMessage(
         found.usedParts.length > 0
-          ? `불러왔습니다. 이 건에 출고된 부품 기록이 ${found.usedParts.length}종 있습니다 — 청구할 부품은 아래 부품 칸에 직접 적어 주세요.`
+          ? `불러왔습니다. 이 건에 출고된 부품 ${found.usedParts.length}종이 아래 참고 목록에 있습니다.`
           : "불러왔습니다. 이 건에 출고된 부품 기록은 없습니다."
       );
     } finally {
       setIsLookingUp(false);
     }
+  }
+
+  /**
+   * 출고 부품을 부품 줄에 담는다. 하나든 여럿이든 이 함수 하나를 쓴다 —
+   * 🔴 일괄 담기가 하나씩 담기를 여러 번 부르면 `setItems` 가 여러 번 돌아 "빈 첫 줄"
+   * 처리가 중간 상태에 걸린다.
+   */
+  function addUsedParts(list: readonly QuoteIntakeLookup["usedParts"][number][]) {
+    if (list.length === 0) return;
+    setItems((prev) => {
+      // 빈 첫 줄이 남아 있으면 그 자리를 쓴다 — 담을 때마다 빈 줄이 밀려
+      // 내려가면 저장할 때 "품명을 입력해 주세요"가 뜬다.
+      const next = prev.filter(
+        (row) => !(row.partNameText.trim() === "" && row.unitPrice.trim() === "")
+      );
+      return [...next, ...list.map(usedPartToItem)];
+    });
+  }
+
+  /**
+   * O/H 템플릿의 부품을 담는다. 출고 줄과 **다른 함수인 것이 요점이다** —
+   * 단가가 오는 곳도(O/H 단가) 양식에서 갈 자리도(`2) OH 부품 비용`) 다르다.
+   */
+  function addOhTemplateParts(
+    list: readonly { part: QuoteIntakeLookup["ohTemplateParts"][number]; index: number }[]
+  ) {
+    if (list.length === 0) return;
+    setItems((prev) => {
+      const next = prev.filter(
+        (row) => !(row.partNameText.trim() === "" && row.unitPrice.trim() === "")
+      );
+      return [...next, ...list.map(({ part, index }) => ohTemplatePartToItem(part, index))];
+    });
   }
 
   function updateItem(key: string, patch: Partial<ItemRow>) {
@@ -1634,9 +1886,9 @@ export default function QuoteEditForm({
           신고증상을 채우고 **`repairCaseId` 를 잇는 것**이다(handleLookup — 그 값을
           채우는 자리가 거기 하나다). 🔴 **누르기 전에는 아무것도 바뀌지 않는다.**
 
-          🔴 **출고된 부품 참고 목록은 아직 없다**(조각 3b-3 뒤쪽 절반). 그래서 아래
-          안내도, 불러온 뒤의 문장도 「아래 목록」을 가리키지 않는다 — 없는 화면을
-          가리키면 거짓말이 된다.
+          🔴 **불러온 값은 아래 참고 목록 둘로 이어진다**(조각 3b-3 뒤쪽 절반) —
+          「O/H 부품 템플릿」과 「이 접수 건에 출고된 부품」. 불러온 뒤의 문장이 그
+          목록을 가리키는 것은 그 화면이 실제로 있기 때문이다.
 
           🔴 **케이블 견적서에는 없다**(2026-09-16 케이블 ③). 케이블은 고칠 물건이
           없는 별도 견적서다(schema/quotes.ts 의 'CABLE 은 수리품에 딸린 장이 아니다').
@@ -1648,7 +1900,8 @@ export default function QuoteEditForm({
         <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">인수번호로 불러오기</h2>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
           접수 건의 고객사 · 모델명 · L/N · S/N · 신고증상을 아래 칸에 채우고, 이 견적서를 그 접수
-          건에 이어 줍니다. 누르기 전에는 아무것도 바뀌지 않습니다.
+          건에 이어 줍니다. 그 건에 출고된 부품도 아래에 참고용으로 보여 줍니다.
+          누르기 전에는 아무것도 바뀌지 않습니다.
         </p>
         <div className="mt-3 flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
@@ -1889,25 +2142,185 @@ export default function QuoteEditForm({
         </section>
       ) : (
       <>
-      {/* ── 🔴 조각 3b-3 **뒤쪽 절반**이 여기에 참고 목록 둘을 되돌려 놓는다 ──
-          🔴 **값은 이미 온다** — [불러오기]가 `usedParts` · `ohTemplateCode` ·
-          `ohTemplateParts` 를 상태에 담아 둔다(앞쪽 절반 — handleLookup). 없는 것은
-          **늘어놓고 담는 화면**이라, 뒤쪽 절반은 조회를 다시 손대지 않아도 된다.
-          · **O/H 부품 템플릿**(O/H 견적서일 때만) — 🔴 O/H 견적은 부품을 출고하기
-            **전에** 낸다(2026-08-31 사용자 확인). 그 시점에 아래 「출고된 부품」은
-            비어 있는 것이 정상이라, 청구할 부품은 이 기종의 템플릿이 답한다.
-            담은 줄은 양식의 `2) OH 부품 비용` 칸으로 가고(`isOverhaulPart: true`)
-            단가는 **템플릿에 적어 둔 O/H 단가**를 따른다.
-          · **이 접수 건에 출고된 부품**(참고용) — 재고에서 나간 것과 청구하는 것이
-            늘 같지는 않다(무상 교체 · 내부 소모 · 반품). 담을 것만 사람이 고르고,
-            단가는 **부품 상세의 일반 단가**를 따른다.
+      {/* ── O/H 부품 템플릿 (참고) ────────────────────────────────────────
+          🔴 O/H 견적은 부품을 출고하기 **전에** 낸다(2026-08-31 사용자 확인). 얼마에
+          할지를 먼저 알려 주고 승인을 받은 뒤에 뜯기 시작하므로, 그 시점에 아래
+          「출고된 부품」은 비어 있는 것이 정상이다. 청구할 부품은 이 기종의 O/H
+          템플릿이 답한다.
 
           🔴 **어느 단가를 쓰는지는 견적서 종류가 아니라 「그 줄이 어디서 왔는가」가
-          정한다**(2026-08-31 사용자 결정 — A/S domain/quote-part-price.ts). 한 O/H
-          견적서 안에 두 출처가 함께 있을 수 있어서 그렇다. 3b-3 이 올 때 그 파일도
-          함께 온다 — 규칙을 여기 새로 적지 말 것.
+          정한다**(2026-08-31 사용자 결정 — `@dss/core/ui/inventory/part-price-field.ts`).
+          한 O/H 견적서 안에 두 출처가 함께 있을 수 있어서 그렇다 — 규칙을 여기 새로
+          적지 않는다.
 
-          둘 다 인수번호로 불러온 값(`ohTemplateParts` · `usedParts`)으로 그린다. */}
+          O/H 견적서일 때만 그린다. 내자 견적서에는 이 칸 자체가 없다. */}
+      {kind === "OVERHAUL" && (
+        <section className="rounded-lg border border-sky-200 bg-sky-50 p-4 dark:border-sky-900 dark:bg-sky-950/40">
+          <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+            O/H 부품 템플릿
+            {ohTemplateCode && (
+              <span className="ml-2 font-normal text-zinc-500 dark:text-zinc-400">
+                기종 {ohTemplateCode}
+              </span>
+            )}
+          </h2>
+          {ohTemplateParts.length === 0 ? (
+            // 못 담는 이유가 넷이고 **고쳐야 할 자리가 다 다르다.** 한 문장으로
+            // 뭉치면 사람이 어디로 가야 하는지 알 수 없다.
+            //
+            // 🔴 **「직전 불러오기가 값 없이 끝났다」를 맨 앞에서 본다.** 못 찾거나
+            // 오류로 끝나면 세 사본을 비우는데 `repairCaseId` 는 사람이 칠 수 있는
+            // 칸이라 앞 건의 값이 남는다 — 그러면 아래 둘째 갈래가 열려 「모델에
+            // 템플릿이 이어져 있지 않습니다」를 띄우고, 사람이 재고 관리 화면을
+            // 헛되게 뒤진다. 처음 연 폼에서 없는 번호를 불러 본 경우
+            // (`repairCaseId` 도 null)에도 「먼저 불러오세요」보다 이 문구가 사실에
+            // 가깝다 — 이미 눌렀고 못 찾은 것이다.
+            //
+            // 오류 갈래도 **같은 문구**를 쓴다. 두 경우 모두 사람이 할 일이 「위
+            // 인수번호 칸의 안내를 보고 다시 불러오기」로 같고, 오류 쪽의 까닭(서버가
+            // 준 글자)은 그 칸에 이미 그대로 적혀 있다.
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+              {lookupMissed
+                ? "인수번호를 불러오지 못해 O/H 부품을 가져오지 못했습니다 — 위 인수번호 칸의 안내를 확인하고 번호를 고친 뒤 [불러오기]를 다시 눌러 주세요."
+                : repairCaseId === null
+                  ? "인수번호를 먼저 불러오면 그 장비의 기종에 맞는 O/H 부품을 여기서 담을 수 있습니다."
+                  : ohTemplateCode === null
+                    ? "이 장비의 제품 모델에 O/H 부품 템플릿이 이어져 있지 않습니다 — A/S 관리 시스템의 재고 관리 › O/H 부품 템플릿에서 모델을 이어 주세요."
+                    : `기종 ${ohTemplateCode} 템플릿에 담긴 부품이 없습니다 — A/S 관리 시스템의 재고 관리 › O/H 부품 템플릿에서 부품을 넣어 주세요.`}
+            </p>
+          ) : (
+            <>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+                단가는 <b>O/H 템플릿에 적어 둔 값</b>이 따라옵니다 — 출고된 부품이 부품 상세의 단가를 쓰는
+                것과 다릅니다. 담은 줄은 견적서의 <b>2) OH 부품 비용</b> 칸으로 갑니다.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => addOhTemplateParts(unaddedOhTemplateParts)}
+                  disabled={disabled || unaddedOhTemplateParts.length === 0}
+                  className="rounded border border-sky-500 bg-white px-2 py-1 text-xs font-medium text-sky-900 disabled:opacity-50 dark:border-sky-600 dark:bg-zinc-900 dark:text-sky-200"
+                >
+                  {unaddedOhTemplateParts.length === 0
+                    ? "전부 담았습니다"
+                    : `O/H 템플릿에서 불러오기 (${unaddedOhTemplateParts.length}종)`}
+                </button>
+                <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                  이미 담은 것은 건너뜁니다. 담은 뒤에도 줄마다 고치거나 지울 수 있습니다.
+                </span>
+              </div>
+              <ul className="mt-2 flex flex-col gap-1">
+                {ohTemplateParts.map((part, index) => {
+                  const added = addedSourceKeys.has(ohTemplatePartKey(index));
+                  return (
+                    <li key={ohTemplatePartKey(index)} className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="text-zinc-800 dark:text-zinc-200">{part.partNameText}</span>
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">{part.quantity}개</span>
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                        {isPriceUnset(part.overhaulUnitPrice) ? (
+                          <span className="text-amber-700 dark:text-amber-400">
+                            {part.partId === null
+                              ? "재고 미연결 — O/H 단가 없음"
+                              : "O/H 단가 미정"}
+                          </span>
+                        ) : (
+                          `O/H 단가 ₩${AMOUNT_FORMAT.format(Number(part.overhaulUnitPrice))}`
+                        )}
+                      </span>
+                      {added ? (
+                        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">담김 ✓</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => addOhTemplateParts([{ part, index }])}
+                          disabled={disabled}
+                          className="rounded border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-50 dark:border-zinc-700"
+                        >
+                          부품 줄에 담기
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
+
+      {/* ── 사용한 부품 (참고) ────────────────────────────────────────────
+          재고에서 나간 것과 청구하는 것이 늘 같지는 않다(무상 교체 · 내부 소모 ·
+          반품). 담을 것만 사람이 고르고, 단가는 **부품 상세의 일반 단가**를 따른다.
+
+          🔴 케이블 견적서에는 그리지 않는다 — 출고된 부품은 수리 건에 딸린 값이고, 그
+          종류에는 수리 건이 없다. (내자로 불러온 뒤 종류만 바꾼 장에서도 감춘다.) */}
+      {!isCable && usedParts.length > 0 && (
+        <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+          <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+            이 접수 건에 출고된 부품 <span className="font-normal text-zinc-500 dark:text-zinc-400">(참고용)</span>
+          </h2>
+          <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+            재고에서 나간 것과 청구하는 것이 늘 같지는 않습니다. 담을 것만 골라 주세요. 단가는 재고 관리에
+            부품마다 적어 둔 값이 따라오고, 정해 두지 않았으면 빈칸으로 들어옵니다.
+          </p>
+          {/* 일괄 담기. 출고된 부품이 열 종을 넘는 일이 흔한데 하나씩 누르게
+              두면 사람이 중간에 하나를 빠뜨리고, 빠뜨린 것은 청구에서 통째로
+              사라진다. **이미 담은 것은 건너뛴다** — 두 번 담기면 청구가 두 배가
+              되고 화면만 봐서는 실수인지 뜻인지 구별되지 않는다. */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => addUsedParts(unaddedUsedParts)}
+              disabled={disabled || unaddedUsedParts.length === 0}
+              className="rounded border border-zinc-400 bg-white px-2 py-1 text-xs font-medium text-zinc-800 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+            >
+              {unaddedUsedParts.length === 0
+                ? "전부 담았습니다"
+                : `출고된 부품 ${unaddedUsedParts.length}종 전부 담기`}
+            </button>
+            <span className="text-xs text-zinc-600 dark:text-zinc-300">
+              담은 뒤에도 줄마다 고치거나 지울 수 있습니다.
+            </span>
+          </div>
+          <ul className="mt-2 flex flex-col gap-1">
+            {usedParts.map((part) => {
+              const added = addedSourceKeys.has(usedPartKey(part));
+              return (
+              <li key={usedPartKey(part)} className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-zinc-800 dark:text-zinc-200">{part.partName}</span>
+                {part.partSpec && (
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">{part.partSpec}</span>
+                )}
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {stockOwnerLabelOrUnspecified(part.owner)} · {part.quantity}개 출고
+                </span>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {isPriceUnset(part.unitPrice) ? (
+                    <span className="text-amber-700 dark:text-amber-400">단가 미정</span>
+                  ) : (
+                    `단가 ₩${AMOUNT_FORMAT.format(Number(part.unitPrice))}`
+                  )}
+                </span>
+                {added ? (
+                  // 담긴 줄은 단추를 없앤다. 회색으로 잠가 두기만 하면 "왜 안
+                  // 눌리지" 가 되고, 그건 A/S 가 이미 한 번 겪은 고장 신고다.
+                  <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">담김 ✓</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => addUsedParts([part])}
+                    disabled={disabled}
+                    className="rounded border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-50 dark:border-zinc-700"
+                  >
+                    부품 줄에 담기
+                  </button>
+                )}
+              </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       {/* ── 부품 줄 ───────────────────────────────────────────────────────
           케이블 견적서에서는 이 표가 **품목 표 전체**다 — 그 양식에는 작업비 구역이
@@ -1943,11 +2356,13 @@ export default function QuoteEditForm({
           </div>
         </div>
 
-        {/* 🔴 **조각 3b-3 이 여기에 「품명 칸에서 재고를 찾아 고른다」 안내를 되돌려
-            놓는다.** 고르면 그 줄이 재고의 부품과 이어지고(part_id), 이름을 손으로
-            고치면 이어짐이 풀린다. 지금은 그 길이 없어 **품명이 자유 글자**뿐이라,
-            없는 기능을 설명하지 않는다 — 안내만 남기면 사람이 쳐 보고 「왜 안 뜨지」가
-            된다. 손으로 적는 길은 3b-3 이 와도 그대로 남는다. */}
+        {/* 찾아 고르는 길이 생긴 것을 칸만 보고는 알 수 없다 — 지금까지 자유 글자였기
+            때문이다. 손으로 적는 길이 그대로라는 것도 함께 적는다. */}
+        <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">
+          품명 칸에 글자를 치면 재고의 부품을 <b>품명 / 품명2 / 도번 / 교산 품번</b>으로 찾아
+          고를 수 있습니다. 고르면 그 줄이 재고의 부품과 이어지고, 이름을 손으로 고치면 이어짐이
+          풀립니다 — 재고에 없는 {isCable ? "품목" : "부품"}은 지금처럼 그냥 적으면 됩니다.
+        </p>
 
         {kind === "OVERHAUL" && (
           <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">
@@ -2018,30 +2433,62 @@ export default function QuoteEditForm({
                     : "sm:grid-cols-[1fr_5rem_8rem_auto]"
               }`}
             >
-              {/* 🔴 `relative` 를 남겨 둔다 — 조각 3b-3 의 **부품 후보 목록이 이 칸
-                  바로 밑에 떠야** 하고, 흐름 안에 두면 목록이 뜰 때마다 밑의 줄들이
-                  통째로 밀려 내려가 고르려던 자리가 눈앞에서 움직인다. 지금은 뜰 것이
-                  없어 아무 일도 하지 않는 한 글자다. */}
+              {/* 🔴 `relative` — 부품 후보 목록이 이 칸 **바로 밑에 떠야** 한다. 흐름 안에
+                  두면 목록이 뜰 때마다 밑의 줄들이 통째로 밀려 내려가, 고르려던 자리가
+                  눈앞에서 움직인다. */}
               <div className="relative">
                 <input
                   value={row.partNameText}
                   /**
-                   * 🔴 글자를 치면 재고 연결을 **푼다**(partId: null). 저장돼 있던 줄이
-                   * 재고의 부품과 이어져 있을 수 있고(A/S 에서 고르개로 담은 줄), 이름만
-                   * 고쳤는데 part_id 가 남아 있으면 화면의 글자와 통계가 세는 부품이 서로
-                   * 다른 것을 가리킨다. 🔴 **고르개(3b-3)가 없어도 이 줄은 필요하다.**
+                   * 🔴 글자를 치면 재고 연결을 **푼다**(partId: null). 고른 뒤 이름만 고쳤는데
+                   * part_id 가 남아 있으면 화면의 글자와 통계가 세는 부품이 서로 다른 것을
+                   * 가리킨다. 마스터에 없는 부품을 손으로 적는 길이 그대로 남는 까닭이기도
+                   * 하다 — 고르면 붙고, 고쳐 쓰면 풀린다.
                    */
-                  onChange={(e) => updateItem(row.key, { partNameText: e.target.value, partId: null })}
+                  onChange={(e) => {
+                    updateItem(row.key, { partNameText: e.target.value, partId: null });
+                    setPartPickerKey(row.key);
+                  }}
+                  onFocus={() => setPartPickerKey(row.key)}
+                  /* 다른 줄을 이미 펴 두었으면 그것을 닫지 않는다 — 닫는 것은 제 줄뿐이다. */
+                  onBlur={() => setPartPickerKey((prev) => (prev === row.key ? null : prev))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setPartPickerKey(null);
+                  }}
                   placeholder={`${lineOrdinals[index]}번째 ${isCable ? "품목 품명" : "부품 품명"}`}
                   className={editInputClass}
                   disabled={disabled}
-                  /* 브라우저가 제 기억으로 만든 목록이 (3b-3 의) 부품 후보 위에 겹쳐 뜨지 않게. */
+                  /* 브라우저가 제 기억으로 만든 목록이 부품 후보 위에 겹쳐 뜨지 않게. */
                   autoComplete="off"
                 />
-                {/* 🔴 **조각 3b-3 이 여기에 `<QuotePartSuggestionList>` 를 놓는다.**
-                    고르면 단가도 함께 채우고, 그 규칙(덮지 않는다 · null 은 빈칸 ·
-                    `2) OH 부품 비용` 칸으로 갈 줄만 O/H 단가)은 전부 고르개 쪽에 있다
-                    (A/S quote-part-picker.tsx 의 partPickUnitPrice) — 여기 새로 적지 말 것. */}
+                {partPickerKey === row.key && !disabled && (
+                  <PartSuggestionList
+                    options={filterPartOptions(partOptions, row.partNameText)}
+                    listLabel={`${lineOrdinals[index]}번째 ${isCable ? "품목" : "부품"} 후보`}
+                    /**
+                     * 🔴 고르면 **단가도 함께** 채운다. 규칙은 전부 고르개 쪽에 있다
+                     * (공용 묶음 part-picker.tsx 의 partPickUnitPrice) — 여기서는 그
+                     * 판단에 필요한 세 가지를 건넨다:
+                     *
+                     *  · `prices` — 단가가 적힌 부품들(페이지가 한 번 실어 보낸 그 목록)
+                     *  · `isOverhaulPart` — 🔴 **`2) OH 부품 비용` 칸으로 갈 줄일 때만** true 다.
+                     *    OH 표시는 O/H 견적서에만 그리고, 저장도 그때만 싣는다(collectFields 의
+                     *    같은 식) — 종류를 바꿔 표시가 사라진 줄은 일반 단가로 청구된다.
+                     *  · `currentUnitPrice` — 적혀 있으면 덮지 않는다(사람이 조정해 둔 금액이다)
+                     */
+                    onPick={(option) => {
+                      updateItem(
+                        row.key,
+                        partPickPatch(option, {
+                          prices: partPrices,
+                          isOverhaulPart: kind === "OVERHAUL" && row.isOverhaulPart,
+                          currentUnitPrice: row.unitPrice,
+                        })
+                      );
+                      setPartPickerKey(null);
+                    }}
+                  />
+                )}
                 {fieldErrors[`items.${index}.partNameText`] && (
                   <p className={editErrorClass}>{fieldErrors[`items.${index}.partNameText`]}</p>
                 )}

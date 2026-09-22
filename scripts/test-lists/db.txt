@@ -55,3 +55,12 @@ src/lib/db/mutations/quotes.integration.test.ts
 #    (저쪽 `test-quote-lookup-`). 같은 dss_as_test 를 쓰므로 겹치면 한쪽 after() 가
 #    다른 쪽 자료를 치운다.
 src/lib/db/queries/quote-intake-lookup.integration.test.ts
+
+# ── 조각 3b-3 뒤쪽 절반 · 커밋 ① — 부품 고르개의 두 목록 ────────────────
+# 🔴 **A/S 에는 이 시험이 없다**(새로 적었다). 두 조회의 요점이 「어떤 칸을 싣지
+#    않는가」와 「null 과 "0" 을 가르는가」인데, 그 둘은 글자를 읽어서는 절반만 보인다 —
+#    SQL 이 실제로 무엇을 돌려주는지가 답이다.
+# 🔴 **격리 이름을 겹치지 않게 두었다**: 부품명 접두사 `po-test-picker-`
+#    (저쪽은 `test-quote-lookup-`, 위 이웃은 `po-test-lookup-`). 고객사 · 제품 ·
+#    수리 건은 만들지 않는다 — 이 두 조회는 parts 와 단가 표 둘만 읽는다.
+src/lib/db/queries/part-picker.integration.test.ts

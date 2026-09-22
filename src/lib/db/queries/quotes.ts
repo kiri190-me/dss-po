@@ -46,14 +46,14 @@ import {
  * 그 조각이 올 때 죽은 코드와 새로 옮겨 온 코드 중 어느 것이 참인지 답할 수 없게
  * 된다.
  *
- * 🔴 **`lookupIntakeForQuote` 가 들어왔다**(조각 3b-3 앞쪽 절반). 인수번호 하나로
- * 접수 건을 찾아 폼 상단을 채우는 조회이고, 그 하나가 `customers` · `products` ·
+ * 🔴 **`lookupIntakeForQuote` 가 들어왔다**(조각 3b-3). 인수번호 하나로 접수 건을
+ * 찾아 폼 상단을 채우는 조회이고, 그 하나가 `customers` · `products` ·
  * `inventory_part_requests` · `oh_part_templates` · `part_unit_prices` 등 열한 표를
  * 읽는다(아래 그 함수). **A/S 의 같은 함수를 쪼개지 않고 그대로 옮겼다** — 출고 부품 ·
- * O/H 템플릿까지 한 번에 돌려주는 모양 그대로다. 그 값을 늘어놓는 **참고 목록 화면과
- * 부품 고르개는 뒤쪽 절반**이고, 폼은 지금 받은 값을 상태에만 담아 둔다
- * (components/quotes/QuoteEditForm.tsx 의 handleLookup). 쪼개 옮기면 저쪽과 두 벌이
- * 되고, 뒤쪽 절반이 올 때 다시 고쳐야 한다.
+ * O/H 템플릿까지 한 번에 돌려주는 모양 그대로다. 그 값을 늘어놓는 **참고 목록 둘**과
+ * 거기서 부품 줄로 담는 길은 뒤쪽 절반에서 들어왔다
+ * (components/quotes/QuoteEditForm.tsx 의 addUsedParts · addOhTemplateParts).
+ * 쪼개 옮기면 저쪽과 두 벌이 된다.
  *
  * 🔴 **`listQuotesForRepairCase` 도 아직 없다.** 저쪽에서 그것은 수리 건 상세의
  * [견적서] 탭이 쓰는 조회이고, 그 탭은 A/S 의 화면이다(설계서 F절 5번 — 화면은
@@ -621,9 +621,8 @@ export type QuoteIntakeLookup = {
    * 이 접수 건에 **실제로 출고된** 부품. 참고용이다 — 폼이 자동으로 채우지 않고
    * 옆에 늘어놓기만 하고, 사람이 골라 담는다.
    *
-   * 🔴 **그 「옆에 늘어놓는 화면」은 이 사이트에 아직 없다**(조각 3b-3 뒤쪽 절반).
-   * 폼은 이 값을 상태에 담아 두고 그리지 않는다 — 조회를 쪼개 두면 저쪽과 두 벌이
-   * 되기 때문에 값만 먼저 옮겨 왔다(파일 머리말).
+   * 🔴 그 「옆에 늘어놓는 화면」은 폼의 「이 접수 건에 출고된 부품 (참고용)」 구역이다
+   * (조각 3b-3 뒤쪽 절반 — components/quotes/QuoteEditForm.tsx).
    *
    * 단가가 없다: parts 표에 가격 칼럼이 자체가 없다. 무엇을 몇 개 썼는지까지가
    * 시스템이 아는 전부이고, 얼마에 청구할지는 사람이 정한다.
@@ -670,8 +669,8 @@ export type QuoteIntakeLookup = {
    * 여기서 온 줄은 O/H 템플릿에 적어 둔 단가를 따른다. 출고 기록에서 온 줄이
    * 부품 상세의 일반 단가를 따르는 것과 짝이다 — **어느 견적서인지가 아니라
    * 그 줄이 어디서 왔는지가 단가를 정한다**(2026-08-31 사용자 결정). 🔴 그 규칙을
-   * 담은 파일(A/S `domain/quote-part-price.ts`)은 **담는 화면과 함께** 뒤쪽 절반에
-   * 온다 — 여기 미리 적지 않는다.
+   * 담은 파일은 공용 묶음에 있다(`@dss/core/ui/inventory/part-price-field.ts`) —
+   * 여기 다시 적지 않는다.
    *
    * 재고와 이어지지 않은 줄(part_id 가 NULL)도 그대로 준다. 이름과 수량은
    * 쓸모가 있고, 단가만 붙일 곳이 없어 null 이다.
@@ -720,7 +719,7 @@ export async function lookupIntakeForQuote(intakeNumber: string): Promise<QuoteI
       serialNumber: products.serialNumber,
       faultDescription: repairCases.reportedSymptom,
       // 이 장비에 이어진 O/H 부품 템플릿의 기종 코드. 안 이어져 있으면 null 이고,
-      // 그때 화면은 "모델을 이어 주세요"를 그린다(그 화면은 뒤쪽 절반이다).
+      // 그때 화면은 "모델을 이어 주세요"를 그린다(폼의 O/H 부품 템플릿 구역).
       ohTemplateCode: ohPartTemplates.code,
       ohTemplateId: ohPartTemplates.id,
     })

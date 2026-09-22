@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import QuoteEditForm from "@/components/quotes/QuoteEditForm";
 import { requireAreaAccessForCurrentUser } from "@/lib/auth/area-guard";
 import { hasPermission } from "@/lib/auth/permission-resolver";
+import { getPartPickerList, getPartPickerUnitPrices } from "@/lib/db/queries/inventory";
 import { listRepairLabor } from "@/lib/db/queries/repair-labor";
 import { CABLE_QUOTE_MAX_LINES } from "@/lib/domain/cable-quote-lines";
 import { toKstDateOnly } from "@/lib/domain/date-only";
@@ -49,8 +50,6 @@ export const dynamic = "force-dynamic";
  *     `readAllQuoteWorkSectionDefaults`) → **조각 3c**. 엑셀 사슬을 끌고 온다.
  *     🔴 그래서 아래에서 `workScopeDefaults={{}}` 를 넘긴다 — 수정 화면과 같다.
  *   · **첨부 칸**(`listQuoteAttachmentSlots`) → **조각 3d**.
- *   · **부품 고르개 목록 둘**(`getPartPickerList` · `getPartPickerUnitPrices`) →
- *     **조각 3b-3**(설계서 F-3).
  *   · **mock 모드 갈래**(`getAuthSource` → `PlaceholderPage`) — 이 사이트에는
  *     mock 모드가 없다.
  *   · **세션 두 걸음**(`readSession` + `resolveActingUserForSession`) —
@@ -67,8 +66,16 @@ export default async function NewQuotePage() {
   // 보이는 사람과 여기 들어오는 사람이 어긋나지 않는다.
   if (!(await hasPermission(user, "quotes", "WRITE"))) redirect("/quotes");
 
-  // 장비 종류별 수리 작업 목록과 단가 — 견적서의 작업비가 여기서 나온다.
-  const repairLabor = await listRepairLabor();
+  // 🔴 셋을 **함께** 기다린다 — 서로를 쓰지 않으므로 줄줄이 기다릴 까닭이 없다.
+  //  · 장비 종류별 수리 작업 목록과 단가 — 견적서의 작업비가 여기서 나온다.
+  //  · 부품 고르개의 두 목록(조각 3b-3 뒤쪽 절반) — 품명 칸에서 고를 부품과 그 단가.
+  //    🔴 **재고 · 소유구분 · 내부 비고가 없는 가벼운 조회 둘**이다
+  //    (queries/inventory.ts 머리말 — 무거운 형제 getPartList 는 옮겨 오지 않았다).
+  const [repairLabor, partOptions, partPrices] = await Promise.all([
+    listRepairLabor(),
+    getPartPickerList(),
+    getPartPickerUnitPrices(),
+  ]);
 
   return (
     <QuoteEditForm
@@ -79,6 +86,11 @@ export default async function NewQuotePage() {
          브라우저 시간대로 날짜가 정해진다(자정 전후 하루가 실제로 다르게 나온다). */
       defaultQuoteDate={toKstDateOnly(new Date())}
       repairLabor={repairLabor}
+      /* 품명 칸에서 찾아 고를 부품과 그 단가(조각 3b-3 뒤쪽 절반). 고르개 자체는
+         공용 묶음에 한 벌로 있고(@dss/core/ui/inventory/part-picker), 값을 실어
+         보내는 일만 이 사이트가 한다 — 그 묶음은 DB 에 접속하지 않는다. */
+      partOptions={partOptions}
+      partPrices={partPrices}
       /* 케이블 견적서의 줄 수 상한. 🔴 임시 상수다 — 조각 3c 가 오면 채우개의
          CABLE_QUOTE_MAX_LINES 로 바꾼다(domain/cable-quote-lines.ts 머리말). */
       cableMaxLines={CABLE_QUOTE_MAX_LINES}

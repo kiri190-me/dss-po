@@ -323,7 +323,10 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     const order = [
       'await requireAreaAccessForCurrentUser("quotes");',
       'if (!(await hasPermission(user, "quotes", "WRITE"))) redirect("/quotes");',
-      "await listRepairLabor();",
+      // 조각 3b-3 뒤쪽 절반이 부품 고르개의 두 목록을 더하면서 조회가 셋이 되었고,
+      // 서로를 쓰지 않으므로 **함께** 기다린다. 🔴 재는 것은 그대로다 — 조회가
+      // 관문 **뒤**에 있는가.
+      "await Promise.all([ listRepairLabor(),",
     ].map((marker) => {
       const at = body.indexOf(marker);
       assert.ok(at >= 0, `원본에서 '${marker}' 를 찾지 못했다`);
@@ -338,16 +341,21 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     assert.ok(flat(newPageSource).includes("quote={null}"), "폼이 만들기 모드로 열리지 않는다");
   });
 
-  test("🔴 아직 오지 않은 조각의 사슬을 끌고 오지 않는다 — 팝업 · 엑셀 · 첨부 · 부품 고르개", () => {
-    // 이 화면이 A/S 판을 그대로 베끼면 조각 3b-3·3c·3d 가 통째로 딸려 온다.
+  test("🔴 아직 오지 않은 조각의 사슬을 끌고 오지 않는다 — 팝업 · 엑셀 · 첨부", () => {
+    // 이 화면이 A/S 판을 그대로 베끼면 조각 3c·3d 가 통째로 딸려 온다.
     // 🔴 **들여오는 줄만** 본다 — 머리말 주석은 뺀 것들을 이름으로 적어 두고 있다.
+    //
+    // 🔴 `queries/inventory` 는 2026-09-22(조각 3b-3 뒤쪽 절반)에 **이 목록에서
+    //    빠졌다** — 부품 고르개가 들어와 이 화면이 실제로 그 조회를 부른다. 그 자리는
+    //    빈 채로 두지 않았다: 무엇을 들여오는지(공용 묶음의 고르개 · 가벼운 조회 둘)와
+    //    무엇을 들여오지 않는지(무거운 `getPartList`)를
+    //    components/quotes/quote-part-picker-wiring.test.ts 가 못 박는다.
     const imports = flat(sliceBetween(newPageSource, 'import type { Metadata }', "export const metadata"));
     for (const chain of [
       "NewQuoteDialog",
       "quote-new-link",
       "quote-new-start",
       "quote-template",
-      "queries/inventory",
       "queries/attachments",
       "lib/xlsx/",
     ]) {

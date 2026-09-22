@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import QuoteEditForm from "@/components/quotes/QuoteEditForm";
 import { requireAreaAccessForCurrentUser } from "@/lib/auth/area-guard";
 import { hasPermission } from "@/lib/auth/permission-resolver";
+import { getPartPickerList, getPartPickerUnitPrices } from "@/lib/db/queries/inventory";
 import { getQuoteForEdit } from "@/lib/db/queries/quotes";
 import { listRepairLabor } from "@/lib/db/queries/repair-labor";
 import { CABLE_QUOTE_MAX_LINES } from "@/lib/domain/cable-quote-lines";
@@ -46,8 +47,6 @@ export const dynamic = "force-dynamic";
  *     🔴 그래서 아래에서 `workScopeDefaults={{}}` 를 넘긴다 — 폼이 빈 목록으로
  *     곱게 무너지고, 화면이 그 사실을 한 줄로 알린다(QuoteEditForm 머리말 ④).
  *   · **첨부 칸**(`listQuoteAttachmentSlots`) → **조각 3d**.
- *   · **부품 고르개 목록 둘**(`getPartPickerList` · `getPartPickerUnitPrices`) →
- *     **조각 3b-3**(설계서 F-3 — 그 파일을 A/S 로 먼저 옮긴다).
  *   · **돌아갈 곳**(`returnHrefForEditQuote`) → **조각 3b-2 · 4**. 지금은 늘
  *     `/quotes` 다.
  *   · **mock 모드 갈래**(`getAuthSource`) — 이 사이트에는 mock 모드가 없다.
@@ -74,14 +73,27 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   // (getQuoteForEdit 의 관문). 종류를 접어 열면 다른 종류의 양식으로 문서가 나간다.
   if (!quote) notFound();
 
-  // 장비 종류별 수리 작업 목록과 단가 — 견적서의 작업비가 여기서 나온다.
-  const repairLabor = await listRepairLabor();
+  // 🔴 셋을 **함께** 기다린다 — 서로를 쓰지 않으므로 줄줄이 기다릴 까닭이 없다.
+  //  · 장비 종류별 수리 작업 목록과 단가 — 견적서의 작업비가 여기서 나온다.
+  //  · 부품 고르개의 두 목록(조각 3b-3 뒤쪽 절반) — 품명 칸에서 고를 부품과 그 단가.
+  //    🔴 **재고 · 소유구분 · 내부 비고가 없는 가벼운 조회 둘**이다
+  //    (queries/inventory.ts 머리말 — 무거운 형제 getPartList 는 옮겨 오지 않았다).
+  const [repairLabor, partOptions, partPrices] = await Promise.all([
+    listRepairLabor(),
+    getPartPickerList(),
+    getPartPickerUnitPrices(),
+  ]);
 
   return (
     <QuoteEditForm
       quote={quote}
       defaultQuoteDate={toKstDateOnly(new Date())}
       repairLabor={repairLabor}
+      /* 품명 칸에서 찾아 고를 부품과 그 단가(조각 3b-3 뒤쪽 절반). 고르개 자체는
+         공용 묶음에 한 벌로 있고(@dss/core/ui/inventory/part-picker), 값을 실어
+         보내는 일만 이 사이트가 한다 — 그 묶음은 DB 에 접속하지 않는다. */
+      partOptions={partOptions}
+      partPrices={partPrices}
       /* 케이블 견적서의 줄 수 상한. 🔴 임시 상수다 — 조각 3c 가 오면 채우개의
          CABLE_QUOTE_MAX_LINES 로 바꾼다(domain/cable-quote-lines.ts 머리말). */
       cableMaxLines={CABLE_QUOTE_MAX_LINES}
