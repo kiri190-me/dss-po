@@ -9,19 +9,20 @@ import {
 } from "@/lib/validation/quote-input";
 import { createQuote, updateQuote } from "@/lib/db/mutations/quotes";
 import { permanentlyDeleteQuote, restoreQuote, softDeleteQuote } from "@/lib/db/mutations/quote-trash";
+import { lookupIntakeForQuote, type QuoteIntakeLookup } from "@/lib/db/queries/quotes";
 
 /**
  * ============================================================================
- * 견적서 — 서버 액션 (정책 계층). 🔴 **만들기 · 고치기 · 휴지통 셋**
+ * 견적서 — 서버 액션 (정책 계층). 🔴 **만들기 · 고치기 · 휴지통 셋 · 인수번호 찾기**
  * ============================================================================
  * server/actions/domestic-orders.ts 와 같은 형식이다: 세션 확인 → 인가 확인 →
  * 입력 검증 → mutation 호출. **순서가 곧 규칙이다** — 검증을 먼저 하면
  * 로그인하지 않은 요청이 어떤 값이 유효한지를 알아낼 수 있게 된다.
  *
- * 🔴 A/S 의 같은 이름 파일에는 **인수번호 찾기**(lookupIntakeForQuoteAction)도
- * 있다. 그것은 **조각 3b-3**(인수번호 불러오기 · 부품 고르개)의 것이고, 그 조회
- * 하나가 재고 · O/H 템플릿 · 단가 다섯 표를 끌고 온다(queries/quotes.ts 머리말).
- * 그 조각이 올 때 여기에 한 함수가 는다.
+ * 🔴 **인수번호 찾기**(lookupIntakeForQuoteAction)가 들어왔다 — 조각 3b-3 의 앞쪽
+ * 절반이다. 그 하나가 **저장하지 않는 유일한 액션**이라 문턱도 여기서만 READ 다
+ * (아래 resolveReadingUser). 그 값을 참고 목록으로 늘어놓고 부품 줄로 담는
+ * 화면(부품 고르개 포함)은 **뒤쪽 절반**이고, 이 파일은 더 늘지 않는다.
  *
  * ── 관문은 하나다 ───────────────────────────────────────────────────────
  * 관리자가 설정한 수준(hasPermission)만 본다. A/S 가 2026-08-31 에 그렇게 전환했고
@@ -76,6 +77,14 @@ export type QuoteActionResult =
       fieldErrors?: Record<string, string>;
       message: string;
     };
+
+/**
+ * 인수번호 찾기의 결과. 🔴 **못 찾은 것은 `ok: false` 가 아니다** — `found: null`
+ * 이다(아래 lookupIntakeForQuoteAction 의 같은 항목).
+ */
+export type QuoteLookupResult =
+  | { ok: true; found: QuoteIntakeLookup | null }
+  | { ok: false; code: QuoteActionResultCode; message: string };
 
 /** 완전 삭제의 결과. 지운 뒤에는 version 이 없으므로 id 만 돌려준다. */
 export type QuotePermanentDeleteActionResult =
@@ -195,6 +204,67 @@ export async function updateQuoteAction(input: {
     });
   } catch (err) {
     console.error("updateQuoteAction: unexpected DB error", err);
+    return { ok: false, code: "DATABASE_UNAVAILABLE", message: DATABASE_UNAVAILABLE_MESSAGE };
+  }
+}
+
+/**
+ * ============================================================================
+ * 인수번호 찾기 — 관문은 `quotes` READ 다 (조각 3b-3 앞쪽 절반)
+ * ============================================================================
+ * 🔴 **저장하지 않는데도 세션을 확인한다.** 이 액션은 접수 건의 고객사 · 모델 ·
+ * L/N · S/N · 신고증상과 **그 건에 출고된 부품**을 돌려주므로, 아무나 부를 수 있으면
+ * 인수번호를 넣어 보는 것만으로 그 정보가 새어 나간다. 그래서 쓰기와 같은 자리에서
+ * 세션을 확인하고 **문턱만 READ 로** 둔다(A/S 의 같은 판단 — 저쪽 actions/quotes.ts
+ * 머리말 「불러오기는 읽기 권한으로 충분하다」).
+ *
+ * 🔴 **READ 문턱은 이 파일에서 여기 하나다.** 만들기 · 고치기는 WRITE
+ * (resolveWritingUser), 휴지통 셋은 MANAGE(resolveDeletingUser)다. 세 헬퍼가
+ * 나뉘어 있는 것이 곧 「어느 조작이 어디까지 열리는가」의 목록이다.
+ * ============================================================================
+ */
+async function resolveReadingUser() {
+  // 살아 있는 계정을 다시 읽는다 — 권한이 좁아진 계정이 세션 만료 전까지 예전
+  // 권한으로 읽는 구멍을 막는다(auth/session.ts).
+  const actingUser = await getSessionUser();
+  if (!actingUser) {
+    return { ok: false as const, code: "UNAUTHORIZED" as const, message: "로그인이 필요합니다." };
+  }
+  if (!(await hasPermission(actingUser, "quotes", "READ"))) {
+    return { ok: false as const, code: "FORBIDDEN" as const, message: "이 작업을 수행할 권한이 없습니다." };
+  }
+  return { ok: true as const, actingUser };
+}
+
+/**
+ * 인수번호로 접수 건을 찾아 폼에 채울 값을 돌려준다.
+ *
+ * 못 찾은 것은 **오류가 아니다**(`found: null`). 아직 접수되지 않은 건으로 먼저
+ * 견적을 내는 일이 실제로 있고, 그때 화면은 "찾지 못했습니다 — 직접 입력하세요"
+ * 로 안내하고 사람이 손으로 채운다. 오류로 만들면 그 정상적인 흐름이 빨간
+ * 글씨로 막힌 것처럼 보인다.
+ *
+ * 🔴 **빈 문자열이면 DB 를 열지 않는다** — 칸을 비운 채 누른 것이고, 찾을 것이
+ * 없는 질의를 한 번 던지는 일과 같다. 화면도 그 앞에서 먼저 막지만
+ * (QuoteEditForm 의 handleLookup) 그것은 편의일 뿐이라 여기서 다시 본다.
+ *
+ * 🔴 **로그에 인수번호를 담지 않는다.** 그 글자는 어느 고객사의 어느 장비가 언제
+ * 들어왔는지를 가리킨다(schema/quotes.ts 의 PII 항목과 같은 판단) — 나머지 액션들이
+ * 품명 · 신고증상을 로그에 담지 않는 것과 한 규칙이다.
+ */
+export async function lookupIntakeForQuoteAction(input: {
+  intakeNumber: string;
+}): Promise<QuoteLookupResult> {
+  const auth = await resolveReadingUser();
+  if (!auth.ok) return { ok: false, code: auth.code, message: auth.message };
+
+  const intakeNumber = typeof input?.intakeNumber === "string" ? input.intakeNumber.trim() : "";
+  if (intakeNumber === "") return { ok: true, found: null };
+
+  try {
+    return { ok: true, found: await lookupIntakeForQuote(intakeNumber) };
+  } catch (err) {
+    console.error("lookupIntakeForQuoteAction: unexpected DB error", err);
     return { ok: false, code: "DATABASE_UNAVAILABLE", message: DATABASE_UNAVAILABLE_MESSAGE };
   }
 }

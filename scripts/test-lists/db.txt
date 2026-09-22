@@ -45,3 +45,13 @@ src/lib/db/db-roundtrip.integration.test.ts
 # 🔴 **접두사를 저쪽과 같게 바꾸지 마라** — 두 저장소가 같은 dss_as_test 를 쓰므로
 #    겹치면 한쪽 after() 가 다른 쪽이 만든 줄을 치운다.
 src/lib/db/mutations/quotes.integration.test.ts
+
+# ── 조각 3b-3 앞쪽 절반 — 인수번호로 불러오기(A/S 에서 옮겨 옴) ──────────
+# 저쪽 `lib/db/queries/quote-intake-lookup.integration.test.ts`(288줄)의 단언을 그대로
+# 옮겼다. 다른 것 셋은 그 파일 머리말에 있다: 환경 불러오기 · import 경로 · 부품 ·
+# 단가 · 수리 건을 mutation 대신 직접 넣는 것 · 격리 이름을 가른 것.
+# 🔴 **격리 이름을 저쪽과 같게 바꾸지 마라** — 접수 월 9503(저쪽 9603) · 고객사
+#    `PO-TEST-LOOKUP-`(저쪽 `AS-TEST-QUOTE-LOOKUP-`) · 부품명 `po-test-lookup-`
+#    (저쪽 `test-quote-lookup-`). 같은 dss_as_test 를 쓰므로 겹치면 한쪽 after() 가
+#    다른 쪽 자료를 치운다.
+src/lib/db/queries/quote-intake-lookup.integration.test.ts

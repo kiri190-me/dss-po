@@ -1,7 +1,10 @@
 "use client";
 
-/* 🔴 `useEffect` · `useRef` 는 3b-2·3b-3·3d 가 되돌려 놓는다 — 자동 불러오기 ·
-   [새 견적서] 엑셀 건네받기 · 엑셀 읽개가 그 둘을 쓴다(아래 그 자리들의 주석). */
+/* 🔴 `useEffect` · `useRef` 는 조각 4·5 와 3d 가 되돌려 놓는다 — **자동 불러오기**
+   (수리 건에서 건너왔을 때 [불러오기]를 한 번 대신 눌러 주는 것)와 [새 견적서]
+   엑셀 건네받기가 그 둘을 쓴다. 자동 불러오기가 3b-3 의 것이 아닌 까닭은 그것이
+   `initialIntakeNumber` prop 이 있어야 뜻이 있고, 그 prop 과 수리 건에서 건너오는
+   길이 **조각 4·5** 의 것이기 때문이다(app/(app)/quotes/new/page.tsx 머리말). */
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { showSavePopup } from "@/components/common/SavePopup";
@@ -46,8 +49,12 @@ import {
 } from "@/lib/validation/quote-input";
 import OverhaulBadge from "@/components/common/OverhaulBadge";
 import { quoteTemplateKey } from "@/lib/domain/quote-template-variant";
-import type { QuoteEditData } from "@/lib/db/queries/quotes";
-import { createQuoteAction, updateQuoteAction } from "@/lib/server/actions/quotes";
+import type { QuoteEditData, QuoteIntakeLookup } from "@/lib/db/queries/quotes";
+import {
+  createQuoteAction,
+  lookupIntakeForQuoteAction,
+  updateQuoteAction,
+} from "@/lib/server/actions/quotes";
 import {
   ExcelOnlyClearLinesDialog,
   ExcelOnlySwitch,
@@ -83,9 +90,11 @@ import {
  *  ④ 🔴 **`workScopeDefaults` 가 비어 있다** — 바로 아래 항목.
  *
  * 그리고 이 조각이 **3b 전체가 아니라 그 첫 조각**이라 함께 비운 것 셋:
- *  · **인수번호로 불러오기 · 출고된 부품 · O/H 템플릿 부품** → **조각 3b-3**.
- *    인수번호 칸은 남아 있다(값이 왕복한다) — [불러오기] 단추만 없다.
- *  · **부품 고르개**(품명 칸에서 재고를 찾아 고르기) → **조각 3b-3**.
+ *  · **인수번호로 불러오기** → 🔴 **조각 3b-3 앞쪽 절반에서 들어왔다**(아래
+ *    handleLookup · [불러오기] 단추). 그 조회는 출고 부품 · O/H 템플릿 부품까지
+ *    함께 돌려주고(쪼개지 않았다 — queries/quotes.ts 머리말), 폼은 그 값을 **상태에만
+ *    담아 둔다.** 늘어놓는 **참고 목록 둘**은 아직 없다 → **3b-3 뒤쪽 절반**.
+ *  · **부품 고르개**(품명 칸에서 재고를 찾아 고르기) → **조각 3b-3 뒤쪽 절반**.
  *    그 파일은 A/S 의 부품 요청 화면도 쓰고 있어 설계서 F-3 이 「A/S 로 옮기고
  *    이름을 바꾼다」고 했다 — 지금 베끼면 두 벌이 된다.
  *  · **[새 견적서] 팝업의 처음 값**(`initialKind` · `initialExcelOnly` ·
@@ -319,14 +328,16 @@ function lineOrdinalsOf(rows: readonly ItemRow[]): number[] {
 }
 
 /*
- * 🔴 **조각 3b-3 이 여기에 넷을 더한다** — `usedPartKey` · `ohTemplatePartKey` ·
- * `usedPartToItem` · `ohTemplatePartToItem`. 인수번호로 불러온 **출고된 부품**과
- * **O/H 템플릿 부품**을 부품 줄로 바꾸는 함수들이고, 단가를 고르는 규칙
- * (`domain/quote-part-price.ts` 의 「출처가 정한다」)이 거기 붙는다. 그 값들이
- * 오는 조회(`lookupIntakeForQuote`)가 이 사이트에 아직 없다(queries/quotes.ts 머리말).
+ * 🔴 **조각 3b-3 의 뒤쪽 절반이 여기에 넷을 더한다** — `usedPartKey` ·
+ * `ohTemplatePartKey` · `usedPartToItem` · `ohTemplatePartToItem`. 인수번호로 불러온
+ * **출고된 부품**과 **O/H 템플릿 부품**을 부품 줄로 바꾸는 함수들이고, 단가를 고르는
+ * 규칙(`domain/quote-part-price.ts` 의 「출처가 정한다」)이 거기 붙는다.
+ *
+ * 🔴 **값 자체는 이미 온다**(앞쪽 절반 — handleLookup 이 상태에 담는다). 없는 것은
+ * **담는 길**이다: 참고 목록에 늘어놓고 고른 것을 부품 줄로 옮기는 화면.
  *
  * 그래서 아래 `ItemRow.sourceKey` 는 **지금 늘 null 이다.** 칸은 남겨 둔다 —
- * 3b-3 이 「같은 것을 두 번 담지 않는다」를 그 값으로 판정한다.
+ * 뒤쪽 절반이 「같은 것을 두 번 담지 않는다」를 그 값으로 판정한다.
  */
 
 /** 작업 내역 한 줄. `key` 는 화면에서만 쓰는 값이고 저장되지 않는다. */
@@ -469,10 +480,15 @@ export default function QuoteEditForm({
    */
   workScopeDefaults: Record<string, QuoteTemplateScopeDefaults>;
   /*
-   * 🔴 **조각 3b-2 가 여기에 셋을 더한다** — `initialIntakeNumber`(수리 건의
-   * 「견적서」 탭에서 들어왔을 때) · `initialKind` · `initialExcelOnly`([새 견적서]
-   * 팝업에서 고른 처음 값). 셋 다 **새 견적서에만 쓰는 값**이고, 이 조각에는 그
-   * 팝업도 `/quotes/new` 라우트도 없다.
+   * 🔴 **`initialIntakeNumber` 는 조각 4·5 의 것이다** — 수리 건의 「견적서」 탭에서
+   * 건너왔을 때 그 인수번호로 [불러오기]를 한 번 대신 눌러 주는 값이고, **건너올
+   * A/S 의 수리 건 상세가 그때 정해진다**(app/(app)/quotes/new/page.tsx 의 「수리
+   * 건에서 건너오는 길」 — 그쪽이 최신이고, 예전에 3b-2 것이라 적혀 있던 이 주석을
+   * 거기에 맞췄다). 그래서 3b-3 은 그 prop 도 자동 불러오기 effect 도 만들지 않는다 —
+   * 지금은 사람이 인수번호를 적고 [불러오기]를 누르는 길 하나다.
+   *
+   * 🔴 **`initialKind` · `initialExcelOnly` 는 만들지 않기로 했다**(2026-09-22 사용자
+   * 결정 — 같은 page.tsx 머리말). [새 견적서] 팝업이 없으므로 종류는 폼 안에서 고른다.
    */
   /**
    * 저장·취소 뒤에 돌아갈 곳. 수리 건에서 들어왔으면 그 건의 「견적서」 탭이다.
@@ -507,13 +523,18 @@ export default function QuoteEditForm({
   const [quoteDate, setQuoteDate] = useState(quote?.quoteDate ?? defaultQuoteDate ?? todayInSeoul());
   const [intakeNumberText, setIntakeNumberText] = useState(quote?.intakeNumberText ?? "");
   /**
-   * 이 견적서가 걸려 있는 수리 건. 🔴 **지금은 바꿀 길이 없다** — 이 값을 채우는
-   * 자리가 [불러오기] 하나인데 그것이 조각 3b-3 이다(위 그 주석 덩이). 그래서
-   * 설정 함수를 받지 않는다: 저장된 값을 **그대로 들고 있다가 그대로 돌려보내는**
-   * 것이 이 조각에서 이 상태가 하는 일의 전부다(collectFields). 3b-3 이 올 때
-   * `setRepairCaseId` 를 여기서 함께 꺼낸다.
+   * 이 견적서가 걸려 있는 수리 건.
+   *
+   * 🔴 **이 값을 채우는 자리는 `handleLookup` 하나다**(아래 그 함수). 조각 3b-3 앞쪽
+   * 절반이 그것을 들여오기 전까지 이 상태는 설정 함수조차 없었고, 그때 새로 만든
+   * 견적서는 **이 값이 영영 null** 이라 수리 건 상세의 「견적서」 탭에 나타나지
+   * 않았다. 지금은 인수번호를 불러오면 이어진다.
+   *
+   * 🔴 **서버에서 미리 받아 꽂지 말 것**(A/S 그 함수의 머리말). 폼을 채우는 길이 둘이
+   * 되면 두 입구가 서로 다른 값을 채우기 시작하고, 그 차이는 한참 뒤에 금액으로
+   * 드러난다. 저장된 값은 그대로 왕복한다(collectFields) — 편집해도 연결이 끊기지 않는다.
    */
-  const [repairCaseId] = useState<string | null>(quote?.repairCaseId ?? null);
+  const [repairCaseId, setRepairCaseId] = useState<string | null>(quote?.repairCaseId ?? null);
   const [customerId, setCustomerId] = useState<string | null>(quote?.customerId ?? null);
   const [customerNameText, setCustomerNameText] = useState(quote?.customerNameText ?? "");
   const [modelNameText, setModelNameText] = useState(quote?.modelNameText ?? "");
@@ -559,11 +580,38 @@ export default function QuoteEditForm({
   );
 
   /*
-   * 🔴 **조각 3b-3 이 여기에 넷을 되돌려 놓는다** — `partPickerKey`(부품 후보
-   * 목록을 지금 펴 둔 줄) · `usedParts`(그 접수 건에 출고된 부품) ·
-   * `ohTemplateCode` · `ohTemplateParts`(그 기종의 O/H 부품 템플릿). 넷 다
-   * **인수번호로 불러오기**가 채우는 값이고, 그 조회가 아직 없다.
+   * 🔴 **조각 3b-3 뒤쪽 절반이 여기에 `partPickerKey` 를 되돌려 놓는다** — 부품 후보
+   * 목록을 지금 펴 둔 줄이다. 그 고르개 파일이 아직 이 사이트에 없다(위 파일 머리말).
    */
+
+  /*
+   * ============================================================================
+   * 🔴 불러온 값 셋 — **담아 두기만 하고 아직 그리지 않는다** (3b-3 앞쪽 절반)
+   * ============================================================================
+   * `usedParts`(그 접수 건에 출고된 부품) · `ohTemplateCode` · `ohTemplateParts`
+   * (그 기종의 O/H 부품 템플릿). 셋 다 `lookupIntakeForQuote` 가 **한 번에** 돌려주는
+   * 값이다 — 조회를 쪼개면 A/S 와 두 벌이 되므로 그대로 옮겨 왔다(queries/quotes.ts
+   * 머리말).
+   *
+   * 🔴 **읽는 쪽(getter)을 일부러 꺼내지 않았다.** 이 값을 늘어놓는 참고 목록 둘과
+   * 담기 단추가 **뒤쪽 절반**이라, 지금 읽을 곳이 한 군데도 없다 — 위
+   * `repairCaseId` 가 설정 함수 없이 꺼내져 있던 것과 **거울상**이다. 뒤쪽 절반이 올
+   * 때 `const [usedParts, setUsedParts]` 로 바꾸면 그 자리가 그대로 열린다.
+   * ============================================================================
+   */
+  const [, setUsedParts] = useState<QuoteIntakeLookup["usedParts"]>([]);
+  /**
+   * 이 장비의 기종에 정해 둔 O/H 부품 템플릿의 기종 코드.
+   *
+   * null 이면 **이 모델에 템플릿이 안 이어져 있다**는 뜻이다 — 뒤쪽 절반의 화면이
+   * 그때 "모델을 이어 주세요"를 그린다.
+   */
+  const [, setOhTemplateCode] = useState<string | null>(null);
+  /**
+   * 그 기종의 O/H 부품 목록. **O/H 견적은 부품을 출고하기 전에 내므로** 위
+   * usedParts 가 비어 있는 것이 정상이고, 청구할 부품은 여기서 온다.
+   */
+  const [, setOhTemplateParts] = useState<QuoteIntakeLookup["ohTemplateParts"]>([]);
 
   /**
    * 어느 장비의 작업 목록으로 작업비를 셈하는가. 목록이 장비 종류마다 통째로
@@ -636,12 +684,19 @@ export default function QuoteEditForm({
   );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /**
+   * [불러오기]의 결과 문장. **오류만이 아니다** — 찾았을 때도, 못 찾았을 때도
+   * 회색 글씨로 한 줄 말한다(handleLookup).
+   *
+   * 🔴 못 찾은 것은 **빨간 글씨가 아니다.** 아직 접수 전인 건으로 먼저 견적을 내는
+   * 일이 있어서, 그때 사람이 해야 할 일은 「직접 적기」다(서버 액션의 같은 항목).
+   */
+  const [lookupMessage, setLookupMessage] = useState<string | null>(null);
+  const [isLookingUp, setIsLookingUp] = useState(false);
   /*
-   * 🔴 **조각 3b-3 이 `lookupMessage` · `isLookingUp` 을, 조각 3f 가 `showPreview`
-   * 를 되돌려 놓는다** — 앞의 둘은 [불러오기]의 진행과 결과 문장, 뒤의 하나는
-   * 미리보기를 펴 두었는가다. 미리보기는 **폼을 떠나지 않고** 같은 컴포넌트 안에서
-   * 그리는 것만 바꾼다 — 그래야 돌아왔을 때 적어 둔 값이 하나도 사라지지 않는다.
-   * 3f 가 올 때 그 방식을 바꾸지 말 것.
+   * 🔴 **조각 3f 가 여기에 `showPreview` 를 되돌려 놓는다** — 미리보기를 펴 두었는가다.
+   * 미리보기는 **폼을 떠나지 않고** 같은 컴포넌트 안에서 그리는 것만 바꾼다 — 그래야
+   * 돌아왔을 때 적어 둔 값이 하나도 사라지지 않는다. 3f 가 올 때 그 방식을 바꾸지 말 것.
    */
 
   /**
@@ -1030,28 +1085,91 @@ export default function QuoteEditForm({
     return selectedRepairTaskNames(labor.tasks, quantities);
   }
 
-  /*
+  /**
    * ============================================================================
-   * 🔴 조각 3b-3 이 여기에 **인수번호로 불러오기 한 덩이**를 되돌려 놓는다
+   * [불러오기] — 인수번호 하나로 상단 칸들을 채운다 (조각 3b-3 앞쪽 절반)
    * ============================================================================
-   * 걷어낸 것(A/S 원본의 그 차례대로):
-   *   · `addedSourceKeys` · `unaddedUsedParts` · `unaddedOhTemplateParts`
-   *     — 이미 담은 것과 아직 안 담은 것. **두 번 담기는 것을 막는 자리**다
-   *       (두 번 담기면 같은 부품이 두 줄이 되어 청구가 두 배가 된다).
-   *   · `handleLookup` — [불러오기]. `lookupIntakeForQuoteAction` 을 부른다.
-   *   · 그 옆의 effect 둘 — 수리 건의 「견적서」 탭에서 들어왔을 때 **[불러오기]를
-   *     한 번 대신 눌러 주는** 것(3b-2·3b-3), [새 견적서] 팝업이 건네준 엑셀을
-   *     꺼내는 것(3b-2·3d).
-   *   · `addUsedParts` · `addOhTemplateParts` — 참고 목록에서 부품 줄로 담기.
+   * 🔴 **`repairCaseId` 가 채워지는 자리가 여기 하나다.** 그 값이 비면 저장된
+   * 견적서가 수리 건 상세의 「견적서」 탭에서 영영 보이지 않는다 — 여섯 칸을
+   * 자동으로 채우는 것보다 이 한 줄이 크다.
    *
-   * 🔴 **3b-3 이 올 때 반드시 지킬 것**: `repairCaseId` 가 채워지는 자리가
-   * `handleLookup` **하나**다(A/S 그 함수의 머리말). 값을 서버에서 미리 받아 칸에
-   * 꽂으면 폼을 채우는 길이 둘이 되고, 두 입구가 서로 다른 값을 채우기 시작한다.
+   * 🔴 **누르기 전에는 아무것도 바뀌지 않는다.** 타이핑하는 동안 자동으로 채우면
+   * 손으로 고쳐 둔 값이 글자를 하나 더 칠 때마다 되돌아간다.
    *
-   * 지금은 저장돼 있던 `repairCaseId` · 인수번호 글자가 **상태로 그대로 왕복한다** —
-   * 편집해도 그 건과의 연결이 끊기지 않는다(collectFields 가 그대로 돌려보낸다).
+   * 🔴 **건드리지 않는 것**: 종류 · 엑셀 전용 · 부품 줄 · 작업 내역 · 고른 작업.
+   * 종류를 바꾸는 곳은 사람의 select 하나이고(changeKind), 줄은 사람이 적거나
+   * 담은 것이다 — 불러오기가 그것을 덮으면 「인수번호를 고쳐 다시 불렀더니 적어 둔
+   * 줄이 사라진」다(A/S 의 quote-new-start.test.ts 가 같은 것을 못 박는다).
+   *
+   * ── 🔴 아직 없는 것 (뒤쪽 절반) ──────────────────────────────────────────
+   * 받아 온 `usedParts` · `ohTemplateParts` 를 **늘어놓는 참고 목록 둘**과 거기서
+   * 부품 줄로 담는 길(`addUsedParts` · `addOhTemplateParts` · `addedSourceKeys` ·
+   * `unaddedUsedParts` · `unaddedOhTemplateParts`)이다. 값은 상태에 담아 두고 그리지
+   * 않는다 — 그래서 **아래 안내 문장은 「아래 목록」을 가리키지 않는다**(없는 화면을
+   * 가리키면 거짓말이 된다).
+   *
+   * 자동 불러오기 effect 도 없다 — `initialIntakeNumber` prop 이 있어야 뜻이 있고
+   * 그것은 **조각 4·5** 의 것이다(위 프롭 자리의 주석).
    * ============================================================================
    */
+  async function handleLookup() {
+    const intakeNumber = intakeNumberText.trim();
+    if (intakeNumber === "") {
+      setLookupMessage("인수번호를 입력한 뒤 눌러 주세요.");
+      return;
+    }
+    setIsLookingUp(true);
+    setLookupMessage(null);
+    try {
+      const result = await lookupIntakeForQuoteAction({ intakeNumber });
+      if (!result.ok) {
+        setLookupMessage(result.message);
+        return;
+      }
+      if (!result.found) {
+        // 오류가 아니다 — 아직 접수 전인 건으로 먼저 견적을 내는 일이 있다.
+        setLookupMessage(`${intakeNumber} 로 접수된 건을 찾지 못했습니다. 아래 칸을 직접 입력해 주세요.`);
+        setUsedParts([]);
+        return;
+      }
+
+      const found = result.found;
+      setRepairCaseId(found.repairCaseId);
+      setCustomerId(found.customerId);
+      // 🔴 고객사명은 **값이 있을 때만** 덮는다 — 접수 건에 고객사가 안 이어져 있는
+      // 경우가 있고, 그때 빈칸으로 덮으면 사람이 적어 둔 공급처 이름이 사라진다.
+      if (found.customerName) setCustomerNameText(found.customerName);
+      setModelNameText(found.modelName ?? "");
+      setLotNumberText(found.lotNumber ?? "");
+      setSerialNumberText(found.serialNumber ?? "");
+      setFaultDescriptionText(found.faultDescription ?? "");
+
+      // 품명은 **비어 있을 때만** 지어 준다. 인수번호를 고쳐 다시 불러올
+      // 때마다 손으로 다듬어 둔 품명이 사라지면 안 된다 — 다시 짓고 싶으면
+      // 품명 칸 아래의 단추를 누른다.
+      if (subject.trim() === "") {
+        setSubject(
+          buildQuoteSubject({
+            modelName: found.modelName,
+            faultDescription: found.faultDescription,
+            kind,
+          })
+        );
+      }
+      // 🔴 상태에만 담는다 — 늘어놓는 화면은 뒤쪽 절반이다(위 머리말).
+      setUsedParts(found.usedParts);
+      setOhTemplateCode(found.ohTemplateCode);
+      setOhTemplateParts(found.ohTemplateParts);
+      setLookupMessage(
+        found.usedParts.length > 0
+          ? `불러왔습니다. 이 건에 출고된 부품 기록이 ${found.usedParts.length}종 있습니다 — 청구할 부품은 아래 부품 칸에 직접 적어 주세요.`
+          : "불러왔습니다. 이 건에 출고된 부품 기록은 없습니다."
+      );
+    } finally {
+      setIsLookingUp(false);
+    }
+  }
+
   function updateItem(key: string, patch: Partial<ItemRow>) {
     setItems((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   }
@@ -1511,15 +1629,14 @@ export default function QuoteEditForm({
       {/* 🔴 **여기에 「새 견적서 저장 뒤 파일 올리기」 알림이 돌아온다**(조각 3d) —
           진행 중이거나, 견적서는 저장됐는데 파일을 못 올린 경우다. */}
 
-      {/* ── 인수번호 ───────────────────────────────────────────────────────
-          🔴 **[불러오기] 단추는 조각 3b-3 이 여기에 되돌려 놓는다.** 저쪽에서 이
-          구역은 인수번호 하나로 접수 건의 고객사 · 모델명 · L/N · S/N · 신고증상을
-          채우고 `repairCaseId` 를 잇고, 그 건에 출고된 부품을 아래에 늘어놓는다.
-          그 조회(`lookupIntakeForQuote`)가 이 사이트에 아직 없다.
+      {/* ── 인수번호로 불러오기 ───────────────────────────────────────────
+          이 구역이 하는 일은 인수번호 하나로 접수 건의 고객사 · 모델명 · L/N · S/N ·
+          신고증상을 채우고 **`repairCaseId` 를 잇는 것**이다(handleLookup — 그 값을
+          채우는 자리가 거기 하나다). 🔴 **누르기 전에는 아무것도 바뀌지 않는다.**
 
-          🔴 **칸은 남긴다.** 저장돼 있던 인수번호 글자를 보여 주고 고칠 수 있어야
-          하고, 무엇보다 그 값이 **왕복**해야 한다 — 칸을 없애면 상태에만 남아 눈에
-          보이지 않는 값이 된다.
+          🔴 **출고된 부품 참고 목록은 아직 없다**(조각 3b-3 뒤쪽 절반). 그래서 아래
+          안내도, 불러온 뒤의 문장도 「아래 목록」을 가리키지 않는다 — 없는 화면을
+          가리키면 거짓말이 된다.
 
           🔴 **케이블 견적서에는 없다**(2026-09-16 케이블 ③). 케이블은 고칠 물건이
           없는 별도 견적서다(schema/quotes.ts 의 'CABLE 은 수리품에 딸린 장이 아니다').
@@ -1528,10 +1645,10 @@ export default function QuoteEditForm({
           건의 「견적서」 탭에서 이 장이 소리 없이 사라지고, 되돌릴 길이 화면에 없다. */}
       {!isCable && (
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">인수번호</h2>
+        <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">인수번호로 불러오기</h2>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          이 견적서에 적히는 인수번호입니다. 접수 건의 고객사 · 모델명 · L/N · S/N · 신고증상을
-          이 번호로 끌어오는 [불러오기]는 아직 이 사이트에 없습니다 — 아래 칸을 직접 채워 주세요.
+          접수 건의 고객사 · 모델명 · L/N · S/N · 신고증상을 아래 칸에 채우고, 이 견적서를 그 접수
+          건에 이어 줍니다. 누르기 전에는 아무것도 바뀌지 않습니다.
         </p>
         <div className="mt-3 flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
@@ -1544,8 +1661,19 @@ export default function QuoteEditForm({
               disabled={disabled}
             />
           </label>
+          <button
+            type="button"
+            onClick={handleLookup}
+            disabled={disabled || isLookingUp}
+            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-zinc-700"
+          >
+            {isLookingUp ? "불러오는 중…" : "불러오기"}
+          </button>
         </div>
         {fieldErrors.intakeNumberText && <p className={editErrorClass}>{fieldErrors.intakeNumberText}</p>}
+        {lookupMessage && (
+          <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">{lookupMessage}</p>
+        )}
         {repairCaseId && (
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             접수 건에 연결되어 있습니다. 아래 값을 고쳐도 그 접수 건은 바뀌지 않습니다.
@@ -1761,7 +1889,10 @@ export default function QuoteEditForm({
         </section>
       ) : (
       <>
-      {/* ── 🔴 조각 3b-3 이 여기에 참고 목록 **둘**을 되돌려 놓는다 ──────────
+      {/* ── 🔴 조각 3b-3 **뒤쪽 절반**이 여기에 참고 목록 둘을 되돌려 놓는다 ──
+          🔴 **값은 이미 온다** — [불러오기]가 `usedParts` · `ohTemplateCode` ·
+          `ohTemplateParts` 를 상태에 담아 둔다(앞쪽 절반 — handleLookup). 없는 것은
+          **늘어놓고 담는 화면**이라, 뒤쪽 절반은 조회를 다시 손대지 않아도 된다.
           · **O/H 부품 템플릿**(O/H 견적서일 때만) — 🔴 O/H 견적은 부품을 출고하기
             **전에** 낸다(2026-08-31 사용자 확인). 그 시점에 아래 「출고된 부품」은
             비어 있는 것이 정상이라, 청구할 부품은 이 기종의 템플릿이 답한다.

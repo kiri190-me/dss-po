@@ -116,3 +116,15 @@ src/lib/validation/quote-input.test.ts
 src/lib/domain/quote-subject.test.ts
 src/lib/domain/quote-document-support.test.ts
 src/components/quotes/quote-edit-work-scope-suppression.test.ts
+
+# ── 조각 3b-3 앞쪽 절반 — 인수번호로 불러오기 ────────────────────────────
+# 조회 · 서버 액션(문턱 READ) · 폼의 [불러오기] 한 자리를 글자로 본다. 🔴 그중
+# 하나가 이 조각의 요점이다: `repairCaseId` 를 채우는 곳이 handleLookup **하나**다 —
+# 그 값이 비면 저장된 견적서가 수리 건 상세의 「견적서」 탭에 영영 나타나지 않는다.
+#
+# 🔴 **자료의 규칙은 진짜 DB 가 본다** — db.txt 의
+#    lib/db/queries/quote-intake-lookup.integration.test.ts(A/S 에서 옮겨 옴).
+#
+# 🔴 A/S 에서 함께 옮기지 못한 것: `components/quotes/quote-part-picker.test.tsx`
+#    (부품 고르개)는 **뒤쪽 절반**이다 — 위 3b-1 묶음의 주석에 적힌 그대로다.
+src/components/quotes/quote-intake-lookup-source.test.ts
