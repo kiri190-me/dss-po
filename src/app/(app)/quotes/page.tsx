@@ -50,8 +50,15 @@ export const dynamic = "force-dynamic";
  *   ✅ rowHref                  → 조각 3b-1 에서 채웠다. 🔴 **QuoteListSlots 에서**
  *                                — 함수라 여기서는 못 넘긴다. 줄 요약을 누르면
  *                                `/quotes/{id}` 의 편집 폼이 열린다.
- *   renderRowActions           → 조각 3c·3f. 🔴 **QuoteListSlots 에**(함수)
- *   renderFileBadges           → 조각 3d. 🔴 **QuoteListSlots 에**(함수)
+ *   ✅ renderRowActions         → 조각 3c-2 에서 채웠다. 🔴 **QuoteListSlots 에서**
+ *                                — 함수라 여기서는 못 넘긴다. 줄마다 [견적서 받기]
+ *                                링크가 서고, 엑셀 전용 줄에는 링크 대신 곁말이
+ *                                선다. [미리보기] 는 3f 에서 그 자리에 더한다.
+ *   ✅ renderFileBadges         → 조각 3c-2 에서 채웠다. 🔴 **QuoteListSlots 에서**
+ *                                — 함수라 여기서는 못 넘긴다. 왼쪽 「견적서」 칸에
+ *                                「엑셀 전용」 배지 하나가 붙는다(그 값은 quotes 의
+ *                                칸이라 첨부를 보지 않는다). 「결재 PDF」 ·
+ *                                「엑셀 없음」은 붙은 파일을 세어야 하므로 3d 다.
  *   intakeHref                 → 🔴 **QuoteListSlots 에**(함수). 수리 건 상세는
  *                                **A/S 의 화면**이다 — 사이트를 건너가는 주소를
  *                                이 사이트가 지어내지 않는다. 그 주소를 어디서
@@ -59,7 +66,10 @@ export const dynamic = "force-dynamic";
  *                                지금은 인수번호가 글자로 보인다.
  *   ✅ newQuoteControl          → 조각 3b-2 에서 채웠다. 🔴 **여기서** — ReactNode 라
  *                                서버에서 넘어간다(함수 슬롯과 갈리는 자리다).
- *   notice                     → 조각 3c (받기 결과 알림). 이것도 ReactNode 다.
+ *   notice                     → 조각 3c-3 (발행 결과 알림). 이것도 ReactNode 다.
+ *                                🔴 3c-2 의 받기는 **평범한 링크**라 알릴 것이
+ *                                없다 — 브라우저가 내려받고, 실패하면 통로가
+ *                                JSON 으로 까닭을 말한다.
  *
  * ── canEdit 은 관문이 아니다 ────────────────────────────────────────────
  * canEdit 이 정하는 것은 [새 견적서] 자리를 그릴지뿐이다. 실제 저장·삭제는 서버

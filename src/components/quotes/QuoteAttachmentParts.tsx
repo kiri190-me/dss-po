@@ -2,11 +2,16 @@
 
 import { useEffect, useRef } from "react";
 
-import { describeQuoteLineCounts, type QuoteLineCounts } from "./quote-attachment-files";
+import {
+  describeQuoteLineCounts,
+  quoteListFileBadges,
+  type QuoteLineCounts,
+  type QuoteListFileBadge,
+} from "./quote-attachment-files";
 
 /**
  * ============================================================================
- * 🔴 여기 있는 것은 **엑셀 전용 스위치와 그 확인 창**뿐이다 (조각 3b-1)
+ * 🔴 여기 있는 것은 **엑셀 전용 스위치 · 그 확인 창 · 목록의 딱지**다 (3b-1 · 3c-2)
  * ============================================================================
  * A/S 관리 시스템의 같은 이름 파일(700여 줄)은 **견적서 파일 칸**의 조각 전부다 —
  * 파일 끌어놓기(FileDropZone) · 칸마다의 미리보기 · 지우기 확인 창 · 「수기 견적서
@@ -15,6 +20,11 @@ import { describeQuoteLineCounts, type QuoteLineCounts } from "./quote-attachmen
  * 편집 폼이 저쪽 파일에서 실제로 쓰는 것은 둘이다:
  *   · `ExcelOnlySwitch`          — 「엑셀 전용 견적서」 체크 상자
  *   · `ExcelOnlyClearLinesDialog` — 줄이 있는 채로 켜려 할 때 묻는 창
+ *
+ * 🔴 2026-09-22(조각 3c-2)에 **목록의 딱지**(`QuoteFileBadges`)가 더해졌다 — 견적서
+ * 목록이 줄마다 「엑셀 전용」을 왼쪽 칸에 붙이려고 쓴다(components/quotes/
+ * QuoteListSlots.tsx 의 `renderFileBadges` 슬롯). 🔴 **A/S 와 같은 이름 · 같은 자리**에
+ * 두었다 — 3d 가 나머지 딱지 둘을 그 조각 안에 더하면 된다.
  *
  * 그 둘은 파일을 만지지 않는다 — **켜고 끄는 판정은 부르는 쪽**(QuoteEditForm 의
  * toggleExcelOnly → quote-attachment-files.ts 의 planExcelOnlyToggle)이 한다.
@@ -133,5 +143,47 @@ export function ExcelOnlyClearLinesDialog({
         </button>
       </div>
     </dialog>
+  );
+}
+
+// ────────────────────────────────────────────────── 목록 표시
+
+/**
+ * 딱지의 색조. 🔴 **A/S 의 같은 이름 상수 그대로**다(저쪽 `BADGE_TONE_CLASS`) — 같은 줄이
+ * 두 사이트에서 다른 색으로 보이면 사람이 같은 견적서를 다른 것으로 본다. 지금 쓰이는 것은
+ * `info` 하나이고, `neutral`(결재 PDF) · `warning`(엑셀 없음)은 **조각 3d** 가 쓴다.
+ * 미리 지우지 않는다 — 그날 저쪽에서 글자를 다시 옮겨 오는 일이 없게.
+ */
+const BADGE_TONE_CLASS: Record<QuoteListFileBadge["tone"], string> = {
+  info: "rounded border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-900 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200",
+  neutral:
+    "rounded border border-zinc-300 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:border-zinc-700 dark:text-zinc-400",
+  warning:
+    "rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200",
+};
+
+/**
+ * 목록 한 줄의 표시 — 🔴 지금은 **「엑셀 전용」 하나**다(조각 3c-2 · 규칙은
+ * quote-attachment-files.ts 의 `quoteListFileBadges`). 부르는 쪽의 `flex-wrap` 줄 안에
+ * 그대로 흘러 들어가도록 조각(fragment)으로 돌려준다 — 좁은 화면에서는 줄바꿈된다.
+ * 붙일 것이 없으면 아무것도 그리지 않는다(일반 견적서 줄은 지금 그대로다).
+ *
+ * 🔴 **A/S 의 같은 이름 조각과 모양이 같다**(저쪽 `QuoteFileBadges`). 다른 것은 받는 줄의
+ * 모양뿐이다 — 저쪽은 `{ isExcelOnly, hasSignedPdf, hasExcel }` 셋을 받고 여기는 첫 칸만
+ * 본다. 🔴 **목록 줄에는 나머지 둘도 이미 실려 온다**(vendor/dss-core 의 `QuoteListItem`) —
+ * 그래도 지금 세지 않는 것은, 이 사이트에 파일을 붙이는 칸이 없어 그 딱지가 언제나 같은
+ * 답이 되기 때문이다. 조각 3d 가 칸을 가져오면 프롭을 저쪽 모양으로 넓히면 된다.
+ */
+export function QuoteFileBadges({ row }: { row: { isExcelOnly: boolean } }) {
+  const badges = quoteListFileBadges(row);
+  if (badges.length === 0) return null;
+  return (
+    <>
+      {badges.map((badge) => (
+        <span key={badge.key} title={badge.title} className={BADGE_TONE_CLASS[badge.tone]}>
+          {badge.label}
+        </span>
+      ))}
+    </>
   );
 }

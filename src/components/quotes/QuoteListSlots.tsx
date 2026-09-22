@@ -3,6 +3,13 @@
 import type { ComponentProps } from "react";
 
 import QuoteListScreen from "@dss/core/ui/quotes/QuoteListScreen";
+import type { QuoteListItem } from "@dss/core/ui/quotes/quote-list-rows";
+import {
+  QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE,
+  canRenderQuoteDocument,
+} from "@/lib/domain/quote-document-support";
+import { QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE } from "@/lib/domain/quote-excel-only-download";
+import { QuoteFileBadges } from "./QuoteAttachmentParts";
 
 /**
  * ============================================================================
@@ -27,12 +34,15 @@ import QuoteListScreen from "@dss/core/ui/quotes/QuoteListScreen";
  *
  *     rowHref           줄을 눌러 여는 곳            ← 조각 3b-1 (아래, 채웠다)
  *     intakeHref        인수번호를 눌러 가는 곳       ← 조각 4·5
- *     renderFileBadges  줄의 파일 딱지               ← 조각 3d
- *     renderRowActions  줄의 [미리보기]·[받기]        ← 조각 3c·3f
+ *     renderFileBadges  줄의 파일 딱지               ← 조각 3c-2 (아래, 채웠다)
+ *                                                     「엑셀 전용」 하나뿐 — 나머지
+ *                                                     둘(결재 PDF · 엑셀 없음)은 3d
+ *     renderRowActions  줄의 [받기]·[미리보기]        ← 조각 3c-2 (아래, 채웠다)
+ *                                                     미리보기는 3f 에 더한다
  *
- * 🔴 **그 셋도 `page.tsx` 가 아니라 여기에 건다.** 저기서 넘기면 화면이 똑같이
- * 죽는다. 남은 셋(`newQuoteControl` · `notice` 는 ReactNode, `emptyMessage` 는
- * 글자)은 서버에서 넘겨도 된다 — 지금처럼 `page.tsx` 에 둔다.
+ * 🔴 **남은 하나(`intakeHref`)도 `page.tsx` 가 아니라 여기에 건다.** 저기서 넘기면
+ * 화면이 똑같이 죽는다. 남은 셋(`newQuoteControl` · `notice` 는 ReactNode,
+ * `emptyMessage` 는 글자)은 서버에서 넘겨도 된다 — 지금처럼 `page.tsx` 에 둔다.
  *
  * ── 🔴 이 조각은 자료를 모른다 ──────────────────────────────────────────
  * 받은 프롭을 그대로 흘려보내고 **함수 슬롯만 얹는다.** 조회도 권한 판정도
@@ -44,6 +54,100 @@ import QuoteListScreen from "@dss/core/ui/quotes/QuoteListScreen";
  * 「한 벌」이 깨진다(설계서 F절 5번 · 그쪽 README 4절).
  * ============================================================================
  */
+
+/**
+ * ============================================================================
+ * 🔴 줄마다의 [견적서 받기] — 평범한 링크 하나, **모든 줄에 같은 자리** (조각 3c-2)
+ * ============================================================================
+ * 주소(`/api/quotes/{id}/xlsx`)를 그대로 여는 `<a>` 다. `download` 속성도 fetch 도
+ * 쓰지 않는다 — **파일 이름은 서버가 Content-Disposition 으로 정한다**
+ * (domain/quote-file-name.ts). 클라이언트가 이름을 정하면 목록과 다른 화면에서 서로
+ * 다른 이름으로 저장되는 날이 온다.
+ *
+ * 🔴 **권한으로 갈리지 않는다.** 그 통로의 문턱은 `quotes` READ 라, 목록을 볼 수 있는
+ * 사람이면 파일로도 받을 수 있다(라우트 머리말의 '왜 READ 로 충분한가'). A/S 는 수정
+ * 권한자에게 여기서 **발행 단추**(공유폴더에 저장하고 첨부 칸을 바꾼다)를 보이는데,
+ * 그것은 **조각 3c-3** 의 것이고 3d 뒤로 미뤄져 있다 — 그래서 이 사이트에서는 지금
+ * 두 갈래가 같은 링크다.
+ *
+ * ── 🔴 받을 수 없는 줄에도 **단추 자리를 비우지 않는다** (2026-09-22 눈 확인) ──
+ * 처음에는 그 줄에 「엑셀 전용」이라는 곁말을 단추 자리에 넣었는데, 그 글자의 폭이
+ * 단추와 달라 **그 두 줄만 [삭제] 가 오른쪽으로 밀려** 목록이 들쭉날쭉해졌다.
+ * A/S 는 그렇지 않다 — 그쪽은 파일 딱지를 **왼쪽 「견적서」 칸**에 붙이고 단추 칸은
+ * 모든 줄이 똑같다. 그래서 이 사이트도 그렇게 바꿨다:
+ *   · 「엑셀 전용」은 왼쪽 칸의 배지로 (아래 `renderFileBadges` 슬롯)
+ *   · 받을 수 없는 줄의 단추 자리에는 **꺼진(흐린) [견적서 받기]** 를 둔다
+ *
+ * 🔴 **화면이 감춘 것은 경계가 아니다.** 아래 두 갈래는 눌러서 실패하는 단추를 내밀지
+ * 않기 위한 것이고, 같은 판정을 **통로가 다시 한다**(그쪽이 관문이다).
+ * ============================================================================
+ */
+
+/** 받기 자리의 상자 모양 — 🔴 **켜진 것과 꺼진 것이 같은 값을 쓴다**(칸이 흔들리지 않게). */
+const ROW_ACTION_CLASS =
+  "inline-block rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-700 dark:border-zinc-700 dark:text-zinc-300";
+
+/**
+ * 받을 수 없는 줄의 자리 — **꺼진 단추**와 까닭.
+ *
+ * 흐리게 하고 `title` 에 까닭을 싣는 것은 이 저장소(와 A/S)의 관행이다 — 권한 설정
+ * 화면이 「끌 수 없는 칸」을 같은 방식으로 그린다(`disabled:cursor-not-allowed
+ * disabled:opacity-50` + title).
+ *
+ * 🔴 곁말을 **감싼 `<span>` 에도** 다는 까닭: 꺼진 단추는 마우스 사건을 받지 못해 제
+ * `title` 을 띄우지 않는 브라우저가 있다(Chrome). 사람이 까닭을 못 읽으면 흐린 단추는
+ * 「고장」으로 보인다. 같은 문장을 둘 다에 두어 어느 쪽이 떠도 같은 말이 나오게 한다.
+ */
+function UnavailableDownload({ reason }: { reason: string }) {
+  return (
+    <span title={reason} className="inline-block">
+      <button
+        type="button"
+        disabled
+        title={reason}
+        className={`${ROW_ACTION_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}
+      >
+        견적서 받기
+      </button>
+    </span>
+  );
+}
+
+function QuoteDownloadLink({ row }: { row: QuoteListItem }) {
+  /**
+   * ① 앱 양식이 아직 없는 종류 — 꺼진 단추와 까닭.
+   *
+   * 🔴 **지금 이 갈래에 걸리는 종류는 없다**(내자 · OH · 케이블이 모두 열려 있다 —
+   * domain/quote-document-support.ts 의 「할 수 있는 쪽」 목록). 그래도 자리를 만들어
+   * 두는 것은, 종류가 하나 더 생기는 날 그 종류를 막아 주는 장치가 이것이기 때문이다
+   * (그 파일 머리말 — 「빈 자물쇠가 아니라, 다음 종류를 기다리는 자물쇠」).
+   */
+  if (!canRenderQuoteDocument(row)) {
+    return <UnavailableDownload reason={QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE} />;
+  }
+
+  /**
+   * ② 🔴 엑셀 전용 견적서 — **이 사이트에는 내줄 파일이 없다.** 그 장의 문서는 사람이
+   * 붙여 둔 엑셀이고, 이 사이트에는 파일을 붙이는 칸이 아예 없다(조각 3d).
+   * **누를 수 있는데 실패하는 단추보다 낫다** — 문장은 통로가 돌려주는 그 하나이고
+   * (domain/quote-excel-only-download.ts) 왼쪽 칸의 배지도 같은 문장을 곁말로 쓴다.
+   * 🔴 위 ① 과 **별개의 조건**이다: 그 판정은 엑셀 전용이면 언제나 참을 돌려준다
+   * (고치지 않는 까닭이 그 파일에 있다). **두 갈래를 같은 모양으로** 그리는 것은
+   * 다음 사람이 어느 쪽이 옳은지 되묻지 않게 하기 위해서다.
+   */
+  if (row.isExcelOnly) {
+    return <UnavailableDownload reason={QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE} />;
+  }
+
+  return (
+    <a
+      href={`/api/quotes/${row.id}/xlsx`}
+      className={`${ROW_ACTION_CLASS} hover:bg-zinc-50 dark:hover:bg-zinc-800`}
+    >
+      견적서 받기
+    </a>
+  );
+}
 
 /** 화면이 받는 프롭에서 **이 조각이 채우는 함수 슬롯**만 뺀 나머지. */
 type PassThroughProps = Omit<
@@ -67,6 +171,31 @@ export default function QuoteListSlots(props: PassThroughProps) {
        * 요청 앞에서 아무것도 막지 못한다.
        */
       rowHref={(row) => (props.canEdit ? `/quotes/${row.id}` : null)}
+      /**
+       * 🔴 조각 3c-2 — **줄마다 [견적서 받기] 링크가 선다.**
+       *
+       * 갈래 셋(양식 없는 종류 · 엑셀 전용 · 받기 링크)은 위 `QuoteDownloadLink` 에
+       * 있다. 여기서 `canEdit` 을 보지 않는 것은 그 통로의 문턱이 READ 라서다 —
+       * 수정 권한자도 같은 링크로 받는다.
+       *
+       * 🔴 [미리보기](3f) · 발행 단추(3c-3)는 아직 없다. 그 둘이 오면 이 한 자리에
+       * 나란히 선다(화면 쪽 슬롯은 하나다 — 서브모듈은 그때도 손대지 않는다).
+       */
+      renderRowActions={(row) => <QuoteDownloadLink row={row} />}
+      /**
+       * 🔴 조각 3c-2(눈 확인 뒤) — **왼쪽 「견적서」 칸의 파일 딱지.**
+       *
+       * 지금 붙는 것은 **「엑셀 전용」 하나**다. 그 값은 `quotes.is_excel_only` 칸이라
+       * 첨부를 하나도 보지 않고 알 수 있다 — 그래서 **첨부 조각(3d)을 기다리지 않는다.**
+       * 🔴 나머지 둘(「결재 PDF」 · 「엑셀 없음」)은 실제로 붙은 파일을 세어야 하므로
+       * 3d 것으로 남긴다. 규칙은 quote-attachment-files.ts 의 `quoteListFileBadges`,
+       * 그리는 조각은 A/S 와 같은 이름 · 같은 자리(QuoteAttachmentParts.tsx).
+       *
+       * 🔴 이 자리가 **단추 칸이 모든 줄에서 같아지는 까닭**이다 — 받을 수 없는 줄의
+       * 표시를 단추 자리에 두면 그 줄만 칸이 밀린다(위 `QuoteDownloadLink` 머리말).
+       * 화면(서브모듈)은 이 값을 표와 카드 두 곳에 같이 건다.
+       */
+      renderFileBadges={(row) => <QuoteFileBadges row={row} />}
     />
   );
 }

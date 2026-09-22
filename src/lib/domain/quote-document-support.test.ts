@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 
 import {
@@ -18,21 +19,24 @@ import { STORED_QUOTE_KINDS, quoteKindLabels } from "@/lib/validation/quote-inpu
  * 2026-09-17(케이블 ④)에 케이블 양식과 그 미리보기가 붙어 **그 종류의 문은 열렸다.**
  * 판정과 다섯 자리는 그대로 남는다 — 다음 종류를 막아 주는 장치가 이것이다.
  *
- * ── 🔴 옮겨 오면서 ㉡ 묶음을 뺐다 (조각 3b-1) ───────────────────────────
+ * ── 🔴 ㉡ 묶음이 **둘만** 들어왔다 (조각 3c-2) ──────────────────────────
  * A/S 의 같은 시험은 둘을 본다:
  *  ㉠ **판정 자체** — 양식이 있는 종류만 지나가고, 목록에 없는 종류는 막힌다.
- *  ㉡ **막는 자리가 실제로 그 판정을 부르는가** — 다섯 곳(GET 받기 통로 · 발행 통로 ·
- *     미리보기 화면 · 목록 · 편집 화면)의 **원본을 글자로 읽는다.**
+ *  ㉡ **막는 자리가 실제로 그 판정을 부르는가** — 저쪽은 다섯 곳(GET 받기 통로 ·
+ *     발행 통로 · 미리보기 화면 · 목록 · 편집 화면)의 **원본을 글자로 읽는다.**
  *
- * 🔴 **그 다섯 자리가 이 저장소에 하나도 없다.** 받기 통로 둘과 미리보기 화면은 조각
- * 3c·3f 의 것이고, 목록의 받기 · 미리보기 링크는 목록 화면의 `renderRowActions`
- * 슬롯(3c·3f)이며, 편집 화면의 두 단추도 그때 온다(QuoteEditForm 머리말 ②③).
- * 없는 파일을 읽는 시험은 「무엇이 깨졌는지」가 아니라 「아직 안 왔다」를 말할 뿐이라,
- * **그 묶음은 그 자리들이 생기는 조각에서 함께 온다.** A/S 가 그대로 갖고 있다.
+ * 조각 3b-1 때는 그 다섯이 이 저장소에 **하나도 없어** ㉡ 을 통째로 뺐다. 2026-09-22
+ * (조각 3c-2)에 **둘이 생겼다** — 받기 통로(`api/quotes/[id]/xlsx/route.ts`)와 목록의
+ * 받기 링크(`components/quotes/QuoteListSlots.tsx`). 그 둘에 해당하는 단언만 저쪽에서
+ * 가져왔다(아래 ㉡).
  *
- * 남긴 ㉠ 은 **순수 함수 하나**를 본다 — 부르는 자리가 없어도 규칙은 지금 여기 있고
- * (quote-document-support.ts 머리말), 그 규칙이 「할 수 있는 쪽을 적는다」로 남아
- * 있는지가 다음 종류를 지켜 준다.
+ * 🔴 **나머지 셋은 가져오지 않았다** — 없는 파일을 읽는 시험은 「무엇이 깨졌는지」가
+ * 아니라 「아직 안 왔다」를 말할 뿐이다:
+ *   · 미리보기 화면(`quotes/[id]/print/page.tsx`) — **조각 3f**.
+ *   · 발행 통로(POST issue · `services/quote-issue.ts`) — **조각 3c-3**(3d 뒤로 미뤘다).
+ *   · 편집 화면의 두 단추(`canGetDocument`) — 그 단추가 **발행과 한 벌**이라 3c-3 과
+ *     함께 온다(QuoteEditForm 의 머리 단추 자리 주석).
+ * 그 셋이 오는 조각이 여기에 한 묶음씩 더한다. A/S 가 그대로 갖고 있다.
  * ============================================================================
  */
 
@@ -88,6 +92,84 @@ describe("㉠ 판정 — 앱 양식이 있는 종류만 지나간다", () => {
         !QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE.includes(label),
         `거절 문장이 「${label}」 를 이름으로 박아 두었다`
       );
+    }
+  });
+});
+
+/**
+ * ============================================================================
+ * ㉡ 막는 자리 — 🔴 **이 저장소의 두 곳이 같은 판정 하나를 부른다** (조각 3c-2)
+ * ============================================================================
+ * 위 머리말의 그 둘이다. 원본을 글자로 읽는 것은 이 저장소에서 라우트를 직접 부를 수
+ * 없기 때문이다(세션 · DB · 양식 파일이 필요하다) — 이웃 시험들과 같은 장치다
+ * (components/quotes/quote-list-screen-source.test.ts 머리말).
+ * ============================================================================
+ */
+const repoUrl = new URL("../../../", import.meta.url);
+const read = (relativePath: string) =>
+  readFileSync(new URL(relativePath, repoUrl), "utf8").replace(/\r\n/g, "\n");
+const flat = (source: string) => source.replace(/\s+/g, " ");
+
+describe("㉡ 막는 자리 — 받기 통로와 목록이 같은 판정을 부른다", () => {
+  const xlsxRoute = flat(read("src/app/api/quotes/[id]/xlsx/route.ts"));
+  const listSlots = flat(read("src/components/quotes/QuoteListSlots.tsx"));
+
+  test("🔴 GET 받기 통로 — 견적서를 읽은 **직후**, 채우기보다 앞에서 거절한다", () => {
+    const at = xlsxRoute.indexOf(
+      'if (!canRenderQuoteDocument(quote)) { return fail(501, "KIND_NOT_SUPPORTED", QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE); }'
+    );
+    assert.ok(at >= 0, "GET 통로가 거절하지 않는다");
+    const render = xlsxRoute.indexOf("await renderQuoteWorkbook(quote)");
+    assert.ok(render > at, "채우기가 거절보다 앞이다 — 그 사이에 문서가 만들어진다");
+    // 감사(EXCEL_EXPORT)도 남지 않아야 한다 — 나가지 않은 문서다.
+    assert.ok(xlsxRoute.indexOf("recordQuoteExport({") > at, "감사가 거절보다 앞이다");
+  });
+
+  test("🔴 GET 받기 통로 — 엑셀 전용은 **별개의 조건**으로 막는다(이 판정 뒤)", () => {
+    /**
+     * 🔴 이 판정은 **엑셀 전용이면 언제나 참**이다(위 ㉠ 의 그 단언) — 저쪽에서는 그
+     * 장의 문서가 붙인 엑셀이라 잘못 나갈 일이 없기 때문이다. 이 사이트에는 파일을
+     * 붙이는 칸이 아예 없어(조각 3d) 내줄 파일이 없으므로, **그 함수를 고치지 않고**
+     * 조건을 하나 더 두었다(domain/quote-excel-only-download.ts 머리말).
+     */
+    const kindAt = xlsxRoute.indexOf('fail(501, "KIND_NOT_SUPPORTED"');
+    const excelAt = xlsxRoute.indexOf(
+      'if (quote.isExcelOnly) { return fail(501, "EXCEL_ONLY_NOT_SUPPORTED", QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE); }'
+    );
+    assert.ok(excelAt >= 0, "엑셀 전용 갈래가 없다 — 품목 없는 빈 견적서가 나간다");
+    assert.ok(excelAt > kindAt, "두 조건이 한 덩이가 되었다 — 판정 함수를 고친 것이 아닌지 볼 것");
+    assert.ok(xlsxRoute.indexOf("await renderQuoteWorkbook(quote)") > excelAt, "채우기가 거절보다 앞이다");
+    assert.ok(xlsxRoute.indexOf("recordQuoteExport({") > excelAt, "감사가 거절보다 앞이다");
+  });
+
+  test("🔴 목록의 받기 링크 — 그 줄에는 받기를 내밀지 않는다", () => {
+    // 🔴 링크 대신 **꺼진 단추**를 세운다(2026-09-22 눈 확인 — 단추 칸이 모든 줄에서
+    //    같아야 한다). 문장은 이 판정이 돌려주는 그 하나다.
+    assert.ok(
+      listSlots.includes(
+        "if (!canRenderQuoteDocument(row)) { return <UnavailableDownload reason={QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE} />; }"
+      ),
+      "목록의 받기가 그 판정을 부르지 않는다"
+    );
+    // 링크보다 앞이다 — 뒤에 있으면 링크가 이미 그려진다.
+    const at = listSlots.indexOf("if (!canRenderQuoteDocument(row))");
+    assert.ok(listSlots.indexOf("href={`/api/quotes/${row.id}/xlsx`}") > at, "링크가 판정보다 앞이다");
+    // 표와 카드 두 곳이 **같은 조각**을 쓴다 — 슬롯이 하나라 화면이 그 값을 둘에 건다
+    // (그것을 보는 것은 quote-list-screen-source.test.ts 의 「표와 카드가 같은 슬롯을
+    // 받는다」다). 여기서는 이 사이트가 그 슬롯에 넣은 것이 하나임을 본다.
+    assert.equal(listSlots.split("<QuoteDownloadLink row={row} />").length - 1, 1);
+  });
+
+  test("🔴 두 곳 어디에도 종류를 손으로 적은 갈림이 없다 — 판정은 한 곳이다", () => {
+    for (const [name, source] of [
+      ["GET 받기 통로", xlsxRoute],
+      ["목록의 받기 링크", listSlots],
+    ] as const) {
+      assert.ok(!source.includes('=== "CABLE"'), `${name} 가 종류를 손으로 가른다`);
+      assert.ok(!source.includes('!== "CABLE"'), `${name} 가 종류를 손으로 가른다`);
+      // 🔴 종류 이름을 담은 목록을 제 손으로 적은 자리도 없어야 한다(그 목록은
+      //    판정 안에만 있다 — 두 곳이 되면 한쪽만 고쳐지는 날이 온다).
+      assert.ok(!/\["DOMESTIC"|"OVERHAUL",/.test(source), `${name} 가 양식 목록을 제 손으로 적었다`);
     }
   });
 });

@@ -165,3 +165,28 @@ src/components/quotes/quote-part-picker-wiring.test.ts
 #    없으면 시험이 「클라이언트에서 불렀다」며 통째로 던진다. A/S 의 `npm test` 와
 #    이 저장소의 `test:db` 에는 원래 있던 조건이고, unit 에만 빠져 있었다.
 src/lib/storage/quote-template.test.ts
+
+# ── 조각 3c-2 — 견적서 받기(GET /api/quotes/{id}/xlsx · 목록의 받기 링크) ─
+# 🔴 라우트를 **직접 부르지 않는다** — 쿠키(next/headers) · DB · 디스크의 양식 파일이
+#    전부 필요하고 그 사슬은 `import "server-only"` 로 시작한다. 그래서 A/S 의 같은
+#    통로들처럼 **원본을 글자로 읽어** 문지기 순서(세션 → 권한 → 형식 → 조회)와 거절
+#    갈래(401 · 403 · 404 · 501 둘 · 503 · 500), 감사가 모든 거절 뒤인지를 본다.
+#    실제로 파일이 내려오는지는 사람이 띄워 둔 3600번 서버로 확인했다(조각 3c-2 보고 ①).
+#
+# 🔴 **DB 시험이 없다** — 이 통로가 쓰는 조회(getQuoteForEdit)와 감사 한 줄
+#    (insertAuditLog)은 이미 도는 시험들이 실제 DB 로 보고 있고(mutations/
+#    quotes.integration.test.ts), 이 조각이 자료 쪽에 더한 규칙이 없다. db.txt 에
+#    아무것도 더하지 않았다.
+#
+# 🔴 목록의 받기 링크와 「막는 자리가 그 판정을 부르는가」는 **이미 있던 두 시험**이
+#    본다 — components/quotes/quote-list-screen-source.test.ts(3c-2 가 금지 목록에서
+#    `renderRowActions=` 를 빼고 긍정 단언으로 갈았다) · lib/domain/
+#    quote-document-support.test.ts(㉡ 묶음 둘이 들어왔다). 둘 다 이미 이 목록에 있다.
+#
+# 🔴 **그 시험은 라우트 곁이 아니라 한 칸 위에 있다** — `node --test` 가 경로를 글롭으로
+#    읽어 App Router 의 `[id]` 를 「i 또는 d 한 글자」로 보기 때문이다. 그 폴더를 목록에
+#    그대로 적으면 아무것도 맞지 않아 **그 시험이 조용히 안 돈다**(실측 2026-09-22 —
+#    파일 수는 늘고 tests 는 0 이 늘었다. 이 목록의 검사는 통과한다: 파일이 정말 있다).
+#    A/S 는 그 칸을 `*` 로 적고 실행기가 펼치지만 이 저장소의 실행기에는 그 펼치기가
+#    없다(scripts/run-test-list.mjs 머리말). 그 까닭은 시험 파일 머리말에도 적어 두었다.
+src/app/api/quotes/xlsx-route-source.test.ts

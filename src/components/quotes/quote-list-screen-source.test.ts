@@ -34,6 +34,17 @@ const read = (relativePath: string) =>
 /** 줄바꿈·들여쓰기 차이로 시험이 깨지지 않도록 공백을 하나로 접는다. */
 const flat = (source: string) => source.replace(/\s+/g, " ");
 
+/**
+ * 주석을 뺀 코드.
+ *
+ * 🔴 「가져오지 않았는지」를 재는 단언에 필요하다 — 이 저장소의 머리말들은 **아직 오지
+ * 않은 조각의 파일 이름**을 그대로 적어 두고 「여기에는 없다」고 설명한다(예:
+ * quote-attachment-files.ts 의 「이 저장소에는 아직 `queries/attachments.ts` 도 없다」).
+ * 원본을 그대로 훑으면 그 설명이 금지 낱말로 걸려, 시험이 주석을 고치라고 요구하게 된다.
+ */
+const codeOf = (source: string) =>
+  flat(source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^[ \t]*\/\/.*$/gm, " "));
+
 /** 원본에서 **한 갈래만** 잘라낸다 — 파일 전체에 정규식을 걸면 이웃 갈래에 걸린다. */
 const sliceBetween = (source: string, startMarker: string, endMarker: string) => {
   const start = source.indexOf(startMarker);
@@ -48,6 +59,9 @@ const listSource = read(SCREEN_PATH);
 const pageSource = read("src/app/(app)/quotes/page.tsx");
 const newPageSource = read("src/app/(app)/quotes/new/page.tsx");
 const slotsSource = read("src/components/quotes/QuoteListSlots.tsx");
+/** 목록 딱지의 규칙과 그리는 조각 — 🔴 A/S 와 같은 이름 · 같은 자리다(조각 3c-2 · 3d). */
+const filesSource = read("src/components/quotes/quote-attachment-files.ts");
+const partsSource = read("src/components/quotes/QuoteAttachmentParts.tsx");
 const actionSource = read("src/lib/server/actions/quotes.ts");
 const dialogsSource = read("vendor/dss-core/src/ui/common/master-data-trash-dialogs.tsx");
 
@@ -157,16 +171,151 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
   });
 
   test("🔴 아직 없는 화면으로 가는 슬롯은 넘기지 않는다 — 없는 주소로 보내지 않는다", () => {
-    // 발행(3c) · 첨부(3d) · 인쇄(3f) 가 오면 한 줄씩 더한다.
+    // 발행(3c-3) 이 오면 한 줄씩 더한다.
     // 미리 넘기면 없는 화면으로 가는 링크·단추가 목록에 선다.
     // 🔴 두 파일을 함께 본다 — 함수 슬롯은 QuoteListSlots, 나머지는 page.tsx 다.
+    //
+    // 🔴 `renderRowActions=` 는 2026-09-22(**조각 3c-2**)에 이 목록에서 **빠졌다** —
+    //    그 조각이 받기 통로(`/api/quotes/{id}/xlsx`)와 목록의 받기 링크를 함께 만들어,
+    //    이제 그 슬롯이 **가리키는 화면이 실제로 있다.** 빈 자리는 아래 이웃 시험이
+    //    메운다(3c-1 이 `new/page.tsx` 에서 한 방식과 같게, 금지가 아니라 **무엇이
+    //    걸렸는지를 이름으로** 못 박는다).
+    //
+    // 🔴 `renderFileBadges=` 도 같은 날(**눈 확인 뒤**) 빠졌다 — 그 슬롯은 「첨부
+    //    조각(3d)의 것」으로 적혀 있었지만, 거기 붙는 딱지 셋 가운데 **「엑셀 전용」
+    //    하나는 첨부와 무관하다**: `quotes.is_excel_only` 칸 값이라 붙은 파일을 하나도
+    //    보지 않고 알 수 있다. 그 하나만 채웠다.
+    //    🔴 **「결재 PDF」 · 「엑셀 없음」은 그대로 3d 것**이다 — 둘은 실제로 붙은
+    //    파일을 세어야 알 수 있고, 이 사이트에는 파일을 붙이는 칸이 아예 없어 지금
+    //    달면 언제나 같은 답이 된다(아래 이웃 시험이 그 하나뿐임을 못 박는다).
+    //    옮긴 까닭은 **단추 칸이 모든 줄에서 같아야** 하기 때문이다 — 받을 수 없는
+    //    줄의 표시를 단추 자리에 두었더니 그 줄만 [삭제] 가 밀렸다.
+    //
+    // 🔴 남은 하나는 **그대로 금지**다: `notice`(발행 결과 알림 — 조각 3c-3.
+    //    3c-2 의 받기는 평범한 링크라 알릴 것이 없다).
     const both = flat(sliceBetween(pageSource, "<QuoteListSlots", "/>\n  );")) + flat(slotsSource);
-    for (const slot of ["renderRowActions=", "renderFileBadges=", "notice="]) {
+    for (const slot of ["notice="]) {
       assert.equal(both.includes(slot), false, `${slot} — 아직 그 조각이 오지 않았는데 슬롯이 채워져 있다`);
     }
     // 🔴 인수번호가 가는 곳(수리 건 상세)은 **A/S 의 화면**이다. 사이트를 건너가는
     // 주소를 이 사이트가 지어내지 않는다 — 조각 4·5 에서 정한다.
     assert.equal(both.includes("intakeHref="), false, "수리 건 상세 주소를 이 사이트가 지어내고 있다");
+  });
+
+  test("🔴 조각 3c-2 — 줄마다 [견적서 받기] 링크가 선다. 엑셀 전용 줄에는 링크 대신 곁말이다", () => {
+    // 위 시험에서 `renderRowActions=` 를 뺀 자리를 메운다 — 금지 목록으로는 더 이상
+    // 잴 수 없으니 **무엇이 걸렸는지를 이름으로 못 박는다**(3c-1 이 new/page.tsx 에서
+    // 한 방식과 같다).
+    const slots = flat(slotsSource);
+
+    // 🔴 함수 슬롯이라 **QuoteListSlots 에서** 건다 — page.tsx 에서 넘기면 화면이 죽는다.
+    assert.ok(
+      slots.includes("renderRowActions={(row) => <QuoteDownloadLink row={row} />}"),
+      "받기 슬롯이 채워지지 않았거나 모양이 다르다"
+    );
+
+    // 🔴 그 주소에 실제로 통로가 있어야 한다 — 없는 곳으로 보내는 링크는 3a 가 막던 그것이다.
+    assert.equal(
+      existsSync(fileURLToPath(new URL("src/app/api/quotes/[id]/xlsx/route.ts", repoUrl))),
+      true,
+      "받기 링크가 가리키는 통로가 없다"
+    );
+
+    const link = flat(sliceBetween(slotsSource, "function QuoteDownloadLink(", "/** 화면이 받는 프롭에서"));
+
+    // 🔴 **평범한 링크 하나**다. `download` 도 fetch 도 쓰지 않는다 — 파일 이름은 서버가
+    //    Content-Disposition 으로 정한다(domain/quote-file-name.ts). 클라이언트가 이름을
+    //    정하면 화면마다 다른 이름으로 저장되는 날이 온다.
+    assert.ok(link.includes("href={`/api/quotes/${row.id}/xlsx`}"), "받기 링크의 주소가 다르다");
+    // 🔴 `<a>` 의 속성만 본다 — 주석에도 그 낱말이 나온다(파일 이름 규칙을 가리킨다).
+    const anchor = sliceBetween(link, "<a href={`/api/quotes", ">");
+    assert.equal(anchor.includes("download"), false, "클라이언트가 파일 이름을 정하고 있다");
+    assert.equal(link.includes("fetch("), false, "링크가 아니라 fetch 로 받고 있다");
+
+    // 🔴 **권한으로 갈리지 않는다** — 그 통로의 문턱은 `quotes` READ 라 수정 권한자도
+    //    같은 링크로 받는다. A/S 는 수정 권한자에게 여기서 발행 단추를 보이는데 그것은
+    //    조각 3c-3 의 것이다(그 단추가 오면 이 단언이 깨지고, 그때 뜻을 다시 적는다).
+    assert.equal(link.includes("canEdit"), false, "받기 링크가 canEdit 으로 갈린다");
+
+    // 🔴 엑셀 전용 줄 — 링크 대신 **꺼진 단추**다. 문장은 **통로가 돌려주는 그 하나**다.
+    assert.ok(link.includes("if (row.isExcelOnly) {"), "엑셀 전용 갈래가 없다 — 눌러서 실패하는 단추가 선다");
+    assert.ok(
+      link.includes("<UnavailableDownload reason={QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE} />"),
+      "엑셀 전용 줄이 통로와 같은 문장을 쓰지 않는다"
+    );
+    // 🔴 「양식 없는 종류」 갈래도 **같은 모양**이다 — 셋이 제각각이면 다음 사람이 어느
+    //    것이 옳은지 모른다(지금 걸리는 종류는 없다).
+    assert.ok(
+      link.includes("<UnavailableDownload reason={QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE} />"),
+      "양식 없는 종류 갈래가 다른 모양이다"
+    );
+  });
+
+  test("🔴 조각 3c-2(눈 확인 뒤) — 단추 칸은 **모든 줄에서 같다**. 못 받는 줄은 흐린 단추다", () => {
+    // 🔴 처음에는 받을 수 없는 줄의 단추 자리에 「엑셀 전용」 곁말을 넣었는데, 글자 폭이
+    //    단추와 달라 **그 두 줄만 [삭제] 가 밀려** 목록이 들쭉날쭉했다(2026-09-22 눈
+    //    확인). A/S 는 딱지를 왼쪽 칸에 두고 단추 칸은 모든 줄이 같다.
+    const slots = flat(slotsSource);
+    const unavailable = flat(sliceBetween(slotsSource, "function UnavailableDownload(", "function QuoteDownloadLink("));
+
+    // 🔴 상자 모양을 **켜진 것과 꺼진 것이 같은 값**으로 쓴다 — 칸이 흔들리지 않는 근거다.
+    assert.ok(slots.includes("const ROW_ACTION_CLASS ="), "받기 자리의 상자 모양이 한 곳에 없다");
+    assert.ok(unavailable.includes("${ROW_ACTION_CLASS}"), "꺼진 단추가 다른 상자 모양을 쓴다");
+    assert.ok(
+      flat(sliceBetween(slotsSource, "<a", "</a>")).includes("${ROW_ACTION_CLASS}"),
+      "받기 링크가 다른 상자 모양을 쓴다"
+    );
+    // 이름도 같다 — 같은 자리에 다른 낱말이 서면 칸 폭이 달라진다.
+    assert.ok(unavailable.includes("견적서 받기"), "꺼진 단추의 이름이 다르다");
+    assert.ok(flat(sliceBetween(slotsSource, "<a", "</a>")).includes("견적서 받기"), "받기 링크의 이름이 다르다");
+
+    // 🔴 정말로 **꺼져 있다**(눌러서 실패하는 단추가 아니다). 흐리게 하는 방식은 이
+    //    저장소의 관행 그대로다 — `disabled:` 짝과 곁말(title).
+    assert.ok(unavailable.includes("disabled"), "꺼진 단추가 실제로 꺼져 있지 않다");
+    assert.ok(
+      unavailable.includes("disabled:cursor-not-allowed disabled:opacity-50"),
+      "흐리게 하는 방식이 이 저장소의 관행과 다르다"
+    );
+    // 🔴 곁말은 감싼 span 에도 단다 — 꺼진 단추는 제 title 을 못 띄우는 브라우저가 있다.
+    assert.equal(unavailable.split("title={reason}").length - 1, 2, "곁말이 한 곳에만 있다");
+  });
+
+  test("🔴 조각 3c-2(눈 확인 뒤) — 왼쪽 칸의 파일 딱지는 **「엑셀 전용」 하나**다", () => {
+    // 위 금지 목록에서 `renderFileBadges=` 를 뺀 자리를 메운다.
+    const slots = flat(slotsSource);
+    assert.ok(
+      slots.includes("renderFileBadges={(row) => <QuoteFileBadges row={row} />}"),
+      "파일 딱지 슬롯이 채워지지 않았거나 모양이 다르다"
+    );
+    // 🔴 그리는 조각과 규칙은 **A/S 와 같은 이름 · 같은 자리**다(조각 3d·4 가 대조한다).
+    assert.ok(
+      slots.includes('import { QuoteFileBadges } from "./QuoteAttachmentParts"'),
+      "딱지 조각을 A/S 와 같은 자리에서 가져오지 않는다"
+    );
+    const badgeRule = flat(sliceBetween(filesSource, "export function quoteListFileBadges(", "\n}"));
+    assert.ok(badgeRule.includes('key: "EXCEL_ONLY"'), "엑셀 전용 딱지가 없다");
+    assert.ok(badgeRule.includes("if (!row.isExcelOnly) return [];"), "일반 견적서 줄에도 딱지가 붙는다");
+
+    // 🔴 **나머지 둘은 조각 3d 것이다** — 「결재 PDF」 · 「엑셀 없음」은 붙은 파일을
+    //    세어야 알 수 있다. 규칙이 그 둘을 아직 보지 않는지 **받는 값으로** 확인한다.
+    assert.ok(
+      flat(filesSource).includes("export function quoteListFileBadges(row: { isExcelOnly: boolean })"),
+      "딱지 규칙이 첨부를 세는 값(hasSignedPdf · hasExcel)을 받고 있다"
+    );
+
+    // 🔴 그리고 **첨부 조회를 들여오지 않는다** — 이 사이트에는 그 파일이 아예 없다(3d).
+    //    🔴 **주석을 뺀 코드만** 본다: 세 파일의 머리말이 「이 저장소에는 아직
+    //    `queries/attachments.ts` 도 없다」고 적어 두고 있어, 원본을 그대로 훑으면 그
+    //    설명이 걸린다(시험이 주석을 고치라고 요구하게 된다).
+    for (const chain of ["queries/attachments", "attachment-allowlist", "attachment-path", "storage-adapter"]) {
+      for (const [name, source] of [
+        ["QuoteListSlots", slotsSource],
+        ["quote-attachment-files", filesSource],
+        ["QuoteAttachmentParts", partsSource],
+      ] as const) {
+        assert.equal(codeOf(source).includes(chain), false, `${name} 이 첨부 사슬을 끌고 왔다: ${chain}`);
+      }
+    }
   });
 
   test("🔴 슬롯을 안 주면 요약 줄은 링크가 아니라 글자다 — 목록은 그래도 읽힌다", () => {

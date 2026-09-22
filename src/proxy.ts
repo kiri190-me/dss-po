@@ -103,9 +103,13 @@ export function proxy(request: NextRequest) {
  * 문서가 그 경우 "auth logic or redirects can unintentionally block CSS, JS, or
  * images" 라고 경고한다.
  *
- * 🔴 /api 가운데 /api/auth 가 **아닌** 것은 일부러 남겨 두었다(지금은 하나도
- * 없다). 새 API 를 만들 때 아무도 손대지 않으면 「로그인 필요」가 기본이 되는
- * 쪽이, 조용히 열려 있는 쪽보다 안전하다.
+ * 🔴 /api 가운데 /api/auth 가 **아닌** 것은 일부러 남겨 두었다. 새 API 를 만들 때
+ * 아무도 손대지 않으면 「로그인 필요」가 기본이 되는 쪽이, 조용히 열려 있는 쪽보다
+ * 안전하다. 🔴 **2026-09-22(조각 3c-2)에 그 첫 주인공이 생겼다** —
+ * `GET /api/quotes/[id]/xlsx`(견적서 받기). 쿠키가 없으면 여기서 303 으로 통합
+ * 로그인에 보내지고, 가려던 주소를 싣고 오므로 로그인을 마치면 그대로 파일이
+ * 내려온다(실측). 그 통로는 그것과 **별개로** 세션 · 권한 · 감사를 제 손으로 다시
+ * 본다 — 이 자리는 낙관적 확인일 뿐이다(위 머리말).
  */
 export const config = {
   matcher: ["/((?!api/auth$|api/auth/|login$|login/|_next$|_next/|.*\\.).*)"],
