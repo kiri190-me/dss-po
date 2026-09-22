@@ -6,8 +6,9 @@ import { requireAreaAccessForCurrentUser } from "@/lib/auth/area-guard";
 import { hasPermission } from "@/lib/auth/permission-resolver";
 import { getPartPickerList, getPartPickerUnitPrices } from "@/lib/db/queries/inventory";
 import { listRepairLabor } from "@/lib/db/queries/repair-labor";
-import { CABLE_QUOTE_MAX_LINES } from "@/lib/domain/cable-quote-lines";
 import { toKstDateOnly } from "@/lib/domain/date-only";
+import { readAllQuoteWorkSectionDefaults } from "@/lib/storage/quote-template";
+import { CABLE_QUOTE_MAX_LINES } from "@/lib/xlsx/cable-quote-template";
 
 export const metadata: Metadata = {
   title: "새 견적서 | DSS PO / 내자",
@@ -46,9 +47,11 @@ export const dynamic = "force-dynamic";
  *     인수번호와 돌아갈 곳) → **조각 4·5**. 건너올 A/S 의 수리 건 상세가 그때
  *     정해진다. 그래서 `searchParams` 를 아예 받지 않는다 — 읽지 않을 값을
  *     받아 두면 「실려 오는 줄 알았는데 안 쓰던」 자리가 된다.
- *   · **양식 머리말 · 작업 내역 기본값**(`readAllQuoteTemplateHeaders` ·
- *     `readAllQuoteWorkSectionDefaults`) → **조각 3c**. 엑셀 사슬을 끌고 온다.
- *     🔴 그래서 아래에서 `workScopeDefaults={{}}` 를 넘긴다 — 수정 화면과 같다.
+ *   · **양식 머리말**(`readAllQuoteTemplateHeaders`) → **조각 3f(미리보기)**.
+ *     🔴 저쪽에서 그 값을 쓰는 곳은 **미리보기 한 줄**(`printHeaders`)뿐이고 이
+ *     사이트의 폼에는 그 프롭이 아예 없다. 그래서 읽지 않는다 — 양식 다섯을 더
+ *     여는 값을 아무도 안 보는 채로 실어 보내지 않는다.
+ *     (**작업 내역 기본값**은 3c-1 이 배선했다 — 아래 `workScopeDefaults`.)
  *   · **첨부 칸**(`listQuoteAttachmentSlots`) → **조각 3d**.
  *   · **mock 모드 갈래**(`getAuthSource` → `PlaceholderPage`) — 이 사이트에는
  *     mock 모드가 없다.
@@ -66,13 +69,17 @@ export default async function NewQuotePage() {
   // 보이는 사람과 여기 들어오는 사람이 어긋나지 않는다.
   if (!(await hasPermission(user, "quotes", "WRITE"))) redirect("/quotes");
 
-  // 🔴 셋을 **함께** 기다린다 — 서로를 쓰지 않으므로 줄줄이 기다릴 까닭이 없다.
+  // 🔴 넷을 **함께** 기다린다 — 서로를 쓰지 않으므로 줄줄이 기다릴 까닭이 없다.
   //  · 장비 종류별 수리 작업 목록과 단가 — 견적서의 작업비가 여기서 나온다.
+  //  · 양식 다섯의 작업 내역 기본값(조각 3c-1) — 종류를 바꿀 때 조사 · 통전 칸에
+  //    들어가는 목록이다. 🔴 **DB 가 아니라 양식 `.xlsx` 파일을 읽는다**
+  //    (storage/quote-template.ts). 못 읽어도 던지지 않고 빈 목록이다.
   //  · 부품 고르개의 두 목록(조각 3b-3 뒤쪽 절반) — 품명 칸에서 고를 부품과 그 단가.
   //    🔴 **재고 · 소유구분 · 내부 비고가 없는 가벼운 조회 둘**이다
   //    (queries/inventory.ts 머리말 — 무거운 형제 getPartList 는 옮겨 오지 않았다).
-  const [repairLabor, partOptions, partPrices] = await Promise.all([
+  const [repairLabor, workScopeDefaults, partOptions, partPrices] = await Promise.all([
     listRepairLabor(),
+    readAllQuoteWorkSectionDefaults(),
     getPartPickerList(),
     getPartPickerUnitPrices(),
   ]);
@@ -91,13 +98,15 @@ export default async function NewQuotePage() {
          보내는 일만 이 사이트가 한다 — 그 묶음은 DB 에 접속하지 않는다. */
       partOptions={partOptions}
       partPrices={partPrices}
-      /* 케이블 견적서의 줄 수 상한. 🔴 임시 상수다 — 조각 3c 가 오면 채우개의
-         CABLE_QUOTE_MAX_LINES 로 바꾼다(domain/cable-quote-lines.ts 머리말). */
+      /* 케이블 견적서의 줄 수 상한 — **채우개의 상수를 그대로 내려보낸다**(조각 3c-1).
+         그 파일은 `node:fs` · `node:zlib` 를 끌고 와 클라이언트 묶음에 들어갈 수 없어서,
+         서버 컴포넌트인 이 페이지가 읽어 넘긴다(폼의 cableMaxLines 항목). 숫자를 화면에
+         다시 적으면 양식이 바뀌는 날 한쪽만 고쳐진다. */
       cableMaxLines={CABLE_QUOTE_MAX_LINES}
-      /* 🔴 **비어 있다** — 위 머리말의 「양식 머리말 · 작업 내역 기본값」 항목.
-         종류를 바꿔도 조사 · 통전 칸이 채워지지 않고, 폼이 그 사실을 한 줄로
-         알린다(QuoteEditForm 의 WORK_SCOPE_DEFAULTS_MISSING_NOTICE). */
-      workScopeDefaults={{}}
+      /* 양식의 작업 내역 기본값(조각 3c-1). 종류 · 장비 종류를 바꾸면 폼이 여기서
+         그 양식 몫을 꺼내 조사 · 통전 칸을 채운다(quote-new-start.ts 의
+         scopeLinesFilledFromTemplate — 손댄 묶음은 건드리지 않는다). */
+      workScopeDefaults={workScopeDefaults}
     />
   );
 }

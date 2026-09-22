@@ -341,8 +341,8 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     assert.ok(flat(newPageSource).includes("quote={null}"), "폼이 만들기 모드로 열리지 않는다");
   });
 
-  test("🔴 아직 오지 않은 조각의 사슬을 끌고 오지 않는다 — 팝업 · 엑셀 · 첨부", () => {
-    // 이 화면이 A/S 판을 그대로 베끼면 조각 3c·3d 가 통째로 딸려 온다.
+  test("🔴 아직 오지 않은 조각의 사슬을 끌고 오지 않는다 — 팝업 · 첨부", () => {
+    // 이 화면이 A/S 판을 그대로 베끼면 아직 오지 않은 조각이 통째로 딸려 온다.
     // 🔴 **들여오는 줄만** 본다 — 머리말 주석은 뺀 것들을 이름으로 적어 두고 있다.
     //
     // 🔴 `queries/inventory` 는 2026-09-22(조각 3b-3 뒤쪽 절반)에 **이 목록에서
@@ -350,16 +350,51 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     //    빈 채로 두지 않았다: 무엇을 들여오는지(공용 묶음의 고르개 · 가벼운 조회 둘)와
     //    무엇을 들여오지 않는지(무거운 `getPartList`)를
     //    components/quotes/quote-part-picker-wiring.test.ts 가 못 박는다.
+    //
+    // 🔴 `quote-template` 과 `lib/xlsx/` 도 2026-09-22(**조각 3c-1**)에 이 목록에서
+    //    빠졌다 — 이 화면이 이제 **정말로 둘 다 들여온다.** 양식의 작업 내역
+    //    기본값(`storage/quote-template`)과 케이블 줄 수 상한
+    //    (`xlsx/cable-quote-template`)이 그것이고, 둘 다 `node:fs` 를 끌고 와
+    //    **서버 컴포넌트인 이 페이지만** 읽을 수 있다. 그 자리도 빈 채로 두지
+    //    않았다 — 아래 시험이 **들여오는 것이 그 둘뿐임**을 거꾸로 못 박는다.
+    //
+    // 🔴 `quote-template` 은 애초에 **부분 일치라 위험한 이름**이기도 했다. 이
+    //    저장소에는 `lib/domain/quote-template-variant.ts` 가 있고 그것은 화면도
+    //    쓰는 순수 규칙이다 — 누가 그것을 이 페이지에 들여오는 날 엉뚱하게
+    //    터졌을 것이다. 남은 넷은 그런 위험이 없음을 확인했다(2026-09-22):
+    //    `quote-new-start` 만 실재 파일과 겹치고 그 파일이 **바로 막으려는 그것**이다.
     const imports = flat(sliceBetween(newPageSource, 'import type { Metadata }', "export const metadata"));
     for (const chain of [
       "NewQuoteDialog",
       "quote-new-link",
       "quote-new-start",
-      "quote-template",
       "queries/attachments",
-      "lib/xlsx/",
     ]) {
       assert.equal(imports.includes(chain), false, `${chain} — 아직 오지 않은 조각을 끌고 왔다`);
+    }
+  });
+
+  test("🔴 엑셀 사슬에서 들여오는 것은 **둘뿐**이다 — 발행 · 미리보기는 아직 아니다", () => {
+    // 위 시험에서 `quote-template` · `lib/xlsx/` 를 뺀 자리를 메운다(조각 3c-1).
+    // 금지 목록으로는 더 이상 잴 수 없으니 **들여오는 것을 이름으로 못 박는다.**
+    const imports = flat(sliceBetween(newPageSource, 'import type { Metadata }', "export const metadata"));
+
+    // 있는 것 — 이 둘이 사라지면 종류를 바꿔도 조사 · 통전 칸이 안 채워지고,
+    // 케이블 줄 수 상한이 화면에 다시 박히게 된다.
+    for (const needed of [
+      'readAllQuoteWorkSectionDefaults } from "@/lib/storage/quote-template"',
+      'CABLE_QUOTE_MAX_LINES } from "@/lib/xlsx/cable-quote-template"',
+    ]) {
+      assert.ok(imports.includes(needed), `${needed} — 3c-1 이 배선한 것이 사라졌다`);
+    }
+
+    // 🔴 없는 것 — 다음 조각들이다.
+    //  · `readAllQuoteTemplateHeaders` : **조각 3f(미리보기)**. 저쪽에서 그 값을 쓰는
+    //    곳은 미리보기 한 줄(`printHeaders`)뿐이고 이 사이트의 폼에는 그 프롭이 아예
+    //    없다 — 읽으면 양식 다섯을 더 열고도 아무도 보지 않는다.
+    //  · `quote-workbook` · `quote-issue` : **조각 3c-2 이후**(받기 · 발행).
+    for (const notYet of ["readAllQuoteTemplateHeaders", "quote-workbook", "quote-issue"]) {
+      assert.equal(imports.includes(notYet), false, `${notYet} — 아직 오지 않은 조각을 끌고 왔다`);
     }
   });
 });

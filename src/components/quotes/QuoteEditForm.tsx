@@ -129,19 +129,18 @@ import {
  *    🔴 폼 자체는 `quote === null`(만들기)를 **그대로 다룰 수 있다** — 3b-2 는
  *    `/quotes/new` 라우트와 팝업만 얹으면 된다.
  *
- * ── 🔴🔴 사람이 작업 내역을 직접 적어야 한다 (조각 3c 까지) ──────────────
- * 종류 · 장비 종류를 바꾸면 A/S 에서는 **그 양식 파일에서 읽은 작업 내역 기본값**이
- * 조사 · 통전 칸에 들어온다. 그 값은 `lib/storage/quote-template.ts` 가 읽는데, 그
- * 하나가 엑셀 사슬 7,800여 줄을 끌고 온다 — **조각 3c** 다.
+ * ── 작업 내역 기본값은 양식에서 온다 (조각 3c-1 에 들어왔다) ──────────────
+ * 종류 · 장비 종류를 바꾸면 **그 양식 파일에서 읽은 작업 내역 기본값**이 조사 ·
+ * 통전 칸에 들어온다(아래 `fillScopeFromTemplate` · [양식 기본값으로]). 그 값을
+ * 읽는 곳은 `lib/storage/quote-template.ts` 이고, 서버 컴포넌트인 페이지가 읽어
+ * `workScopeDefaults` 로 넘긴다 — 그 사슬이 `node:fs` 를 끌고 와 여기로는 못 온다.
  *
- * 그래서 이 조각에서는 **기본값 없이 연다**: 페이지가 `workScopeDefaults={{}}` 를
- * 넘기고, 아래 `fillScopeFromTemplate` 는 곧바로 돌아서고 `resetScopeToTemplate` ·
- * [양식 기본값으로] 는 빈 목록을 넣는다(`?? []`). **오류는 나지 않는다.**
+ * 🔴 **양식을 못 읽어도 오류가 아니다.** 그때는 빈 목록이 오고
+ * `defaults[section]?.items ?? []` 가 곱게 무너진다 — 사람이 직접 적으면 되고,
+ * 적은 줄은 그대로 저장되고 그대로 다시 열린다.
  *
- * 🔴 **사용자가 놀랄 자리다** — 「종류를 바꿨는데 작업 내역이 안 채워진다」.
- * 그것은 고장이 아니라 아직 안 온 조각이다. 그래서 작업 내역 구역 머리에 그 사실을
- * 한 줄로 적어 두었다(아래 `WORK_SCOPE_DEFAULTS_MISSING_NOTICE`). 저장 · 왕복은
- * 온전하다 — 사람이 적은 줄은 그대로 저장되고 그대로 다시 열린다.
+ * 🔴 예전에 이 자리에 있던 노란 안내(「아직 양식 파일이 없어 자동으로 채워지지
+ * 않습니다」)는 **3c-1 에서 걷어냈다** — 이제 정말로 채워지므로 사실이 아니다.
  * ============================================================================
  */
 
@@ -248,14 +247,6 @@ const SUPPRESSED_SCOPE_NOTICES: Record<QuoteWorkScopeSection, string> = {
   REPAIR: REPAIR_SCOPE_DROPPED_NOTICE,
   POWER_TEST: WORK_SCOPE_SUPPRESSED_NOTICE,
 };
-
-/**
- * 🔴 **조각 3b-1 에만 있는 안내** — 양식의 작업 내역 기본값이 아직 없다(파일 머리말 ④).
- * 이 한 줄이 없으면 사람은 「종류를 바꿨는데 조사 · 통전 칸이 안 채워진다」를 고장으로
- * 읽는다. 조각 3c 가 오면 **이 상수와 그것을 그리는 자리를 함께 걷어낸다.**
- */
-const WORK_SCOPE_DEFAULTS_MISSING_NOTICE =
-  "이 사이트에는 아직 양식 파일이 없어 종류를 바꿔도 조사 · 통전 칸이 자동으로 채워지지 않습니다 — 직접 적어 주세요. 적은 줄은 그대로 저장되고 다시 열립니다. ([양식 기본값으로]도 같은 까닭으로 눌리지 않습니다.)";
 
 type ItemRow = {
   key: string;
@@ -594,18 +585,16 @@ export default function QuoteEditForm({
    * 들어올 수 없다. 그래서 **서버 컴포넌트인 페이지가 읽어 넘긴다** — 두 벌이
    * 되면 양식이 바뀌는 날 한쪽만 고쳐진다.
    *
-   * 🔴 이 사이트에는 그 채우개가 아직 없다(조각 3c). 그동안은 페이지가
-   * `domain/cable-quote-lines.ts` 의 임시 상수를 넘긴다 — 그 파일 머리말에
-   * 3c 에서 지우라고 적어 두었다.
+   * 🔴 조각 3c-1 에서 **채우개가 들어왔다.** 두 페이지가 그 파일의 진짜 상수를
+   * 넘긴다 — 3b-1 때 쓰던 임시 상수(`domain/cable-quote-lines.ts`)는 지웠다.
    */
   cableMaxLines: number;
   /**
-   * 양식 넷의 작업 내역 기본값(조사/수리/통전) — 줄 목록.
+   * 양식 다섯의 작업 내역 기본값(조사/수리/통전) — 줄 목록.
    *
-   * 🔴 **조각 3b-1 에서는 언제나 빈 `{}` 다**(파일 머리말 ④). 읽어 오는 곳이
-   * `lib/storage/quote-template.ts` 인데 그 하나가 엑셀 사슬 7,800여 줄을 끌고
-   * 온다 — 조각 3c 다. 그때까지는 종류를 바꿔도 조사 · 통전 칸이 채워지지 않고,
-   * 화면이 그 사실을 한 줄로 알린다(WORK_SCOPE_DEFAULTS_MISSING_NOTICE).
+   * 읽어 오는 곳은 `lib/storage/quote-template.ts` 이고 **양식 `.xlsx` 파일을
+   * 훑는다**(조각 3c-1). 🔴 양식을 못 읽으면 던지지 않고 빈 목록이 오며, 아래
+   * `defaults[section]?.items ?? []` 가 곱게 무너진다.
    *
    * 🔴 A/S 쪽 타입은 머리글(`label`)까지 담은 `QuoteWorkScopeSectionView` 다 —
    * 그 머리글은 **미리보기(조각 3f)만** 쓴다. 여기서는 줄 목록만 쓰므로
@@ -2876,13 +2865,6 @@ export default function QuoteEditForm({
               견적서의 <b>2. 작업 비용</b> 아래에 적힙니다
             </span>
           </div>
-
-          {/* 🔴 **조각 3b-1 에만 있는 안내** — 양식의 기본 목록이 아직 없다는 사실을
-              그 구역 안에서 말한다(파일 머리말 ④). 조각 3c 가 오면 이 세 줄과
-              WORK_SCOPE_DEFAULTS_MISSING_NOTICE 를 **함께 걷어낸다.** */}
-          <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            {WORK_SCOPE_DEFAULTS_MISSING_NOTICE}
-          </p>
 
           <div className="mt-3 grid gap-4 lg:grid-cols-3">
             {QUOTE_WORK_SCOPE_SECTIONS.map((section) => {

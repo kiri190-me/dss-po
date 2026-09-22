@@ -146,3 +146,22 @@ src/components/quotes/quote-intake-lookup-source.test.ts
 #    그 코드**를 봐야 한다(common/responsive-list.test.ts 의 같은 판단). 베껴 오지
 #    않고 **금액에 닿는 규칙과 배선**만 잰다.
 src/components/quotes/quote-part-picker-wiring.test.ts
+
+# ── 조각 3c-1 — 양식 읽기 · 작업내역 기본값 ─────────────────────────────
+# 종류를 바꾸면 조사 · 통전 칸이 **양식 `.xlsx` 파일에서 읽은** 기본값으로 채워진다.
+# 3b-1 부터 떠 있던 노란 안내(「아직 양식 파일이 없어 채워지지 않습니다」)를 이
+# 조각이 걷어냈다.
+#
+# 🔴 **DB 시험이 없다** — 양식은 파일 읽기이고 DB 를 타지 않는다. db.txt 에 아무것도
+#    더하지 않았다.
+#
+# 🔴 이 시험은 **양식 경로 다섯이 환경변수로 실려야** 뜻이 있다. `npm test` 가
+#    `--import ./scripts/test-template-bootstrap.ts` 로 넣어 준다(package.json).
+#    경로가 없거나 파일이 없으면 `skip` 으로 건너뛴다 — **조용히 통과시키지 않는다.**
+#    `ℹ skipped` 가 0 이 아니면 그것이 「양식을 못 찾았다」는 뜻이다.
+#
+# 🔴 그리고 이 조각이 `--conditions=react-server` 를 `"test"` 줄에 더했다.
+#    `lib/storage/quote-template.ts` 가 `import "server-only"` 로 시작해서, 그 조건이
+#    없으면 시험이 「클라이언트에서 불렀다」며 통째로 던진다. A/S 의 `npm test` 와
+#    이 저장소의 `test:db` 에는 원래 있던 조건이고, unit 에만 빠져 있었다.
+src/lib/storage/quote-template.test.ts
