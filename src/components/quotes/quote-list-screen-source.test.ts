@@ -202,7 +202,7 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     assert.equal(both.includes("intakeHref="), false, "수리 건 상세 주소를 이 사이트가 지어내고 있다");
   });
 
-  test("🔴 조각 3c-2 — 줄마다 [견적서 받기] 링크가 선다. 엑셀 전용 줄에는 링크 대신 곁말이다", () => {
+  test("🔴 조각 3c-2 · 3d-2 — 줄마다 [견적서 받기] 링크가 선다. 엑셀 전용 줄도 같은 링크다", () => {
     // 위 시험에서 `renderRowActions=` 를 뺀 자리를 메운다 — 금지 목록으로는 더 이상
     // 잴 수 없으니 **무엇이 걸렸는지를 이름으로 못 박는다**(3c-1 이 new/page.tsx 에서
     // 한 방식과 같다).
@@ -237,14 +237,18 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     //    조각 3c-3 의 것이다(그 단추가 오면 이 단언이 깨지고, 그때 뜻을 다시 적는다).
     assert.equal(link.includes("canEdit"), false, "받기 링크가 canEdit 으로 갈린다");
 
-    // 🔴 엑셀 전용 줄 — 링크 대신 **꺼진 단추**다. 문장은 **통로가 돌려주는 그 하나**다.
-    assert.ok(link.includes("if (row.isExcelOnly) {"), "엑셀 전용 갈래가 없다 — 눌러서 실패하는 단추가 선다");
-    assert.ok(
-      link.includes("<UnavailableDownload reason={QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE} />"),
-      "엑셀 전용 줄이 통로와 같은 문장을 쓰지 않는다"
+    // 🔴 조각 3d-2 — **엑셀 전용 줄도 같은 링크다.** 통로가 갈라져 붙인 엑셀을 그대로
+    //    내려주므로(api/quotes/[id]/xlsx/route.ts 의 6번 갈래), 그 줄만 단추를 끄면
+    //    **되는 일을 못 하게 만드는 것**이 된다. 3c-2 의 꺼진 단추와 그 문장 상수
+    //    (domain/quote-excel-only-download.ts)는 이 조각에서 함께 사라졌다.
+    assert.equal(link.includes("row.isExcelOnly"), false, "엑셀 전용 줄만 다른 갈래로 샌다");
+    assert.equal(
+      slots.includes("QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE"),
+      false,
+      "지워진 문장 상수를 아직 들여온다"
     );
-    // 🔴 「양식 없는 종류」 갈래도 **같은 모양**이다 — 셋이 제각각이면 다음 사람이 어느
-    //    것이 옳은지 모른다(지금 걸리는 종류는 없다).
+    // 🔴 「양식 없는 종류」 갈래는 그대로 **꺼진 단추**다(지금 걸리는 종류는 없다 —
+    //    다음 종류를 기다리는 자물쇠다).
     assert.ok(
       link.includes("<UnavailableDownload reason={QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE} />"),
       "양식 없는 종류 갈래가 다른 모양이다"

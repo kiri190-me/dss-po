@@ -8,7 +8,6 @@ import {
   QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE,
   canRenderQuoteDocument,
 } from "@/lib/domain/quote-document-support";
-import { QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE } from "@/lib/domain/quote-excel-only-download";
 import { QuoteFileBadges } from "./QuoteAttachmentParts";
 
 /**
@@ -83,7 +82,10 @@ import { QuoteFileBadges } from "./QuoteAttachmentParts";
  *   · 「엑셀 전용」은 왼쪽 칸의 배지로 (아래 `renderFileBadges` 슬롯)
  *   · 받을 수 없는 줄의 단추 자리에는 **꺼진(흐린) [견적서 받기]** 를 둔다
  *
- * 🔴 **화면이 감춘 것은 경계가 아니다.** 아래 두 갈래는 눌러서 실패하는 단추를 내밀지
+ * 🔴 조각 3d-2 부터 **엑셀 전용 줄은 받을 수 있는 줄**이다 — 붙인 엑셀이 그대로
+ * 내려온다. 그래서 꺼진 단추가 남은 갈래는 아래 ① 하나다(지금 걸리는 종류는 없다).
+ *
+ * 🔴 **화면이 감춘 것은 경계가 아니다.** 그 갈래는 눌러서 실패하는 단추를 내밀지
  * 않기 위한 것이고, 같은 판정을 **통로가 다시 한다**(그쪽이 관문이다).
  * ============================================================================
  */
@@ -132,17 +134,18 @@ function QuoteDownloadLink({ row }: { row: QuoteListItem }) {
   }
 
   /**
-   * ② 🔴 엑셀 전용 견적서 — **이 사이트에는 내줄 파일이 없다.** 그 장의 문서는 사람이
-   * 붙여 둔 엑셀이고, 이 사이트에는 파일을 붙이는 칸이 아예 없다(조각 3d).
-   * **누를 수 있는데 실패하는 단추보다 낫다** — 문장은 통로가 돌려주는 그 하나이고
-   * (domain/quote-excel-only-download.ts) 왼쪽 칸의 배지도 같은 문장을 곁말로 쓴다.
-   * 🔴 위 ① 과 **별개의 조건**이다: 그 판정은 엑셀 전용이면 언제나 참을 돌려준다
-   * (고치지 않는 까닭이 그 파일에 있다). **두 갈래를 같은 모양으로** 그리는 것은
-   * 다음 사람이 어느 쪽이 옳은지 되묻지 않게 하기 위해서다.
+   * ② 🔴 **엑셀 전용 견적서에도 같은 링크가 선다** (조각 3d-2).
+   *
+   * 2026-09-22(3c-2)에는 이 자리에 「이 사이트에는 내줄 파일이 없다」는 꺼진 단추가
+   * 있었다. 그 까닭은 붙인 엑셀을 읽는 길이 없다는 것이었는데, 두 사이트가 **같은
+   * `attachments` 표**를 보므로 A/S 에서 붙인 엑셀은 처음부터 여기 있었다. 3d-2 가 그
+   * 파일을 읽어 내리는 길을 가져오면서 이 갈래와 그 문장(domain/
+   * quote-excel-only-download.ts)이 함께 사라졌다.
+   *
+   * 🔴 **엑셀이 안 붙은 장은 여기서 가리지 않는다.** 그 사실은 왼쪽 칸의 「엑셀 없음」
+   * 딱지가 말하고(quote-attachment-files.ts), 통로는 404 와 사람이 읽는 문장으로
+   * 답한다 — 목록 한 줄이 첨부를 세어 단추를 끄는 것보다 그쪽이 한 곳이다.
    */
-  if (row.isExcelOnly) {
-    return <UnavailableDownload reason={QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE} />;
-  }
 
   return (
     <a

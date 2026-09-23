@@ -125,21 +125,25 @@ describe("㉡ 막는 자리 — 받기 통로와 목록이 같은 판정을 부�
     assert.ok(xlsxRoute.indexOf("recordQuoteExport({") > at, "감사가 거절보다 앞이다");
   });
 
-  test("🔴 GET 받기 통로 — 엑셀 전용은 **별개의 조건**으로 막는다(이 판정 뒤)", () => {
+  test("🔴 GET 받기 통로 — 엑셀 전용은 **별개의 조건**으로 갈라진다(이 판정 뒤)", () => {
     /**
-     * 🔴 이 판정은 **엑셀 전용이면 언제나 참**이다(위 ㉠ 의 그 단언) — 저쪽에서는 그
-     * 장의 문서가 붙인 엑셀이라 잘못 나갈 일이 없기 때문이다. 이 사이트에는 파일을
-     * 붙이는 칸이 아예 없어(조각 3d) 내줄 파일이 없으므로, **그 함수를 고치지 않고**
-     * 조건을 하나 더 두었다(domain/quote-excel-only-download.ts 머리말).
+     * 🔴 이 판정은 **엑셀 전용이면 언제나 참**이다(위 ㉠ 의 그 단언) — 그 장의 문서가
+     * 붙인 엑셀이라 앱 양식으로 잘못 나갈 일이 없기 때문이다. 그래서 **그 함수를 고치지
+     * 않고** 받기 통로가 그 뒤에서 갈래를 하나 더 둔다(조각 3d-2 — 붙인 엑셀을 그대로).
+     * 2026-09-22 ~ 2026-09-23 사이 그 자리는 501 거절이었다(domain/
+     * quote-excel-only-download.ts — 3d-2 가 지웠다).
      */
     const kindAt = xlsxRoute.indexOf('fail(501, "KIND_NOT_SUPPORTED"');
     const excelAt = xlsxRoute.indexOf(
-      'if (quote.isExcelOnly) { return fail(501, "EXCEL_ONLY_NOT_SUPPORTED", QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE); }'
+      "if (quote.isExcelOnly) return sendAttachedExcel(quote, actingUser.id);"
     );
     assert.ok(excelAt >= 0, "엑셀 전용 갈래가 없다 — 품목 없는 빈 견적서가 나간다");
     assert.ok(excelAt > kindAt, "두 조건이 한 덩이가 되었다 — 판정 함수를 고친 것이 아닌지 볼 것");
-    assert.ok(xlsxRoute.indexOf("await renderQuoteWorkbook(quote)") > excelAt, "채우기가 거절보다 앞이다");
-    assert.ok(xlsxRoute.indexOf("recordQuoteExport({") > excelAt, "감사가 거절보다 앞이다");
+    assert.ok(xlsxRoute.indexOf("await renderQuoteWorkbook(quote)") > excelAt, "채우기가 갈래보다 앞이다");
+    // 🔴 앱 양식 길의 감사는 그 갈래 **뒤**다 — 엑셀 전용 장이 양식 길의 기록을 남기지
+    //    않는다. 붙인 엑셀 쪽 감사는 sendAttachedExcel 안에 따로 있고, 그 자리가 전송보다
+    //    앞인지는 api/quotes/xlsx-route-source.test.ts 가 본다.
+    assert.ok(xlsxRoute.indexOf("recordQuoteExport({") > excelAt, "감사가 갈래보다 앞이다");
   });
 
   test("🔴 목록의 받기 링크 — 그 줄에는 받기를 내밀지 않는다", () => {

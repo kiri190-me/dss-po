@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 
-import { QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE } from "@/lib/domain/quote-excel-only-download";
+import { QUOTE_EXCEL_MISSING_MESSAGE } from "@/app/api/quotes/[id]/xlsx/download-source";
 
 /**
  * ============================================================================
@@ -22,6 +22,15 @@ import { QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE } from "@/lib/domain/quote-excel-only
  * 종류별로 xlsx 가 `PK\x03\x04` 로 시작하고, 엑셀 전용 장은 501 로 거절되고, 감사에
  * `EXCEL_EXPORT` 한 줄이 남았다.
  *
+ * ── 🔴 조각 3d-2 — 엑셀 전용 장의 501 이 **갈래**가 되었다 ───────────────
+ * 그 장은 이제 거절되지 않고 **엑셀 칸에 붙어 있는 파일이 그대로** 내려온다. 그래서 이
+ * 파일은 원본을 **둘로 잘라** 본다:
+ *   · `getBody`      — `export async function GET` 부터 아래 함수 앞까지(일반 견적서 길)
+ *   · `attachedBody` — 모듈 안 함수 `sendAttachedExcel`(붙인 엑셀 길)
+ * 🔴 **자르지 않으면 두 길의 감사·거절이 섞여** 「거절이 전부 감사보다 앞」 같은 단언이
+ * 뜻을 잃는다 — 두 길에 감사가 하나씩 있고, 붙인 엑셀 길의 거절은 앞 길의 감사보다 뒤다.
+ * 🔴 일반 견적서 길의 단언은 **한 줄도 고치지 않았다**(그 길이 한 바이트도 안 달라졌다).
+ *
  * ── 🔴 이 파일이 라우트 **곁이 아니라 한 칸 위에** 있는 까닭 ─────────────
  * `node --test` 는 받은 경로를 **글롭 패턴으로 읽는다.** App Router 의 `[id]` 는 그
  * 문법에서 「i 또는 d 한 글자」라, 시험 목록에 그 폴더를 그대로 적으면 아무것도 맞지
@@ -39,7 +48,10 @@ const route = readFileSync(new URL("./[id]/xlsx/route.ts", import.meta.url), "ut
   /\r\n/g,
   "\n"
 );
-const getBody = route.slice(route.indexOf("export async function GET"));
+/** 붙인 엑셀 길의 시작. 🔴 위 머리말의 「둘로 잘라 본다」가 이 자리다. */
+const attachedAt = route.indexOf("async function sendAttachedExcel");
+const getBody = route.slice(route.indexOf("export async function GET"), attachedAt);
+const attachedBody = route.slice(attachedAt);
 const flat = (source: string) => source.replace(/\s+/g, " ");
 
 /**
@@ -49,8 +61,15 @@ const flat = (source: string) => source.replace(/\s+/g, " ");
  * 도구 이름**(`readSession()` · `resolveActingUserForSession()` · `getAuthSource()`)을
  * 적어 두고 「이 사이트는 `getSessionUser()` 한 걸음이다」를 설명한다. 원본을 그대로
  * 훑으면 그 설명이 금지 낱말로 걸려, 시험이 **주석을 고치라고** 요구하게 된다.
+ *
+ * 🔴 두 길을 가를 때도 필요하다 — `sendAttachedExcel` 의 **머리말은 그 함수 선언보다
+ * 앞**이라 위 `getBody` 에 딸려 들어온다. 그 머리말이 아래 함수가 쓰는 도구 이름을
+ * 적어 두므로, 주석을 그대로 두고 「일반 견적서 길에 없다」를 재면 거짓으로 걸린다
+ * (실제로 걸렸다 — `getAttachmentStorage()`).
  */
-const codeOnly = route.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^[ \t]*\/\/.*$/gm, " ");
+const codeOf = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^[ \t]*\/\/.*$/gm, " ");
+const codeOnly = codeOf(route);
 
 function exportedNames(source: string): string[] {
   const names: string[] = [];
@@ -73,6 +92,10 @@ describe("받기 통로 — 소스로 지킨다", () => {
     // (lib/server/services/quote-workbook.ts 머리말 · A/S 의 같은 판단).
     assert.deepEqual(exportedNames(route), ["GET", "dynamic", "runtime"]);
     assert.equal(/^export\s*(?:\{|default|\*)/m.test(route), false, "다른 모양으로 내보내고 있다");
+    // 🔴 조각 3d-2 가 더한 `sendAttachedExcel` 도 **모듈 안 함수**다(A/S 도 같다).
+    //    내보내는 순간 `next build` 가 실패한다 — 저쪽에서 실제로 겪은 일이다.
+    assert.ok(route.includes("async function sendAttachedExcel("), "붙인 엑셀 길이 없다");
+    assert.equal(route.includes("export async function sendAttachedExcel"), false);
     assert.ok(route.includes('export const runtime = "nodejs";'));
     assert.ok(route.includes('export const dynamic = "force-dynamic";'));
   });
@@ -148,28 +171,113 @@ describe("받기 통로 — 소스로 지킨다", () => {
     assert.ok(body.includes("const quote = await getQuoteForEdit(id); if (!quote)"));
   });
 
-  test("🔴 엑셀 전용 견적서는 501 과 사람이 읽는 문장으로 거절한다 — 앱 양식으로 대신 채우지 않는다", () => {
+  test("🔴 조각 3d-2 — 엑셀 전용 견적서는 **붙인 엑셀 길로 갈라진다**(앱 양식으로 채우지 않는다)", () => {
     const body = flat(getBody);
+    // 🔴 한 줄이다. 무엇을 고르고 무엇을 막을지는 전부 아래 함수와 형제 파일에 있다 —
+    //    여기서 갈래를 늘리면 「일반 견적서 길에 조회가 하나 는다」가 된다.
     assert.ok(
-      body.includes(
-        'if (quote.isExcelOnly) { return fail(501, "EXCEL_ONLY_NOT_SUPPORTED", QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE); }'
-      ),
+      body.includes("if (quote.isExcelOnly) return sendAttachedExcel(quote, actingUser.id);"),
       "엑셀 전용 갈래가 없다 — 품목 없는 빈 견적서가 나간다"
     );
-    // 🔴 문장은 **화면과 같은 하나**다(목록의 곁말이 이 상수를 그대로 쓴다). 두 벌이면
-    //    화면에서 본 말과 통로에서 듣는 말이 달라진다.
-    assert.match(QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE, /붙/);
-    assert.match(QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE, /내려받을 수 없습니다/);
-    // 🔴 첨부 사슬을 끌고 오지 않았다 — 그것이 이 갈래가 거절로 끝나는 까닭이다.
-    for (const forbidden of [
-      "download-source",
-      "attachment",
-      "listLiveQuoteAttachments",
-      "storage-adapter",
-      "local-fs-adapter",
+    // 🔴 **일반 견적서 길에는 조회가 하나도 늘지 않았다.** 첨부 조회 · 저장소 · 경로
+    //    판정은 전부 갈라진 뒤에만 불린다(A/S 머리말의 그 약속).
+    //    🔴 주석을 뺀 코드로 잰다 — 아래 함수의 머리말이 그 도구 이름을 적어 둔다.
+    const getCode = flat(codeOf(getBody));
+    for (const onlyAfterSplit of [
+      "listLiveQuoteAttachments(",
+      "decideQuoteDownloadSource(",
+      "decideAttachmentDownload(",
+      "getAttachmentStorage(",
+      "resolveUploadsRoot(",
+      "resolveAttachmentAbsolutePath(",
     ]) {
-      assert.equal(route.includes(forbidden), false, `첨부 사슬을 끌고 왔다: ${forbidden}`);
+      assert.equal(getCode.includes(onlyAfterSplit), false, `일반 견적서 길에 들어왔다: ${onlyAfterSplit}`);
+      assert.ok(flat(attachedBody).includes(onlyAfterSplit), `붙인 엑셀 길에 없다: ${onlyAfterSplit}`);
     }
+    // 🔴 3c-2 의 거절 갈래와 그 문장 상수는 사라졌다. **코드만 본다** — 머리말이 그
+    //    파일 이름을 적어 두고 「3d-2 가 지웠다」를 설명한다(위 codeOnly 의 까닭).
+    assert.equal(codeOnly.includes("EXCEL_ONLY_NOT_SUPPORTED"), false, "쓰지 않는 거절 코드가 남았다");
+    assert.equal(codeOnly.includes("quote-excel-only-download"), false, "지워진 파일을 아직 들여온다");
+  });
+
+  test("🔴 붙인 엑셀 길 — 없으면 404, 검사에 막히면 403, 경로가 루트 밖이면 500", () => {
+    const body = flat(attachedBody);
+    // ① 엑셀 칸이 비었다 — 앱 양식으로 대신 채우지 않는다(품목이 없어 빈 견적서가 나간다).
+    assert.ok(
+      body.includes('if (source.kind !== "ATTACHED_EXCEL") {'),
+      "붙인 엑셀이 없는 경우를 가르지 않는다"
+    );
+    assert.ok(body.includes('return fail(404, "EXCEL_NOT_ATTACHED", QUOTE_EXCEL_MISSING_MESSAGE);'));
+    // 🔴 문장은 **형제 파일의 그 하나**다 — 무엇을 하면 되는지까지 말하고 내부 경로는 없다.
+    assert.match(QUOTE_EXCEL_MISSING_MESSAGE, /엑셀/);
+    assert.equal(QUOTE_EXCEL_MISSING_MESSAGE.includes("quotes/"), false);
+
+    // ② 🔴 여기서 다시 묻는 것은 **권한이 아니라 악성코드 검사 상태**다. 권한은 위
+    //    GET 의 관문에서 이미 끝났다 — 두 곳에서 물으면 어느 쪽이 관문인지 흐려진다.
+    assert.ok(body.includes("const decision = decideAttachmentDownload({"));
+    assert.ok(body.includes('if (!decision.allowed) { return fail(403, "SCAN_BLOCKED", decision.message); }'));
+    assert.equal(body.includes("hasPermission("), false, "붙인 엑셀 길이 권한을 다시 묻는다");
+
+    // ③ DB 에 적힌 경로라도 믿지 않는다 — 루트 밖이면 500(경로는 응답에 싣지 않는다).
+    assert.ok(body.includes("resolveAttachmentAbsolutePath(resolveUploadsRoot(), attachment.storedPath);"));
+    assert.ok(body.includes("if (error instanceof AttachmentPathError) {"));
+    assert.ok(
+      body.includes(
+        'return fail(500, "STORAGE_FAILED", "파일 경로를 확인할 수 없습니다. 관리자에게 문의해 주세요.");'
+      )
+    );
+    assert.ok(
+      body.includes('return fail(404, "NOT_FOUND", "저장된 파일을 찾을 수 없습니다. 관리자에게 문의해 주세요.");')
+    );
+
+    // 🔴 **세 거절 어디에도 경로 · 첨부 id 가 응답에 실리지 않는다.** 그 둘은 서버
+    //    로그에만 남는다 — 오류 문구가 디스크 구조를 알려 주는 창구가 되면 안 된다.
+    for (const message of body.matchAll(/fail\((?:403|404|500), "[A-Z_]+", ([^)]*)\)/g)) {
+      for (const leak of ["storedPath", "attachment.id", "resolveUploadsRoot", "absolute"]) {
+        assert.equal(message[1].includes(leak), false, `거절 응답에 내부 값을 실었다: ${leak}`);
+      }
+    }
+    for (const logged of ["[quote-xlsx] 붙인 엑셀의 stored_path", "[quote-xlsx] 붙인 엑셀을 읽지 못했다"]) {
+      assert.ok(body.includes(`console.error("${logged}`), `서버 로그에 남기지 않는다: ${logged}`);
+    }
+  });
+
+  test("🔴 붙인 엑셀 길 — 바이트를 메모리에 올리지 않고, 크기 · 형식은 DB 의 정본이다", () => {
+    const body = flat(attachedBody);
+    // 🔴 스트림을 그대로 응답에 싣는다. Buffer 로 받아 두면 20MB 짜리 몇 개로 프로세스가
+    //    흔들린다(storage/storage-adapter.ts 머리말의 같은 판단).
+    assert.ok(body.includes("stream = await storage.read(attachment.storedPath);"));
+    assert.ok(body.includes("return new Response(stream, {"), "스트림을 그대로 흘려보내지 않는다");
+    for (const buffered of ["arrayBuffer()", "Buffer.from(", "new Uint8Array(stream"]) {
+      assert.equal(body.includes(buffered), false, `바이트를 통째로 메모리에 올린다: ${buffered}`);
+    }
+    // 🔴 브라우저가 올릴 때 보낸 값도, 디스크를 stat 한 값도 아니다 — **DB 의 정본**이다.
+    assert.ok(body.includes('"Content-Type": attachment.mimeType,'));
+    assert.ok(body.includes('"Content-Length": String(attachment.fileSize),'));
+    assert.equal(body.includes("stat("), false, "크기를 디스크에서 다시 잰다");
+    // 이름 규칙은 일반 견적서와 같고 확장자만 붙인 파일의 것이다(xlsx · xls).
+    assert.ok(body.includes('"Content-Disposition": quoteContentDisposition(fileName),'));
+    assert.ok(body.includes("extension,"), "확장자를 파일 이름에 넘기지 않는다");
+    // 사람이 올린 파일이다 — 형식을 다시 추측하지 않게 하고 캐시에 남기지 않는다.
+    assert.ok(body.includes('"X-Content-Type-Options": "nosniff",'));
+    assert.ok(body.includes('"Cache-Control": "no-store, must-revalidate",'));
+  });
+
+  test("🔴 붙인 엑셀 길의 감사도 전송 앞 · 거절 뒤다 — 나가지 않은 파일은 기록되지 않는다", () => {
+    const body = flat(attachedBody);
+    const auditAt = body.indexOf("await recordQuoteExport({");
+    assert.ok(auditAt >= 0, "붙인 엑셀 길에 감사가 없다 — 직인이 찍힌 문서가 나가는 일이다");
+    for (const rejection of [
+      'fail(404, "EXCEL_NOT_ATTACHED"',
+      'fail(403, "SCAN_BLOCKED"',
+      'fail(500, "STORAGE_FAILED"',
+      'fail(404, "NOT_FOUND"',
+    ]) {
+      const at = body.indexOf(rejection);
+      assert.ok(at >= 0, `거절 갈래가 없다: ${rejection}`);
+      assert.ok(at < auditAt, `${rejection} 이 감사보다 뒤다 — 나가지 않은 파일이 기록된다`);
+    }
+    assert.ok(body.indexOf("return new Response(stream, {") > auditAt, "감사가 전송보다 뒤다");
   });
 
   test("🔴 양식을 못 읽으면 503, 채우다 터지면 500 — 경로도 값도 응답에 담지 않는다", () => {
@@ -202,7 +310,6 @@ describe("받기 통로 — 소스로 지킨다", () => {
       'fail(403, "FORBIDDEN"',
       'fail(404, "NOT_FOUND"',
       'fail(501, "KIND_NOT_SUPPORTED"',
-      'fail(501, "EXCEL_ONLY_NOT_SUPPORTED"',
       'fail(503, "TEMPLATE_UNAVAILABLE"',
       'fail(500, "RENDER_FAILED"',
     ]) {
@@ -231,16 +338,22 @@ describe("받기 통로 — 소스로 지킨다", () => {
     assert.ok(flat(route).includes('{ status, headers: { "cache-control": "no-store" } }'));
   });
 
-  test("🔴 쓰기가 없다 — 가져오는 것은 문지기 · 조회 · 판정 · 양식 · 감사 한 줄뿐이다", () => {
+  test("🔴 쓰기가 없다 — 가져오는 것은 문지기 · 조회 · 판정 · 양식 · 저장소 읽기 · 감사뿐이다", () => {
+    // 🔴 조각 3d-2 가 넷을 더했다 — 첨부 조회 · 내보내도 되는가(검사 상태) · 경로 검증 ·
+    //    저장소(읽기). 그리고 형제 파일 하나(무엇을 내려줄지 고르기).
     assert.deepEqual(importSpecifiers(route), [
+      "./download-source",
       "@/lib/auth/permission-resolver",
       "@/lib/auth/session",
       "@/lib/db/mutations/quote-exports",
+      "@/lib/db/queries/attachments",
       "@/lib/db/queries/quotes",
+      "@/lib/domain/attachment-download-policy",
+      "@/lib/domain/attachment-path",
       "@/lib/domain/quote-document-support",
-      "@/lib/domain/quote-excel-only-download",
       "@/lib/domain/quote-file-name",
       "@/lib/server/services/quote-workbook",
+      "@/lib/storage/local-fs-adapter",
       "@/lib/storage/quote-template",
       "@/lib/validation/quote-input",
     ]);
@@ -258,7 +371,13 @@ describe("받기 통로 — 소스로 지킨다", () => {
       // 발행(3c-3) — 공유폴더 · 첨부 칸을 바꾸는 일은 이 통로의 것이 아니다.
       "quote-issue",
       "archive-folder",
-      // 요청 글자가 경로가 되는 일이 없다.
+      // 🔴 조각 3d-2 는 **읽기만** 한다 — 붙이기 · 지우기(3d-3)는 이 통로의 것이 아니다.
+      "mutations/attachments",
+      "writeTemp",
+      "storage.commit",
+      "storage.delete",
+      // 🔴 저장소에 닿는 것은 StorageAdapter 하나다 — 어디선가 fs 를 직접 부르면 그
+      //    자리가 NAS 이식 때 빠뜨리는 자리가 된다(storage/storage-adapter.ts 머리말).
       "node:fs",
       "node:path",
       "require(",

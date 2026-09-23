@@ -244,3 +244,35 @@ src/lib/domain/attachment-download-policy.test.ts
 #    들여오지 마라(그 파일 머리말).
 src/lib/domain/attachment-allowlist.test.ts
 src/lib/domain/attachment-path.test.ts
+
+# ── 조각 3d-2 — 「받기」: A/S 에서 붙인 엑셀을 PO 에서 내려받는다 ───────────
+# 받기 통로(GET /api/quotes/{id}/xlsx)의 엑셀 전용 갈래가 **501 거절에서 파일 전송으로**
+# 바뀌었다. 두 사이트가 같은 `attachments` 표와 같은 저장 루트(UPLOADS_DIR)를 보므로,
+# 붙이는 칸이 없는 이 사이트에서도 A/S 에서 붙인 엑셀이 그대로 내려온다. 그래서
+# `domain/quote-excel-only-download.ts`(3c-2 의 거절 문장)는 지워졌다.
+#
+# 🔴 **두 줄이 늘었다. 셋째 시험은 이미 이 목록에 있다**
+#    (src/app/api/quotes/xlsx-route-source.test.ts — 위 3c-2 절).
+#
+# ① xlsx-download-source.test.ts — **A/S 에서 본문을 한 글자도 고치지 않고** 가져왔다.
+#    고친 것은 `import` 한 줄뿐이다(`./download-source` →
+#    `@/app/api/quotes/[id]/xlsx/download-source`).
+#    🔴 **시험만 대괄호 밖에 둔다** — 원본(`download-source.ts`)은 라우트 곁,
+#    `[id]` 폴더 안에 그대로 있다. `node --test` 가 경로를 글롭으로 읽어 `[id]` 를
+#    「i 또는 d 한 글자」로 보기 때문이고(scripts/run-test-list.mjs 머리말), 이 목록에
+#    대괄호 줄을 적으면 이제 **돌리기 전에 멈춘다**. 🔴 `import` 는 대괄호를 타도
+#    멀쩡하다 — 그것이 3c-2 가 세운 본보기이고 여기서 그대로 따랐다.
+#
+# ② local-fs-adapter.test.ts — 🔴 **새로 썼다.** A/S 에는 이 파일의 단위 시험이 없다
+#    (저쪽은 붙이기 · 내려받기 통합 시험이 덮고, 그 통합 시험은 붙이는 칸과 함께
+#    3d-3 · 3d-4 에 온다). 재는 것은 **읽는 쪽 셋**이다 — 바이트 그대로 흘러나오는가 ·
+#    저장 루트 밖을 가리키는 값을 막는가 · 없는 파일을 조용히 빈 것으로 주지 않는가.
+#    그리고 `UPLOADS_DIR` 이 없을 때 **조용한 기본값으로 넘어가지 않고 던지는가**.
+#    🔴 그 마지막 하나가 「설정이 빠진 채 한동안 잘 돌다가 배포 뒤에야 드러나는」 길을
+#    막는 이 저장소의 유일한 장치다. 임시 폴더는 `after` 가 통째로 지운다.
+#
+# 🔴 **DB 시험이 없다** — 이 조각이 더한 조회(listLiveQuoteAttachments)는
+#    `WHERE quote_id = ? AND is_deleted = false` 한 줄이고, 같은 표를 보는 목록 조회의
+#    시험들이 이미 실제 DB 로 돌고 있다. db.txt 에 아무것도 더하지 않았다.
+src/app/api/quotes/xlsx-download-source.test.ts
+src/lib/storage/local-fs-adapter.test.ts
