@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentProps } from "react";
+import { useState, type ComponentProps } from "react";
 
 import QuoteListScreen from "@dss/core/ui/quotes/QuoteListScreen";
 import type { QuoteListItem } from "@dss/core/ui/quotes/quote-list-rows";
@@ -8,7 +8,9 @@ import {
   QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE,
   canRenderQuoteDocument,
 } from "@/lib/domain/quote-document-support";
+import { NoticePopup } from "@/components/common/NoticePopup";
 import { QuoteFileBadges } from "./QuoteAttachmentParts";
+import { QUOTE_EXCEL_MISSING_NOTICE } from "./quote-attachment-files";
 
 /**
  * ============================================================================
@@ -85,14 +87,76 @@ import { QuoteFileBadges } from "./QuoteAttachmentParts";
  * 🔴 조각 3d-2 부터 **엑셀 전용 줄은 받을 수 있는 줄**이다 — 붙인 엑셀이 그대로
  * 내려온다. 그래서 꺼진 단추가 남은 갈래는 아래 ① 하나다(지금 걸리는 종류는 없다).
  *
- * 🔴 **화면이 감춘 것은 경계가 아니다.** 그 갈래는 눌러서 실패하는 단추를 내밀지
- * 않기 위한 것이고, 같은 판정을 **통로가 다시 한다**(그쪽이 관문이다).
+ * ── 🔴 눌렀을 때 날 JSON 이 뜨던 줄 — **팝업으로 말한다** (조각 3d-5) ──
+ * 2026-09-23 사용자가 본 것: 엑셀 전용인데 엑셀이 안 붙은 줄의 [견적서 받기]를
+ * 눌렀더니 브라우저 창에 거절 JSON 이 날것으로 떴다.
+ *
+ *     {"error":"엑셀 전용 견적서인데 …","code":"EXCEL_NOT_ATTACHED"}
+ *
+ * 평범한 `<a>` 라 브라우저가 그 주소로 **이동해** 404 JSON 본문을 그대로 그린 것이고,
+ * 목록으로 돌아오려면 뒤로 가기를 눌러야 했다. 사용자 요구는 「우리가 항상 쓰는 팝업
+ * 스타일로 알림」이다. 그래서 **그 줄만** `<a>` 대신 단추로 두고, 누르면 팝업이 까닭을
+ * 말한다(아래 ②). 🔴 **받을 수 있는 줄은 지금 그대로 `<a>` 다** — 한 글자도 바뀌지
+ * 않았다(파일 이름은 서버가 정한다는 규칙이 거기 걸려 있다).
+ *
+ * 🔴 **fetch 로 먼저 물어보지 않는다.** 목록 줄이 `isExcelOnly` · `hasExcel` 을 이미
+ * 싣고 있어(vendor/dss-core 의 `QuoteListItem`) **누르기 전에 안다.** 물어보는 길은
+ * 왕복이 두 번인 데다, 물어본 뒤 파일이 지워지면 여전히 JSON 이 뜬다.
+ *
+ * 🔴 **꺼진 단추로 끝내지 않은 까닭**은 셋이다. ㉠ 꺼진 단추는 눌리지 않아 **팝업이
+ * 뜰 수 없다** — 사용자가 요구한 것이 팝업이다. ㉡ 미리 알리는 일은 이미 왼쪽 칸의
+ * 호박색 「엑셀 없음」 딱지가 하고 있다. ㉢ 까닭을 말하지 않는 흐린 단추는 「고장」으로
+ * 읽힌다(바로 아래 `UnavailableDownload` 머리말이 걱정하던 그것이다).
+ *
+ * 🔴 **화면이 감춘 것은 경계가 아니다.** 그 갈래들은 눌러서 실패하는 단추를 내밀지
+ * 않기 위한 것이고, 같은 판정을 **통로가 다시 한다**(그쪽이 관문이다). 서버는 그대로
+ * 404 와 제 문장으로 거절한다 — 이 조각이 온 뒤에도 그 줄은 한 줄도 바뀌지 않았다.
  * ============================================================================
  */
 
 /** 받기 자리의 상자 모양 — 🔴 **켜진 것과 꺼진 것이 같은 값을 쓴다**(칸이 흔들리지 않게). */
 const ROW_ACTION_CLASS =
   "inline-block rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-700 dark:border-zinc-700 dark:text-zinc-300";
+
+/**
+ * ============================================================================
+ * 붙인 엑셀이 없는 엑셀 전용 줄 — **눌리는 단추**와 알림 팝업 (조각 3d-5)
+ * ============================================================================
+ * 🔴 **꺼져 있지 않다.** 같은 상자(`ROW_ACTION_CLASS`) · 같은 글자 · 같은 hover 라
+ * 칸이 흔들리지 않지만, 눌리고 **눌러야 까닭이 나온다**. 이 줄이 다른 줄과 다르다는
+ * 것은 왼쪽 칸의 호박색 「엑셀 없음」 딱지가 먼저 말한다.
+ *
+ * 🔴 **떠 있는지 아닌지를 이 줄이 들고 있다.** 목록은 줄마다 이 조각을 따로 그리므로
+ * (`renderRowActions`), 어느 줄을 눌렀는지 위에서 들고 있을 필요가 없다. 팝업 자체는
+ * 최상위 층(`showModal`)에 뜨므로 단추가 표 칸 안에 있어도 화면 가운데에 선다.
+ *
+ * 🔴 **문장은 딱지와 한 글자다**(quote-attachment-files.ts 의 `QUOTE_EXCEL_MISSING_NOTICE`).
+ * 서버 문장(`QUOTE_EXCEL_MISSING_MESSAGE`)을 그대로 보이지 않는 까닭은 그 파일에
+ * 적어 두었다 — 그 말은 **이 사이트에 아직 없는 칸**을 가리킨다.
+ * ============================================================================
+ */
+function ExcelMissingDownload() {
+  const [noticeOpen, setNoticeOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        title={QUOTE_EXCEL_MISSING_NOTICE}
+        onClick={() => setNoticeOpen(true)}
+        className={`${ROW_ACTION_CLASS} hover:bg-zinc-50 dark:hover:bg-zinc-800`}
+      >
+        견적서 받기
+      </button>
+      {noticeOpen && (
+        <NoticePopup
+          title="내려받을 견적서 파일이 없습니다"
+          message={QUOTE_EXCEL_MISSING_NOTICE}
+          onClose={() => setNoticeOpen(false)}
+        />
+      )}
+    </>
+  );
+}
 
 /**
  * 받을 수 없는 줄의 자리 — **꺼진 단추**와 까닭.
@@ -134,7 +198,23 @@ function QuoteDownloadLink({ row }: { row: QuoteListItem }) {
   }
 
   /**
-   * ② 🔴 **엑셀 전용 견적서에도 같은 링크가 선다** (조각 3d-2).
+   * ② 🔴 **엑셀 전용인데 붙인 엑셀이 없는 줄** — 눌리는 단추와 팝업 (조각 3d-5).
+   *
+   * 🔴 재는 것은 **「엑셀 전용」이 아니라 「내줄 파일이 없다」**이다. 엑셀 전용이라는
+   * 이유만으로 갈라지면 3d-2 가 연 길(붙인 엑셀을 그대로 내려주는 길)이 도로 막힌다 —
+   * 엑셀이 붙은 엑셀 전용 줄은 아래 ③ 의 평범한 링크로 그대로 내려간다.
+   *
+   * 🔴 이 두 값은 **목록 조회가 이미 싣는다**(db/queries/quotes.ts 의
+   * `loadAttachmentFlagsByQuoteId`) — 왼쪽 칸의 「엑셀 없음」 딱지와 **같은 조건**이다
+   * (quote-attachment-files.ts 의 `quoteListFileBadges`). 딱지가 붙은 줄과 팝업이 뜨는
+   * 줄이 갈리면 사람은 어느 쪽을 믿을지 알 수 없다.
+   */
+  if (row.isExcelOnly && !row.hasExcel) {
+    return <ExcelMissingDownload />;
+  }
+
+  /**
+   * ③ 🔴 **엑셀 전용 견적서에도 같은 링크가 선다** (조각 3d-2).
    *
    * 2026-09-22(3c-2)에는 이 자리에 「이 사이트에는 내줄 파일이 없다」는 꺼진 단추가
    * 있었다. 그 까닭은 붙인 엑셀을 읽는 길이 없다는 것이었는데, 두 사이트가 **같은

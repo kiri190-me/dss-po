@@ -62,6 +62,8 @@ const slotsSource = read("src/components/quotes/QuoteListSlots.tsx");
 /** 목록 딱지의 규칙과 그리는 조각 — 🔴 A/S 와 같은 이름 · 같은 자리다(조각 3c-2 · 3d). */
 const filesSource = read("src/components/quotes/quote-attachment-files.ts");
 const partsSource = read("src/components/quotes/QuoteAttachmentParts.tsx");
+/** 🔴 조각 3d-5 — 받을 수 없는 줄이 띄우는 알림 팝업(공용 자리 · A/S 로 그대로 옮길 수 있게). */
+const popupSource = read("src/components/common/NoticePopup.tsx");
 const actionSource = read("src/lib/server/actions/quotes.ts");
 const dialogsSource = read("vendor/dss-core/src/ui/common/master-data-trash-dialogs.tsx");
 
@@ -202,7 +204,7 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     assert.equal(both.includes("intakeHref="), false, "수리 건 상세 주소를 이 사이트가 지어내고 있다");
   });
 
-  test("🔴 조각 3c-2 · 3d-2 — 줄마다 [견적서 받기] 링크가 선다. 엑셀 전용 줄도 같은 링크다", () => {
+  test("🔴 조각 3c-2 · 3d-2 — 줄마다 [견적서 받기] 링크가 선다. 엑셀이 붙은 엑셀 전용 줄도 같은 링크다", () => {
     // 위 시험에서 `renderRowActions=` 를 뺀 자리를 메운다 — 금지 목록으로는 더 이상
     // 잴 수 없으니 **무엇이 걸렸는지를 이름으로 못 박는다**(3c-1 이 new/page.tsx 에서
     // 한 방식과 같다).
@@ -241,7 +243,23 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     //    내려주므로(api/quotes/[id]/xlsx/route.ts 의 6번 갈래), 그 줄만 단추를 끄면
     //    **되는 일을 못 하게 만드는 것**이 된다. 3c-2 의 꺼진 단추와 그 문장 상수
     //    (domain/quote-excel-only-download.ts)는 이 조각에서 함께 사라졌다.
-    assert.equal(link.includes("row.isExcelOnly"), false, "엑셀 전용 줄만 다른 갈래로 샌다");
+    //
+    // 🔴 2026-09-23(**조각 3d-5**)에 이 단언의 모양이 바뀌었다 — 「`row.isExcelOnly`
+    //    를 아예 보지 않는다」에서 「**엑셀 전용이라는 이유만으로는 갈라지지 않는다**」로.
+    //    그 조각이 「엑셀 전용인데 **붙인 엑셀이 없는**」 줄을 팝업 갈래로 떼어 냈기
+    //    때문이다(아래 이웃 시험). 지키려는 것은 그대로다: 엑셀이 **붙어 있는** 엑셀
+    //    전용 줄은 평범한 링크로 그대로 내려가야 한다. 그래서 주석을 뺀 코드에서
+    //    `row.isExcelOnly` 가 나오는 자리가 **그 한 갈래뿐**임을 센다.
+    const linkCode = codeOf(sliceBetween(slotsSource, "function QuoteDownloadLink(", "/** 화면이 받는 프롭에서"));
+    assert.ok(
+      linkCode.includes("if (row.isExcelOnly && !row.hasExcel) {"),
+      "「엑셀 전용인데 붙인 엑셀이 없다」 갈래가 없거나 조건이 다르다"
+    );
+    assert.equal(
+      linkCode.split("row.isExcelOnly").length - 1,
+      1,
+      "엑셀 전용을 보는 자리가 그 한 갈래 말고 또 있다 — 붙은 엑셀이 있는 줄까지 링크에서 새고 있다"
+    );
     assert.equal(
       slots.includes("QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE"),
       false,
@@ -282,6 +300,86 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     );
     // 🔴 곁말은 감싼 span 에도 단다 — 꺼진 단추는 제 title 을 못 띄우는 브라우저가 있다.
     assert.equal(unavailable.split("title={reason}").length - 1, 2, "곁말이 한 곳에만 있다");
+  });
+
+  /**
+   * ==========================================================================
+   * 🔴 조각 3d-5 — 날 JSON 이 뜨던 줄은 **팝업**으로 까닭을 말한다
+   * ==========================================================================
+   * 2026-09-23 사용자가 본 것: 엑셀 전용인데 엑셀이 안 붙은 줄의 [견적서 받기]를
+   * 눌렀더니 브라우저 창에 거절 JSON 이 날것으로 떴다(평범한 `<a>` 라 그 주소로
+   * 이동해 404 본문을 그대로 그린 것이다). 요구는 「우리가 항상 쓰는 팝업 스타일로
+   * 알림」이었다.
+   *
+   * 🔴 여기서 지키는 것은 넷이다.
+   *   ㉠ **받을 수 있는 줄은 건드리지 않는다** — 위 이웃 시험이 `<a>` 를 그대로 잰다.
+   *   ㉡ 그 줄의 단추는 **꺼져 있지 않다** — 꺼진 단추는 눌리지 않아 팝업이 못 뜬다.
+   *   ㉢ 팝업 문장과 딱지 곁말이 **한 글자**다.
+   *   ㉣ 팝업이 **저절로 닫히지 않는다** — 이 저장소는 「팝업이 즉시 닫힘」으로 한 번
+   *      고생했고, 까닭을 말하는 문장은 0.5초에 읽히지 않는다.
+   * ==========================================================================
+   */
+  test("🔴 조각 3d-5 — 엑셀이 없는 엑셀 전용 줄은 눌리는 단추이고, 누르면 팝업이 뜬다", () => {
+    const slots = flat(slotsSource);
+    // 🔴 **주석을 뺀 코드만** 본다 — 이 갈래 뒤에 오는 `UnavailableDownload` 머리말이
+    //    `disabled:…` 를 글자로 설명하고 있어, 원본을 그대로 훑으면 거기 걸린다.
+    const missing = codeOf(sliceBetween(slotsSource, "function ExcelMissingDownload(", "function UnavailableDownload("));
+
+    // ㉡ 칸은 흔들리지 않되(같은 상자 · 같은 글자) **꺼져 있지 않다.**
+    assert.ok(missing.includes("${ROW_ACTION_CLASS}"), "팝업 단추가 다른 상자 모양을 쓴다");
+    assert.ok(missing.includes("견적서 받기"), "팝업 단추의 이름이 다르다");
+    assert.ok(missing.includes('type="button"'), "단추가 type=\"button\" 이 아니다 — 폼 안에서 제출로 샌다");
+    assert.equal(
+      missing.includes("disabled"),
+      false,
+      "꺼진 단추다 — 눌리지 않으면 팝업이 뜰 수 없고, 사용자가 요구한 것은 팝업이다"
+    );
+    assert.ok(missing.includes("onClick={() => setNoticeOpen(true)}"), "눌러도 팝업이 열리지 않는다");
+
+    // 🔴 fetch 로 먼저 물어보지 않는다 — 목록 줄이 이미 아는 값으로 가른다.
+    assert.equal(missing.includes("fetch("), false, "누르기 전에 아는 것을 서버에 다시 묻고 있다");
+
+    // ㉢ 팝업 문장 = 딱지 곁말. 두 벌이 되면 마우스를 올렸을 때와 눌렀을 때 말이 갈린다.
+    assert.ok(missing.includes("message={QUOTE_EXCEL_MISSING_NOTICE}"), "팝업이 딱지와 다른 글자를 쓴다");
+    assert.ok(
+      slots.includes('import { QUOTE_EXCEL_MISSING_NOTICE } from "./quote-attachment-files"'),
+      "팝업 문장을 딱지와 같은 자리에서 가져오지 않는다"
+    );
+    const badgeRule = flat(sliceBetween(filesSource, "export function quoteListFileBadges(", "\n}\n"));
+    assert.ok(badgeRule.includes("title: QUOTE_EXCEL_MISSING_NOTICE"), "딱지가 그 상수를 쓰지 않는다");
+
+    // 🔴 **서버 문장을 화면이 끌어다 쓰지 않는다.** `QUOTE_EXCEL_MISSING_MESSAGE`
+    //    (api/quotes/[id]/xlsx/download-source.ts — A/S 와 바이트 동일)는 「견적서
+    //    수정 화면에서 올린 뒤」라고 말하는데, 이 사이트에는 그 칸이 아직 없다.
+    assert.equal(
+      codeOf(slotsSource).includes("QUOTE_EXCEL_MISSING_MESSAGE"),
+      false,
+      "A/S 의 서버 문장을 화면이 그대로 보이고 있다 — 이 사이트에 없는 칸을 가리킨다"
+    );
+    const notice = sliceBetween(filesSource, "export const QUOTE_EXCEL_MISSING_NOTICE =", ";");
+    assert.ok(notice.includes("A/S 관리 시스템에서 붙여 주세요"), "붙일 수 있는 곳을 가리키지 않는다");
+    // 🔴 이 줄이 걸리는 날이 **조각 3d-3 · 3d-4 가 붙이는 칸을 가져온 날**이다 — 그때는
+    //    이 사이트에서 붙일 수 있으므로 문장이 저쪽 말로 돌아가고, 이 단언을 지운다.
+    assert.equal(
+      notice.includes("견적서 수정 화면"),
+      false,
+      "이 사이트에 아직 없는 칸을 가리킨다(3d-3 · 3d-4 의 것이다)"
+    );
+  });
+
+  test("🔴 조각 3d-5 — 알림 팝업은 사람이 닫는다. 저절로 닫히지 않는다", () => {
+    // 🔴 common/SavePopup.tsx 를 쓰지 않은 까닭이 이것이다 — 그쪽은 성공 전용이고
+    //    `SAVE_POPUP_VISIBLE_MS`(0.5초) 뒤 저절로 닫힌다. 까닭을 말하는 문장은 그
+    //    시간에 읽히지 않는다.
+    const popup = codeOf(popupSource);
+    assert.ok(popupSource.startsWith('"use client";'), "팝업이 클라이언트 조각이 아니다");
+    assert.ok(popup.includes("dialog.showModal()"), "이 저장소의 팝업 방식(<dialog> + showModal)이 아니다");
+    assert.equal(/setTimeout|setInterval/.test(popup), false, "팝업이 시간이 지나면 저절로 닫힌다");
+    assert.ok(popup.includes("onClose()"), "사람이 닫을 길이 없다");
+    assert.ok(popup.includes("확인"), "닫는 단추가 없다");
+    // Esc 도 같은 길을 거친다 — 창만 닫히고 부르는 쪽은 열려 있다고 믿으면, 같은 줄을
+    // 다시 눌러도 아무 일도 일어나지 않는다.
+    assert.ok(popup.includes("event.preventDefault();"), "Esc 가 부르는 쪽을 거치지 않는다");
   });
 
   test("🔴 조각 3d-0 — 왼쪽 칸의 파일 딱지는 **셋**이다(엑셀 전용 · 결재 PDF · 엑셀 없음)", () => {
