@@ -190,3 +190,28 @@ src/lib/storage/quote-template.test.ts
 #    A/S 는 그 칸을 `*` 로 적고 실행기가 펼치지만 이 저장소의 실행기에는 그 펼치기가
 #    없다(scripts/run-test-list.mjs 머리말). 그 까닭은 시험 파일 머리말에도 적어 두었다.
 src/app/api/quotes/xlsx-route-source.test.ts
+
+# ── 조각 3d-1a — 첨부의 「무엇이 붙고, 내보내도 되는가」 두 파일 ───────────
+# A/S 에서 **본문을 한 글자도 고치지 않고** 가져온 순수 도메인 둘과 그 시험이다
+# (domain/attachment-category.ts · attachment-download-policy.ts). 차례는 A/S 의 같은
+# 목록(unit.txt)을 따랐다 — 그쪽은 이 둘 사이에 attachment-allowlist · attachment-path
+# 가 끼어 있고, 그 둘은 **조각 3d-1b** 것이라 아직 오지 않았다.
+#
+# 🔴 **이 두 줄이 이 사이트에 주는 값은 enum 대조다.** attachment-category.test.ts 가
+#    `ATTACHMENT_CATEGORY_CODES`(18값) · `MALWARE_SCAN_STATUS_CODES`(5값)를
+#    `@dss/core/schema` 의 attachmentCategoryEnum · malwareScanStatusEnum 과 **차례까지**
+#    맞춰 본다. 두 사이트가 같은 dss_as 를 보고 칸은 언제나 A/S 가 고치므로, A/S 가
+#    enum 에 값을 더한 날 이 사이트만 모르는 상태를 잡는 장치가 그 단언뿐이다.
+#    그래서 이 사이트가 쓰는 분류는 SIGNED_QUOTE_PDF · QUOTE_EXCEL 둘뿐인데도
+#    18값을 하나도 줄이지 않았다(두 구현 파일 머리말 참조).
+#
+# 🔴 attachment-category.test.ts 는 **두 군데만** 고쳤다 — 스키마 경로
+#    (`@/lib/db/schema` → `@dss/core/schema`)와, 이 사이트에 없는 데모 계층
+#    (`local/attachments/*`)을 보던 시험 둘을 뺀 것. 무엇을 왜 뺐는지는 그 파일
+#    머리말에 적어 두었고, 그 둘은 되찾을 시험이 아니다(데모는 A/S 것이다).
+#    attachment-download-policy.test.ts 는 **한 글자도 고치지 않았다.**
+#
+# 🔴 **DB 시험이 없다** — 두 파일 다 순수하다(node:path 도 server-only 도 drizzle 도
+#    들여오지 않는다). db.txt 에 아무것도 더하지 않았다.
+src/lib/domain/attachment-category.test.ts
+src/lib/domain/attachment-download-policy.test.ts
