@@ -215,3 +215,32 @@ src/app/api/quotes/xlsx-route-source.test.ts
 #    들여오지 않는다). db.txt 에 아무것도 더하지 않았다.
 src/lib/domain/attachment-category.test.ts
 src/lib/domain/attachment-download-policy.test.ts
+
+# ── 조각 3d-1b — 첨부의 「무엇을 받고, 어디에 두는가」 두 파일 ─────────────
+# 위 3d-1a 머리말이 「아직 오지 않았다」고 적은 그 둘이다(A/S 의 같은 목록에서는
+# 위 두 줄 사이에 끼어 있다). 사슬이 이어져야 해서 한 조각으로 함께 왔다:
+# attachment-category ─(타입)→ attachment-allowlist ─(값 셋)→ attachment-path.
+#
+# 🔴 **`attachment-allowlist.ts` 는 통째로, `attachment-path.ts` 는 골라서** 왔다.
+#    경로 파일에서 뺀 것은 이 사이트에 영영 안 생길 A/S 전용 일곱 함수(접수 건 넷 ·
+#    제품 모델 셋, 약 165줄)이고, 그 일곱을 부르던 시험 열다섯도 함께 뺐다
+#    (32개 → 13개). 무엇을 왜 뺐는지 · 뺀 시험이 지키던 값을 지금 무엇이 지키는지는
+#    네 파일 머리말에 적어 두었다. 🔴 **잃은 규칙은 없다** — 남은 견적서 벌이 같은
+#    규칙(`/` 뿐 · 소문자 · 상대경로 · UUID · 허용목록)을 글자 하나까지 똑같이 본다.
+#
+# 🔴 **접두어 상수 셋은 다 남겼다**(repair-cases · product-models · quotes). 이 사이트가
+#    만들지 않는 두 접두어까지 남긴 까닭은 두 사이트가 **같은 `attachments` 표**를 보기
+#    때문이다 — A/S 가 넣은 행을 읽다 `assertPortableStoredPath` 가 던지면 안 된다.
+#    그것을 못 박는 것이 attachment-path.test.ts 의 「세 접두어를 모두 받는다」이고,
+#    이 조각에서 가장 중요한 단언이다.
+#
+# 🔴 allowlist 시험에서는 **데모 계층을 보던 단언 넷**을 뺐다(이 사이트에는
+#    `local/attachments/*` 가 없다 — 3d-1a 와 같은 까닭). 셋은 그 시험의 전부여서
+#    `test()` 둘을 통째로 뺐다. 20MB 상한은 남은 두 자리가 여전히 못 박는다.
+#
+# 🔴 **DB 시험이 없다** — 두 파일 다 순수하다. attachment-path.ts 만 `node:path` 를
+#    들여오지만 I/O 가 없어 `node --test` 에서 그대로 돈다. db.txt 에 아무것도 더하지
+#    않았다. 🔴 다만 그 파일은 **클라이언트 묶음에 실을 수 없다** — 화면(`.tsx`)에서
+#    들여오지 마라(그 파일 머리말).
+src/lib/domain/attachment-allowlist.test.ts
+src/lib/domain/attachment-path.test.ts

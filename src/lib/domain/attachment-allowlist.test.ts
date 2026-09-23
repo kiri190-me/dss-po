@@ -1,0 +1,348 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  ATTACHMENT_EXTENSION_RULES,
+  CATEGORY_EXTENSION_ALLOWLIST,
+  CONTENT_SNIFF_BYTES,
+  MAX_ATTACHMENT_SIZE_BYTES,
+  canonicalMimeTypeForExtension,
+  getAllowedMimeTypesForExtension,
+  isAllowedExtension,
+  isContentCompatibleWithExtension,
+  isExtensionAllowedForCategory,
+  isExtensionMimeCompatible,
+  isPreviewCapableExtension,
+  normalizeFileExtension,
+} from "./attachment-allowlist";
+import { ATTACHMENT_CATEGORY_CODES } from "./attachment-category";
+
+/**
+ * ============================================================================
+ * 🔴 조각 3d-1b 로 A/S 에서 가져온 시험이다 (2026-09-23) — 뺀 것은 **데모 대조뿐**
+ * ============================================================================
+ * 원본은 A/S 의 같은 이름 · 같은 경로 파일
+ * (`RF_Service_System/src/lib/domain/attachment-allowlist.test.ts`, 331줄)이다.
+ * 남은 단언은 **글자 그대로** 왔고, 고친 곳은 아래 한 갈래뿐이다.
+ *
+ * ── 🔴 **뺀 것 — 데모 계층을 보던 단언 넷과 시험 둘** ────────────────────
+ * A/S 원본은 확장자 규칙이 **두 곳**(데모 화면 `local/attachments/allowlist.ts` ·
+ * 도메인 기준)에 있다고 보고 둘을 맞춰 본다. 이 사이트에는 **데모 계층이 없다** —
+ * `src/lib/domain/local/` 에 `validation.ts` 하나뿐이다(3d-1a 의
+ * `attachment-category.test.ts` 가 같은 까닭으로 시험 둘을 뺐다). 그래서
+ * `./local/attachments/allowlist` 를 들여오던 줄과, 그것을 쓰는 단언 넷을 뺐다.
+ *
+ * 단언 넷 가운데 **셋은 그 시험의 전부**였다 — 빼면 빈 껍데기가 되므로 `test()` 를
+ * 통째로 뺐다:
+ *   · "확장자 규칙이 데모 파일과 순서·값까지 정확히 같다"
+ *   · "분류별 확장자 제한이 데모 파일과 같다 — 주인 전용 분류 셋만 빼고"
+ * 넷째는 "크기 상한은 데모와 일부러 다르다 — 실제 저장은 20MB다" 안의 두 줄
+ * (데모가 300MB 라는 단언 · 두 값이 다르다는 `notEqual`)이다. 그 시험은 **남았다** —
+ * `MAX_ATTACHMENT_SIZE_BYTES` 가 20MB 라는 단언이 그대로 있어 빈 껍데기가 아니다.
+ * 🔴 그 시험 이름과 위의 구역 표시(「데모 목록과 어긋나지 않는가」)는 **원본 글자
+ * 그대로 두었다** — 조각 4 의 글자 대조 때문이다. 이 사이트에서는 그 이름이 가리키는
+ * 데모가 없다는 것만 여기 적어 둔다.
+ *
+ * ── 🔴 **뺀 단언이 지키던 값은 무엇이 대신 지키는가** ────────────────────
+ *   · 20MB 상한 — 여전히 **두 자리**가 못 박는다(위 시험 + 「견적서 두 칸(결재 PDF ·
+ *     엑셀)도 앞머리 바이트 대조를 그대로 받는다」의 마지막 줄).
+ *   · 확장자 14종 · 소문자 · MIME 유무 — 「확장자는 14종이고 중복이 없다」 ·
+ *     「모든 확장자는 소문자이고 MIME이 최소 하나 있다」가 그대로 본다.
+ *   · 분류별 제한 — 「분류별 제한에 쓰인 확장자는 전부 전체 허용목록 안에 있다」와
+ *     분류별 전용 시험 다섯(회로도 · 스크린샷 · 결재 견적서 · 수기 견적서 · webp)이
+ *     그대로 본다.
+ *   🔴 **되찾을 시험이 아니다.** 데모 계층은 A/S 것이고 그쪽 원본이 계속 갖는다.
+ *
+ * ── 🔴 A/S 전용 분류 다섯 줄을 보는 단언들은 **그대로 두었다** ────────────
+ * 회로도 · 스크린샷 · 펌웨어 · 파형 · 로그를 보는 단언들이 아래 그대로 있다. 이
+ * 사이트가 쓰지 않는 분류지만 목록을 줄이지 않았고(구현 파일 머리말), 그러면 그
+ * 목록을 지키는 단언도 함께 있어야 한다.
+ * ============================================================================
+ */
+
+/**
+ * ============================================================================
+ * 이 파일이 지키려는 것 — 같은 목록이 두 곳에 있고, 어긋나면 조용히 깨진다
+ * ============================================================================
+ * 확장자 규칙은 지금 두 군데에 적혀 있다.
+ *
+ *   1. 데모 화면    src/lib/domain/local/attachments/allowlist.ts
+ *   2. 실제 저장    src/lib/domain/attachment-allowlist.ts   (이 테스트의 대상)
+ *
+ * 데모는 데모가 걷힐 때까지 그대로 남으므로 **어느 한 곳만 고치는 일이 실제로
+ * 가능하다.** 한 곳만 고쳐지면 화면은 올릴 수 있다고 말하는데 서버가 거부하거나,
+ * 반대로 화면이 막는 파일을 서버가 받는다. 그래서 두 목록을 순서까지 맞춰 본다
+ * (분류 목록에 attachment-category.test.ts가 하는 것과 같은 방식).
+ *
+ * ── 크기 상한은 일부러 비교하지 않는다 ───────────────────────────────────
+ * 데모는 300MB, 실제 저장은 **20MB**다. 이것은 어긋남이 아니라 승인된 결정이다 —
+ * 데모는 파일 내용을 한 바이트도 다루지 않아 그 숫자가 아무 자원도 쓰지 않지만,
+ * 실제 저장에서는 그 값이 그대로 업로드 시간·디스크·백업·NAS 이전 시간이 된다.
+ * 그래서 크기만 비교 대상에서 빼고, 대신 **두 값이 서로 다르다는 사실 자체를**
+ * 아래에서 단언한다. 어느 날 누가 둘을 같게 맞춰 버리면 그때 이 테스트가 깨진다.
+ * ============================================================================
+ */
+
+// ───────────────────────────────────────── 데모 목록과 어긋나지 않는가
+
+test("크기 상한은 데모와 일부러 다르다 — 실제 저장은 20MB다", () => {
+  assert.equal(MAX_ATTACHMENT_SIZE_BYTES, 20 * 1024 * 1024);
+});
+
+// ────────────────────────────────────────────── 목록 자체의 무결성
+
+test("확장자는 14종이고 중복이 없다", () => {
+  assert.equal(ATTACHMENT_EXTENSION_RULES.length, 14);
+  assert.equal(new Set(ATTACHMENT_EXTENSION_RULES.map((rule) => rule.extension)).size, 14);
+});
+
+test("모든 확장자는 소문자이고 MIME이 최소 하나 있다", () => {
+  for (const rule of ATTACHMENT_EXTENSION_RULES) {
+    assert.equal(rule.extension, rule.extension.toLowerCase(), rule.extension);
+    assert.ok(rule.allowedMimeTypes.length > 0, `${rule.extension}에 MIME이 없다`);
+  }
+});
+
+test("분류별 제한에 쓰인 확장자는 전부 전체 허용목록 안에 있다", () => {
+  for (const [category, extensions] of Object.entries(CATEGORY_EXTENSION_ALLOWLIST)) {
+    for (const extension of extensions ?? []) {
+      assert.ok(isAllowedExtension(extension), `${category}의 ${extension}이 허용목록에 없다`);
+    }
+  }
+});
+
+test("제한이 없는 분류는 허용목록 전체를 쓸 수 있다", () => {
+  const unrestricted = ATTACHMENT_CATEGORY_CODES.filter((code) => !(code in CATEGORY_EXTENSION_ALLOWLIST));
+  assert.ok(unrestricted.length > 0, "비교 대상이 있어야 한다");
+  for (const category of unrestricted) {
+    assert.equal(isExtensionAllowedForCategory("pdf", category), true);
+    assert.equal(isExtensionAllowedForCategory("exe", category), false);
+  }
+});
+
+test("제한이 있는 분류는 그 목록 밖 확장자를 거부한다", () => {
+  assert.equal(isExtensionAllowedForCategory("pdf", "CIRCUIT_DIAGRAM"), true);
+  // 회로도의 부정 예시는 zip이다. 예전에는 jpg가 이 자리에 있었는데, 종이
+  // 회로도를 폰으로 찍어 올리는 길을 열면서 사진 확장자가 허용목록에 들어갔다
+  // (아래 전용 테스트 참조). zip은 전체 허용목록에는 있지만 회로도는 아니다 —
+  // 넓힌 것이 "아무거나 받는다"가 되지 않았음을 여기서 못 박는다.
+  assert.equal(isExtensionAllowedForCategory("zip", "CIRCUIT_DIAGRAM"), false);
+  assert.equal(isExtensionAllowedForCategory("bin", "FIRMWARE"), true);
+  assert.equal(isExtensionAllowedForCategory("pdf", "FIRMWARE"), false);
+  assert.equal(isExtensionAllowedForCategory("csv", "OSCILLOSCOPE_DATA"), true);
+  assert.equal(isExtensionAllowedForCategory("log", "LOG_FILE"), true);
+});
+
+test("회로도는 PDF와 사진(jpg/jpeg/png)을 받는다 — 종이 회로도를 폰으로 찍어 올린다", () => {
+  for (const extension of ["pdf", "jpg", "jpeg", "png"]) {
+    assert.equal(
+      isExtensionAllowedForCategory(extension, "CIRCUIT_DIAGRAM"),
+      true,
+      `회로도에 .${extension}이 막혔다`
+    );
+  }
+});
+
+test("회로도를 넓힌 것이 '아무거나 받는다'가 되지는 않았다", () => {
+  // 허용목록 안에 있으면서 회로도에는 뜻이 없는 확장자들. 하나라도 통과하면
+  // 분류 제한이 사실상 사라진 것이다.
+  for (const extension of ["zip", "xlsx", "xls", "doc", "docx", "csv", "txt", "log", "bin", "hex"]) {
+    assert.equal(
+      isExtensionAllowedForCategory(extension, "CIRCUIT_DIAGRAM"),
+      false,
+      `회로도에 .${extension}이 통과했다`
+    );
+  }
+  // 허용목록 밖은 당연히 막힌다.
+  assert.equal(isExtensionAllowedForCategory("exe", "CIRCUIT_DIAGRAM"), false);
+  assert.equal(isExtensionAllowedForCategory("svg", "CIRCUIT_DIAGRAM"), false);
+});
+
+test("스크린샷은 이미지(png/jpg/jpeg)만 받는다 — 개선 요청 글의 화면 사진", () => {
+  assert.deepEqual([...(CATEGORY_EXTENSION_ALLOWLIST.SCREENSHOT ?? [])], ["png", "jpg", "jpeg"]);
+  for (const extension of ["png", "jpg", "jpeg"]) {
+    assert.equal(isExtensionAllowedForCategory(extension, "SCREENSHOT"), true, `.${extension}이 막혔다`);
+    // 셋 다 화면에서 바로 볼 수 있는 형식이다.
+    assert.equal(isPreviewCapableExtension(extension), true, `.${extension}이 미리보기 불가다`);
+  }
+  // 허용목록 안에 있지만 이미지가 아닌 것들 — 하나라도 통과하면 "이미지만"이 깨진다.
+  for (const extension of ["pdf", "zip", "xlsx", "xls", "doc", "docx", "csv", "txt", "log", "bin", "hex"]) {
+    assert.equal(isExtensionAllowedForCategory(extension, "SCREENSHOT"), false, `.${extension}이 통과했다`);
+  }
+  // 허용목록 밖의 이미지 형식도 막힌다.
+  for (const extension of ["webp", "gif", "bmp", "svg", "heic", "exe"]) {
+    assert.equal(isExtensionAllowedForCategory(extension, "SCREENSHOT"), false, `.${extension}이 통과했다`);
+  }
+});
+
+test("결재 견적서는 PDF 만 받는다 — 사진 · 엑셀 · 문서는 거절", () => {
+  assert.deepEqual([...(CATEGORY_EXTENSION_ALLOWLIST.SIGNED_QUOTE_PDF ?? [])], ["pdf"]);
+  assert.equal(isExtensionAllowedForCategory("pdf", "SIGNED_QUOTE_PDF"), true);
+  for (const extension of ["jpg", "jpeg", "png", "xlsx", "xls", "doc", "docx", "zip", "csv", "txt", "log", "bin", "hex"]) {
+    assert.equal(isExtensionAllowedForCategory(extension, "SIGNED_QUOTE_PDF"), false, `.${extension}이 통과했다`);
+  }
+  for (const extension of ["exe", "hwp", "webp", ""]) {
+    assert.equal(isExtensionAllowedForCategory(extension, "SIGNED_QUOTE_PDF"), false, `.${extension}이 통과했다`);
+  }
+});
+
+test("수기 견적서는 엑셀(xlsx · xls)만 받는다 — PDF · 사진 · 문서는 거절", () => {
+  assert.deepEqual([...(CATEGORY_EXTENSION_ALLOWLIST.QUOTE_EXCEL ?? [])], ["xlsx", "xls"]);
+  for (const extension of ["xlsx", "xls"]) {
+    assert.equal(isExtensionAllowedForCategory(extension, "QUOTE_EXCEL"), true, `.${extension}이 막혔다`);
+  }
+  for (const extension of ["pdf", "jpg", "jpeg", "png", "doc", "docx", "zip", "csv", "txt", "log", "bin", "hex"]) {
+    assert.equal(isExtensionAllowedForCategory(extension, "QUOTE_EXCEL"), false, `.${extension}이 통과했다`);
+  }
+  // 전체 허용목록 밖의 스프레드시트 형식은 막힌다 — 매크로가 든 xlsm 을 따로 열지 않는다.
+  for (const extension of ["xlsm", "xlsb", "ods", "exe"]) {
+    assert.equal(isExtensionAllowedForCategory(extension, "QUOTE_EXCEL"), false, `.${extension}이 통과했다`);
+  }
+});
+
+test("webp는 전체 허용목록에 없다 — 스크린샷에 넣지 않은 까닭", () => {
+  // 스크린샷에 webp를 더하려면 전체 허용목록부터 넓혀야 하고, 그러면 제한 없는
+  // 분류 전부에 함께 열린다. 그 결정 없이 조용히 열리지 않았음을 못 박는다.
+  assert.equal(isAllowedExtension("webp"), false);
+});
+
+// ────────────────────────────────────────────────── 확장자 정규화
+
+test("확장자는 소문자로 눕는다 — NAS(Linux)에서 대소문자는 다른 파일이다", () => {
+  assert.equal(normalizeFileExtension("사진.JPG"), "jpg");
+  assert.equal(normalizeFileExtension("REPORT.PdF"), "pdf");
+  assert.equal(normalizeFileExtension("archive.tar.GZ"), "gz");
+});
+
+test("확장자를 뽑을 수 없는 이름은 null이다", () => {
+  for (const name of ["README", "trailing.", ".hidden", "", "   ", "이름.한글확장자", "x.a-b"]) {
+    assert.equal(normalizeFileExtension(name), null, name);
+  }
+});
+
+test("경로 구분자나 '..'가 확장자로 둔갑하지 않는다", () => {
+  assert.equal(normalizeFileExtension("evil.jpg/../../etc/passwd"), null);
+  assert.equal(normalizeFileExtension("evil.."), null);
+  assert.equal(normalizeFileExtension("dir/name"), null);
+});
+
+// ────────────────────────────────────────────────────── MIME 판정
+
+test("확장자에 대한 정본 MIME은 서버가 고른다", () => {
+  assert.equal(canonicalMimeTypeForExtension("jpg"), "image/jpeg");
+  assert.equal(canonicalMimeTypeForExtension("pdf"), "application/pdf");
+  assert.equal(canonicalMimeTypeForExtension("zip"), "application/zip");
+  assert.equal(canonicalMimeTypeForExtension("exe"), null);
+});
+
+test("확장자와 MIME이 어긋나면 호환되지 않는다", () => {
+  assert.equal(isExtensionMimeCompatible("png", "image/png"), true);
+  assert.equal(isExtensionMimeCompatible("png", "application/pdf"), false);
+  assert.equal(isExtensionMimeCompatible("exe", "application/octet-stream"), false);
+  assert.deepEqual([...getAllowedMimeTypesForExtension("hex")], ["application/octet-stream", "text/plain"]);
+});
+
+test("미리보기 가능 확장자는 jpg/jpeg/png/pdf/txt/csv 6종이다", () => {
+  const previewable = ATTACHMENT_EXTENSION_RULES.filter((rule) => rule.previewCapable).map((r) => r.extension);
+  assert.deepEqual(previewable, ["jpg", "jpeg", "png", "pdf", "csv", "txt"]);
+  assert.equal(isPreviewCapableExtension("log"), false);
+});
+
+// ──────────────────────────────── 내용 대조 — 확장자만 바꾼 파일은 통과 못 한다
+
+const JPEG_HEADER = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+const PNG_HEADER = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
+const PDF_HEADER = new Uint8Array(Buffer.from("%PDF-1.7\n%\xE2\xE3\xCF\xD3\n", "binary"));
+const ZIP_HEADER = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
+const OLE2_HEADER = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00]);
+const TEXT_HEADER = new Uint8Array(Buffer.from("시각,전압\n0.000,1.23\n", "utf8"));
+const WINDOWS_EXE_HEADER = new Uint8Array([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00]);
+const ELF_HEADER = new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00, 0x00]);
+
+test("확장자와 실제 내용이 맞으면 통과한다", () => {
+  assert.equal(isContentCompatibleWithExtension("jpg", JPEG_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("jpeg", JPEG_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("png", PNG_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("pdf", PDF_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("zip", ZIP_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("xlsx", ZIP_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("docx", ZIP_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("xls", OLE2_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("doc", OLE2_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("csv", TEXT_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("txt", TEXT_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("log", TEXT_HEADER), true);
+});
+
+test("이름만 바꾼 실행 파일은 어떤 확장자로도 통과하지 못한다", () => {
+  for (const extension of ["jpg", "png", "pdf", "zip", "xlsx", "xls", "csv", "txt", "log", "bin", "hex"]) {
+    assert.equal(
+      isContentCompatibleWithExtension(extension, WINDOWS_EXE_HEADER),
+      false,
+      `MZ 실행 파일이 .${extension}으로 통과했다`
+    );
+    assert.equal(
+      isContentCompatibleWithExtension(extension, ELF_HEADER),
+      false,
+      `ELF 실행 파일이 .${extension}으로 통과했다`
+    );
+  }
+});
+
+test("형식이 다른 파일에 확장자만 붙여도 거부된다", () => {
+  assert.equal(isContentCompatibleWithExtension("png", JPEG_HEADER), false);
+  assert.equal(isContentCompatibleWithExtension("jpg", PNG_HEADER), false);
+  assert.equal(isContentCompatibleWithExtension("pdf", ZIP_HEADER), false);
+  assert.equal(isContentCompatibleWithExtension("txt", PNG_HEADER), false);
+  assert.equal(isContentCompatibleWithExtension("csv", ZIP_HEADER), false);
+});
+
+test("회로도로 올린 사진도 앞머리 바이트 대조를 그대로 받는다", () => {
+  // 분류 허용목록은 "이 확장자를 이 분류에 쓸 수 있는가"만 본다. 이름만 .jpg로
+  // 바꾼 파일을 막는 것은 여전히 내용 대조 쪽이고, 회로도를 넓히면서 그 관문이
+  // 헐거워지지 않았음을 여기서 함께 못 박는다.
+  assert.equal(isContentCompatibleWithExtension("jpg", JPEG_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("png", PNG_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("jpg", WINDOWS_EXE_HEADER), false);
+  assert.equal(isContentCompatibleWithExtension("png", PDF_HEADER), false);
+});
+
+test("견적서 두 칸(결재 PDF · 엑셀)도 앞머리 바이트 대조를 그대로 받는다", () => {
+  // 분류 허용목록은 "이 확장자를 이 분류에 쓸 수 있는가"만 본다. 이름만 .pdf/.xlsx 로
+  // 바꾼 파일을 막는 것은 여전히 내용 대조 쪽이다.
+  assert.equal(isContentCompatibleWithExtension("pdf", PDF_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("pdf", ZIP_HEADER), false);
+  assert.equal(isContentCompatibleWithExtension("xlsx", ZIP_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("xlsx", PDF_HEADER), false);
+  assert.equal(isContentCompatibleWithExtension("xls", OLE2_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("xlsx", WINDOWS_EXE_HEADER), false);
+  assert.equal(isContentCompatibleWithExtension("pdf", WINDOWS_EXE_HEADER), false);
+  // 크기 상한은 다른 분류와 같은 20MB 다 — 분류마다 따로 두지 않는다.
+  assert.equal(MAX_ATTACHMENT_SIZE_BYTES, 20 * 1024 * 1024);
+});
+
+test("허용목록 밖 확장자는 내용이 무엇이든 통과하지 못한다", () => {
+  assert.equal(isContentCompatibleWithExtension("exe", TEXT_HEADER), false);
+  assert.equal(isContentCompatibleWithExtension("js", TEXT_HEADER), false);
+});
+
+test("빈 파일은 통과하지 못한다", () => {
+  assert.equal(isContentCompatibleWithExtension("txt", new Uint8Array(0)), false);
+  assert.equal(isContentCompatibleWithExtension("bin", new Uint8Array(0)), false);
+});
+
+test("펌웨어(bin/hex)는 서명을 요구하지 않는다 — 덤프는 정의상 임의의 바이트다", () => {
+  const arbitrary = new Uint8Array([0x12, 0x00, 0xff, 0x7e, 0x00]);
+  assert.equal(isContentCompatibleWithExtension("bin", arbitrary), true);
+  assert.equal(isContentCompatibleWithExtension("hex", arbitrary), true);
+});
+
+test("옛 Office 확장자는 OLE2와 ZIP 둘 다 받는다 — 이름만 바꾼 xlsx가 흔하다", () => {
+  assert.equal(isContentCompatibleWithExtension("xls", ZIP_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("doc", ZIP_HEADER), true);
+  assert.equal(isContentCompatibleWithExtension("xls", TEXT_HEADER), false);
+});
+
+test("대조에 쓰는 앞머리 크기는 PDF 규격(1024바이트)을 담는다", () => {
+  assert.equal(CONTENT_SNIFF_BYTES, 1024);
+});
