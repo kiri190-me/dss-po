@@ -35,8 +35,13 @@ import { QuoteFileBadges } from "./QuoteAttachmentParts";
  *     rowHref           줄을 눌러 여는 곳            ← 조각 3b-1 (아래, 채웠다)
  *     intakeHref        인수번호를 눌러 가는 곳       ← 조각 4·5
  *     renderFileBadges  줄의 파일 딱지               ← 조각 3c-2 (아래, 채웠다)
- *                                                     「엑셀 전용」 하나뿐 — 나머지
- *                                                     둘(결재 PDF · 엑셀 없음)은 3d
+ *                                                     딱지 셋이 다 붙는다(3d-0) —
+ *                                                     엑셀 전용 · 결재 PDF · 엑셀 없음.
+ *                                                     🔴 **줄을 통째로 넘긴다** — 세는
+ *                                                     값(hasSignedPdf · hasExcel)은
+ *                                                     목록 조회가 이미 싣고, 두 사이트가
+ *                                                     같은 attachments 표를 보므로
+ *                                                     A/S 에서 붙인 파일이 그대로 잡힌다
  *     renderRowActions  줄의 [받기]·[미리보기]        ← 조각 3c-2 (아래, 채웠다)
  *                                                     미리보기는 3f 에 더한다
  *

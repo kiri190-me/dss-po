@@ -280,7 +280,7 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     assert.equal(unavailable.split("title={reason}").length - 1, 2, "곁말이 한 곳에만 있다");
   });
 
-  test("🔴 조각 3c-2(눈 확인 뒤) — 왼쪽 칸의 파일 딱지는 **「엑셀 전용」 하나**다", () => {
+  test("🔴 조각 3d-0 — 왼쪽 칸의 파일 딱지는 **셋**이다(엑셀 전용 · 결재 PDF · 엑셀 없음)", () => {
     // 위 금지 목록에서 `renderFileBadges=` 를 뺀 자리를 메운다.
     const slots = flat(slotsSource);
     assert.ok(
@@ -292,15 +292,39 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
       slots.includes('import { QuoteFileBadges } from "./QuoteAttachmentParts"'),
       "딱지 조각을 A/S 와 같은 자리에서 가져오지 않는다"
     );
-    const badgeRule = flat(sliceBetween(filesSource, "export function quoteListFileBadges(", "\n}"));
-    assert.ok(badgeRule.includes('key: "EXCEL_ONLY"'), "엑셀 전용 딱지가 없다");
-    assert.ok(badgeRule.includes("if (!row.isExcelOnly) return [];"), "일반 견적서 줄에도 딱지가 붙는다");
+    // 🔴 끝 표지가 `"\n}\n"` 인 까닭 — 받는 줄이 여러 줄짜리 타입이라 **signature 의 닫는
+    //    괄호**(`}): QuoteListFileBadge[] {`)도 줄 첫머리의 `}` 다. `"\n}"` 로 자르면 몸통
+    //    전체가 잘려 나가고, 아래 단언들이 빈 글자를 보며 통과하지 못한다.
+    const badgeRule = flat(sliceBetween(filesSource, "export function quoteListFileBadges(", "\n}\n"));
 
-    // 🔴 **나머지 둘은 조각 3d 것이다** — 「결재 PDF」 · 「엑셀 없음」은 붙은 파일을
-    //    세어야 알 수 있다. 규칙이 그 둘을 아직 보지 않는지 **받는 값으로** 확인한다.
+    // 🔴 **딱지 셋이 각각 제 조건으로 붙는다**(조각 3d-0). 지키는 것은 「어느 줄에
+    //    무엇이 붙는가」다 — 여기가 흐려지면 사람이 같은 견적서를 다른 것으로 본다.
+    //     · 「엑셀 전용」  — `isExcelOnly` 인 줄
+    //     · 「결재 PDF」   — 붙어 있는 줄이면 **일반 견적서 줄에도** 붙는다
+    //     · 「엑셀 없음」  — 엑셀 전용인데 엑셀이 안 붙은 줄만
+    assert.ok(badgeRule.includes('key: "EXCEL_ONLY"'), "엑셀 전용 딱지가 없다");
+    assert.ok(badgeRule.includes('key: "SIGNED_PDF"'), "결재 PDF 딱지가 없다");
+    assert.ok(badgeRule.includes('key: "EXCEL_MISSING"'), "엑셀 없음 딱지가 없다");
+    assert.ok(badgeRule.includes("if (row.hasSignedPdf) {"), "결재 PDF 딱지가 붙은 파일을 보지 않는다");
     assert.ok(
-      flat(filesSource).includes("export function quoteListFileBadges(row: { isExcelOnly: boolean })"),
-      "딱지 규칙이 첨부를 세는 값(hasSignedPdf · hasExcel)을 받고 있다"
+      badgeRule.includes("if (row.isExcelOnly && !row.hasExcel) {"),
+      "「엑셀 없음」이 '엑셀 전용인데 엑셀이 없다' 말고 다른 조건으로 붙는다"
+    );
+    // 🔴 **일찍 돌아가는 줄이 없다** — `if (!row.isExcelOnly) return [];` 가 남아 있으면
+    //    일반 견적서 줄의 「결재 PDF」가 통째로 사라진다(실측 1줄).
+    assert.equal(
+      badgeRule.includes("if (!row.isExcelOnly) return [];"),
+      false,
+      "일반 견적서 줄에서 딱지를 모두 버리고 돌아간다 — 결재 PDF 가 안 붙는다"
+    );
+
+    // 🔴 **규칙이 첨부를 세는 값을 받는다.** 두 사이트가 같은 attachments 표를 보므로,
+    //    PO 에 붙이는 칸이 오기 전에도 A/S 에서 붙인 파일이 이 목록에 잡힌다.
+    assert.ok(
+      flat(filesSource).includes(
+        "export function quoteListFileBadges(row: { isExcelOnly: boolean; hasSignedPdf: boolean; hasExcel: boolean; })"
+      ),
+      "딱지 규칙이 첨부를 세는 값(hasSignedPdf · hasExcel)을 받지 않는다"
     );
 
     // 🔴 그리고 **첨부 조회를 들여오지 않는다** — 이 사이트에는 그 파일이 아예 없다(3d).
@@ -541,7 +565,9 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     //  · `readAllQuoteTemplateHeaders` : **조각 3f(미리보기)**. 저쪽에서 그 값을 쓰는
     //    곳은 미리보기 한 줄(`printHeaders`)뿐이고 이 사이트의 폼에는 그 프롭이 아예
     //    없다 — 읽으면 양식 다섯을 더 열고도 아무도 보지 않는다.
-    //  · `quote-workbook` · `quote-issue` : **조각 3c-2 이후**(받기 · 발행).
+    //  · `quote-workbook` : 2026-09-22(조각 3c-2)에 왔지만 **받기 통로**(api/quotes/[id]/
+    //    xlsx)의 것이다 — 새 견적서 화면이 워크북을 만들 일은 없다.
+    //  · `quote-issue` : **조각 3c-3**(발행). 아직 이 저장소에 없다.
     for (const notYet of ["readAllQuoteTemplateHeaders", "quote-workbook", "quote-issue"]) {
       assert.equal(imports.includes(notYet), false, `${notYet} — 아직 오지 않은 조각을 끌고 왔다`);
     }

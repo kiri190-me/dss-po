@@ -181,9 +181,12 @@ type QuoteAttachmentFlags = { hasSignedPdf: boolean; hasExcel: boolean };
  * 부품 줄(loadItemsByQuoteId)과 같은 까닭이다 — 장마다 한 번씩 물으면 목록 장수만큼
  * 왕복이 는다.
  *
- * 🔴 **첨부 화면은 아직 이 사이트에 없다**(조각 3d). 그래도 이 두 값을 읽는 것은,
- * 목록의 파일 딱지가 **그 조각이 오면 곧바로 붙을 자리**이고 값이 비면 그날 조회부터
- * 다시 고쳐야 하기 때문이다. 지금은 화면이 딱지 슬롯을 넘기지 않아 그려지지 않는다.
+ * 🔴 **파일을 붙이는 칸은 아직 이 사이트에 없다**(조각 3d-3 · 3d-4). 그래도 이 두 값은
+ * **비어 있지 않다** — 이 사이트와 A/S 는 **같은 `attachments` 표**를 보므로, A/S 에서
+ * 붙인 결재 PDF · 수기 엑셀이 여기 그대로 잡힌다. 목록의 파일 딱지(components/quotes/
+ * quote-attachment-files.ts 의 `quoteListFileBadges`)가 2026-09-23(조각 3d-0)부터 그
+ * 값으로 「결재 PDF」 · 「엑셀 없음」을 그린다 — 실측으로 13장 가운데 결재 PDF 1장 ·
+ * 엑셀 전용인데 엑셀 없음 5장. 아직 오지 않은 것은 **붙이는 칸**이지 **세는 값**이 아니다.
  *
  * 휴지통의 첨부는 세지 않는다(`is_deleted = false` — 부분 인덱스
  * attachments_quote_id_not_deleted_idx 를 타는 모양). 칸 교체로 밀려난 옛 파일은 휴지통에
