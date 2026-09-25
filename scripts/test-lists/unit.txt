@@ -276,3 +276,24 @@ src/lib/domain/attachment-path.test.ts
 #    시험들이 이미 실제 DB 로 돌고 있다. db.txt 에 아무것도 더하지 않았다.
 src/app/api/quotes/xlsx-download-source.test.ts
 src/lib/storage/local-fs-adapter.test.ts
+
+# ── 조각 3d-3a — 같은 출처 문지기(A/S 에서 옮겨 옴) ────────────────────────
+# 곧 올 붙이기 통로(조각 3d-3b)는 **쿠키로 인증하는 POST 라우트 핸들러**다.
+# 서버 액션은 Next 가 CSRF 를 스스로 막아 주지만 **라우트 핸들러는 막아 주지
+# 않는다** — 그것이 없으면 남의 사이트에 심어 둔 `<form>` 한 줄이 로그인한
+# 사람의 쿠키로 그 통로를 부를 수 있다. 그 문지기(auth/request-guards.ts 의
+# isTrustedOrigin · isHttpsRequest)를 미리 들여왔다.
+#
+# 🔴 **아직 아무도 부르지 않는다.** 이 조각은 함수만 들여온다 — 부르는 자리는
+#    3d-3b 가 만든다(3d-2 가 가져온 storage/local-fs-adapter.ts 의 쓰는 쪽도
+#    지금 같은 상태다). 이 시험이 그 사이를 지켜 준다.
+#
+# 🔴 **구현도 시험도 A/S 에서 한 글자도 고치지 않고 왔다** — import 까지 그대로다
+#    (구현은 `next/server` 의 타입 하나, 시험은 `./request-guards` 상대경로).
+#    주석을 줄이지 않은 까닭은 그 안에 **실측 근거**가 있기 때문이다: `next dev` 가
+#    LAN 요청에서 `nextUrl.origin` 을 서버 제 바인드 주소로 답한 사례이고, 이
+#    사이트도 LAN 으로 접속하므로(src/lib/lan-address.ts) 그대로 쓸모 있다.
+#
+# 🔴 **DB 시험이 없다** — 두 파일 다 순수하다(요청 헤더만 읽는다. server-only 도
+#    drizzle 도 들여오지 않는다). db.txt 에 아무것도 더하지 않았다.
+src/lib/auth/request-guards.test.ts
