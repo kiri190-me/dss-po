@@ -1,0 +1,136 @@
+import "server-only";
+
+import { eq } from "drizzle-orm";
+
+import { attachments, quotes } from "@dss/core/schema";
+import { db } from "@/lib/db";
+import type { MalwareScanStatus } from "@/lib/domain/attachment-category";
+
+/**
+ * ============================================================================
+ * 🔴 조각 3d-3c 로 A/S 에서 **통째로** 가져온 파일이다 (2026-09-25)
+ * ============================================================================
+ * 원본은 A/S 관리 시스템의 **같은 이름 · 같은 경로** 파일
+ * (`RF_Service_System/src/lib/db/queries/attachment-download.ts`, 108줄)이고 함수는
+ * 하나뿐이라 **뺀 것이 없다.** 다른 것은 둘뿐이다:
+ *
+ *  ① **import 경로** — 이 사이트는 접속을 `@/lib/db` 에서 받고(저쪽은 `../client`)
+ *     스키마는 서브모듈 한 벌 `@dss/core/schema` 를 본다(저쪽은 제 저장소의
+ *     `../schema`). 두 사이트가 **같은 `dss_as` 표**를 보고, 칸을 고치는 일은 언제나
+ *     A/S 에서 한다(이웃 조회 queries/attachments.ts 와 같은 모양).
+ *  ② **이 머리말** — 아래 원본 머리말은 한 글자도 고치지 않았다.
+ *
+ * ── 🔴 이 사이트에서 이것을 부르는 자리 ─────────────────────────────────
+ * 내려받기 통로가 아니라 **지우기 · 되살리기 서버 액션**이다
+ * (server/actions/attachments.ts 의 resolveWriteActor). 그 액션이 **첨부의 주인을
+ * DB 에서 다시 읽어** 물을 권한을 고르는 데 쓴다 — 부르는 쪽이 넘긴 ID 로 권한을
+ * 고르면 그 값을 바꿔 보내는 것만으로 문턱이 바뀐다. 이름이 「download」인 것은
+ * A/S 에서 이 조회가 태어난 자리가 내려받기 라우트여서이고, 이름과 자리를 저쪽과
+ * 똑같이 두는 것이 이 저장소의 규칙이다(조각 4 가 두 벌을 글자로 대조한다).
+ *
+ * 🔴 이 사이트의 견적서 받기(3d-2)는 이 함수를 쓰지 않는다 — 그쪽은 견적서 id 로
+ * 목록을 읽는다(queries/attachments.ts 의 listLiveQuoteAttachments).
+ * ============================================================================
+ */
+
+/**
+ * ============================================================================
+ * 내려받기 한 건에 필요한 최소한 — 판정에 쓰이는 값만 읽는다
+ * ============================================================================
+ * `listAttachmentsForRepairCase`를 쓰지 않는다. 그 조회는
+ * `WHERE is_deleted = false`를 박아 두고 있어서 **휴지통에 있는 첨부를 아예
+ * 찾지 못한다.** 다운로드는 "없는 것"과 "휴지통에 있는 것"을 구분해야 한다 —
+ * 앞은 404이고 뒤는 "복원한 뒤 다시 시도해 주세요"다. 그 둘을 같은 404로
+ * 뭉개면 사용자는 파일이 사라진 줄 알고 다시 올린다.
+ *
+ * 그래서 여기서는 is_deleted를 **조건이 아니라 값으로** 읽어 판정 함수
+ * (attachment-download-policy.ts)에 넘긴다. 판정은 이 파일에서 하지 않는다.
+ *
+ * ── 업로더 이름을 조인하지 않는다 ────────────────────────────────────────
+ * 목록 조회는 화면에 이름을 보여야 해서 users를 조인하지만, 다운로드는 파일을
+ * 내보내는 것뿐이라 이름이 필요 없다. 감사 로그에 남기는 것은 **받아 가는
+ * 사람**이고 그 값은 세션에서 온다.
+ *
+ * ── 견적서 표 하나만 붙인다 (2026-09-15 Q2) ─────────────────────────────
+ * 넷째 주인(견적서)의 파일은 **견적서가 휴지통에 있으면** 내려받지 못한다(판정 파일의
+ * QUOTE_IN_TRASH). 그 사실은 첨부 행에 없고 견적서 행에 있으므로 quotes 를 왼쪽
+ * 조인해 is_deleted 를 **값으로** 읽는다(첨부의 is_deleted 와 같은 규율). 다른 주인의
+ * 표는 붙이지 않는다 — 그 주인들의 휴지통은 예전처럼 내려받기를 막지 않는다.
+ * ============================================================================
+ */
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type AttachmentForDownload = {
+  id: string;
+  /**
+   * 접수 건 주인. NULL 이면 이 첨부의 주인은 접수 건이 아니다 — 모델 첨부이거나,
+   * 접수 건이 영구 삭제되어 연결이 끊긴 첨부다.
+   */
+  repairCaseId: string | null;
+  /**
+   * 제품 모델 주인. 위 컬럼과 **동시에 채워지지 않는다**
+   * (attachments_owner_not_both CHECK). 둘 다 NULL 이면 주인이 아무도 없는
+   * 첨부이고, 그때는 물을 권한 자체가 없으므로 판정 함수가 DETACHED 로 막는다.
+   *
+   * 라우트가 **물을 권한을 고르는 근거**가 이 값이다 — 모델 첨부는
+   * productModels.view(보기) / productModels.files(쓰기)를 묻고, 접수 건 첨부는
+   * repairCases.files 를 묻는다. 그래서 조회에서 함께 읽지 않으면 안 된다.
+   */
+  productModelId: string | null;
+  /**
+   * 견적서 주인(2026-09-15 Q2). 앞의 두 칸과 **동시에 채워지지 않는다**
+   * (attachments_quote_owner_alone CHECK). 차 있으면 라우트는 quotes 를 묻는다 —
+   * 보기는 READ, 미리보기 붙이기·지우기·되살리기는 WRITE.
+   */
+  quoteId: string | null;
+  /**
+   * 주인인 견적서가 휴지통에 있는가(견적서 행의 is_deleted). 견적서 주인이 아니면
+   * false — 조인이 비어 NULL 이 오는 것을 false 로 접는다. 판정 함수가 QUOTE_IN_TRASH 로
+   * 막는 근거다(파일 헤더의 '견적서 표 하나만 붙인다').
+   */
+  quoteInTrash: boolean;
+  originalFileName: string;
+  /** 저장 루트 기준 상대 경로. 라우트가 resolveAttachmentAbsolutePath로 반드시 다시 검증한다. */
+  storedPath: string;
+  mimeType: string;
+  fileSize: number;
+  checksumSha256: string;
+  malwareScanStatus: MalwareScanStatus;
+  /** 미리보기가 있으면 그 상대 경로. 없으면 null이고 원본으로 보여 준다. */
+  previewPath: string | null;
+  /** 조건이 아니라 값으로 읽는다 — 위 주석 참조. */
+  isDeleted: boolean;
+};
+
+export async function getAttachmentForDownload(
+  attachmentId: string
+): Promise<AttachmentForDownload | null> {
+  if (!UUID_PATTERN.test(attachmentId)) return null;
+
+  const [row] = await db
+    .select({
+      id: attachments.id,
+      repairCaseId: attachments.repairCaseId,
+      productModelId: attachments.productModelId,
+      quoteId: attachments.quoteId,
+      // 견적서 주인이 아니면 조인이 비어 NULL 이다 — 아래에서 false 로 접는다.
+      quoteIsDeleted: quotes.isDeleted,
+      originalFileName: attachments.originalFileName,
+      storedPath: attachments.storedPath,
+      mimeType: attachments.mimeType,
+      fileSize: attachments.fileSize,
+      checksumSha256: attachments.checksumSha256,
+      malwareScanStatus: attachments.malwareScanStatus,
+      previewPath: attachments.previewPath,
+      isDeleted: attachments.isDeleted,
+    })
+    .from(attachments)
+    .leftJoin(quotes, eq(quotes.id, attachments.quoteId))
+    .where(eq(attachments.id, attachmentId))
+    .limit(1);
+
+  if (!row) return null;
+  const { quoteIsDeleted, ...rest } = row;
+  return { ...rest, quoteInTrash: quoteIsDeleted === true };
+}
