@@ -43,9 +43,33 @@ import { useEffect, useId, useRef } from "react";
  * ============================================================================
  */
 
-/** 확인 창들과 같은 상자 — 이 저장소의 팝업은 폭도 모서리도 덮개도 이 값이다. */
+/**
+ * 확인 창들과 같은 상자 — 이 저장소의 팝업은 폭도 모서리도 덮개도 이 값이다.
+ *
+ * ── 🔴 `whitespace-normal` 은 장식이 아니다 — 지우면 글이 한 줄로 흘러 넘친다 ──
+ * 2026-09-25 실측(Chrome). 견적서 목록의 「엑셀 없음」 줄에서 [견적서 받기]를 눌러
+ * 이 팝업을 띄웠더니, 상자 폭은 448px(= `max-w-md`, 제값)인데 **안쪽 내용 폭이
+ * 1070px** 이었다. 문장 `<p>` 의 `white-space` 계산값은 **`nowrap`**, 높이는
+ * **20px — 한 줄**. `<dialog>` 의 브라우저 기본 `overflow: auto` 가 넘친 만큼
+ * 가로 스크롤바를 만든다.
+ *
+ * 까닭은 팝업이 아니라 **팝업이 그려지는 자리**다. 이 조각은 견적서 목록의 표 칸
+ * 안에서 그려진다 — `vendor/dss-core/src/ui/quotes/QuoteListScreen.tsx` 의
+ * `<td className="whitespace-nowrap px-3 py-2">` → `renderRowActions` 슬롯 →
+ * quotes/QuoteListSlots.tsx 의 `ExcelMissingDownload`. `showModal()` 이 창을
+ * 최상위 층에 올려도 **`white-space` 는 상속되는 속성이라 DOM 부모의 값을 그대로
+ * 물려받는다.** 빈 페이지에서 같은 조건을 만들어 갈라 보았다:
+ *   · `whitespace-nowrap` 부모 안 — 상자 448 · 내용 1070 · 글 한 줄(20px) · 넘침
+ *   · 평범한 부모 안 ———————————— 상자 448 · 내용 446 · 글 세 줄(60px) · 넘침 없음
+ *
+ * 🔴 **표 쪽을 고쳐서 풀지 않는다.** 그 칸의 `whitespace-nowrap` 은 표가 세로로
+ * 들쭉날쭉해지지 않게 하는 옳은 설정이고, `vendor/dss-core` 는 다섯 사이트가 나눠
+ * 쓰는 별도 저장소(서브모듈)다. 대신 **팝업이 어디에 놓이든 제 모양을 지키도록**
+ * 팝업 쪽에서 끊는다. 이 조각은 애초에 A/S 로 파일째 옮길 것을 전제로 만들었으니
+ * (위 머리 주석), 옮겨 간 자리의 부모가 무엇이든 여기서 값을 되돌려 놓는 편이 맞다.
+ */
 const NOTICE_POPUP_CLASS =
-  "w-full max-w-md rounded-lg border border-zinc-200 bg-white p-4 text-zinc-900 backdrop:bg-black/40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50";
+  "w-full max-w-md whitespace-normal rounded-lg border border-zinc-200 bg-white p-4 text-zinc-900 backdrop:bg-black/40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50";
 
 /** 닫는 단추 — 확인 창의 주 단추와 같은 값(quotes/QuoteAttachmentParts.tsx). */
 const NOTICE_POPUP_CONFIRM_CLASS =
