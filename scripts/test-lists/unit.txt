@@ -297,3 +297,34 @@ src/lib/storage/local-fs-adapter.test.ts
 # 🔴 **DB 시험이 없다** — 두 파일 다 순수하다(요청 헤더만 읽는다. server-only 도
 #    drizzle 도 들여오지 않는다). db.txt 에 아무것도 더하지 않았다.
 src/lib/auth/request-guards.test.ts
+
+# ── 조각 3d-3a2 — 받침돌: 용량 표시 · 받기 결과 헤더(A/S 에서 옮겨 옴) ─────
+# 곧 올 화면 조각(3d-3d)이 쓸 순수 도메인 둘을 미리 들여왔다. 바로 위 3d-3a 와
+# 같은 모양의 조각이다 — **함수만 들여오고 부르는 자리는 만들지 않는다.**
+#   domain/image-shrink.ts        — 3d-3d 가 `formatBytes` 를 쓴다
+#   domain/quote-issue-result.ts  — 3d-3d 가 `parseQuoteIssueArchiveResult` 를 쓴다
+#
+# 🔴 **아직 아무도 부르지 않는다.** 이 둘을 들여오는 줄이 이 저장소에 아직 없다 —
+#    3d-3d 가 첫 사용자가 된다(3d-3a 의 auth/request-guards.ts · 3d-2 가 가져온
+#    storage/local-fs-adapter.ts 의 쓰는 쪽도 지금 같은 상태다). 이 두 시험이 그
+#    사이를 지켜 준다.
+#
+# 🔴 **구현도 시험도 A/S 에서 한 글자도 고치지 않고 왔다** — import 까지 그대로다.
+#    구현 둘은 아무것도 들여오지 않고(import 0), 시험 둘은 `node:test` ·
+#    `node:assert/strict` 와 곁의 원본(`./image-shrink` · `./quote-issue-result`)
+#    뿐이라 고칠 경로가 없었다.
+#
+# 🔴 `image-shrink.ts` 는 이름과 달리 **브라우저 API 를 쓰지 않는다.** canvas 로
+#    실제로 줄이는 부분은 A/S 의 components/repair-cases/files/shrink-image.ts 에
+#    따로 있고(이 조각에 오지 않았다), 이 파일에는 **목표 용량을 정하는 순수 계산**만
+#    있다 — 그 계산을 따로 떼어 둔 까닭이 파일 머리말에 적혀 있다. 그래서
+#    `node --test` 에서 그대로 돈다(A/S 도 이 시험을 단위 목록에 두고 있다).
+#
+# 🔴 **쓰지 않는 함수도 지우지 않았다.** 3d-3d 가 당장 쓰는 것은 위 둘뿐이지만
+#    파일을 통째로 가져왔다 — A/S 와 같은 이름 · 같은 자리여야 저쪽이 고친 것을
+#    그대로 따라올 수 있다(3d-2 의 local-fs-adapter.ts 와 같은 판단).
+#
+# 🔴 **DB 시험이 없다** — 두 파일 다 순수하다(server-only 도 drizzle 도 node:path 도
+#    들여오지 않는다). db.txt 에 아무것도 더하지 않았다.
+src/lib/domain/image-shrink.test.ts
+src/lib/domain/quote-issue-result.test.ts
