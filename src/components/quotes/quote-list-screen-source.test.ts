@@ -310,16 +310,45 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     );
   });
 
-  test("🔴 조각 3c-2 · 3d-2 — 줄마다 [견적서 받기] 링크가 선다. 엑셀이 붙은 엑셀 전용 줄도 같은 링크다", () => {
+  test("🔴 조각 3c-2 · 3d-2 · PO 3j — 줄마다 [미리보기 · PDF] · [견적서 받기] 가 선다. 엑셀이 붙은 엑셀 전용 줄도 같은 링크다", () => {
     // 위 시험에서 `renderRowActions=` 를 뺀 자리를 메운다 — 금지 목록으로는 더 이상
     // 잴 수 없으니 **무엇이 걸렸는지를 이름으로 못 박는다**(3c-1 이 new/page.tsx 에서
     // 한 방식과 같다).
     const slots = flat(slotsSource);
 
     // 🔴 함수 슬롯이라 **QuoteListSlots 에서** 건다 — page.tsx 에서 넘기면 화면이 죽는다.
+    //
+    // ⚠️ 🔴 **이 단언의 글자가 2026-09-28(조각 PO 3j)에 늘었다.** 그때까지는
+    //    `renderRowActions={(row) => <QuoteDownloadLink row={row} />}` 한 줄이었다 —
+    //    사용자가 두 화면을 나란히 놓고 「A/S 처럼」이라고 지시해 [미리보기 · PDF]가
+    //    **받기 앞에** 섰고, 조각 둘이 나란히 서야 해서 슬롯이 조각(fragment)을 돌려준다.
+    //    🔴 **단언을 약하게 하지 않았다** — 아래 넷이 함께 잰다: 모양 · 미리보기가
+    //    걸렸다는 것 · **받기가 여전히 걸려 있다는 것** · 그 차례. 하나를 더하면서
+    //    다른 하나가 조용히 빠지는 것이 이 시험이 막는 일이다.
     assert.ok(
-      slots.includes("renderRowActions={(row) => <QuoteDownloadLink row={row} />}"),
-      "받기 슬롯이 채워지지 않았거나 모양이 다르다"
+      slots.includes(
+        "renderRowActions={(row) => ( <> <QuotePreviewLink row={row} /> <QuoteDownloadLink row={row} /> </> )}"
+      ),
+      "줄 단추 슬롯이 채워지지 않았거나 모양이 다르다"
+    );
+    const rowActions = sliceBetween(
+      codeOf(slotsSource),
+      "renderRowActions={(row) =>",
+      "renderFileBadges="
+    );
+    assert.ok(
+      rowActions.includes("<QuotePreviewLink row={row} />"),
+      "미리보기가 줄 단추 슬롯에서 빠졌다"
+    );
+    assert.ok(
+      rowActions.includes("<QuoteDownloadLink row={row} />"),
+      "받기가 줄 단추 슬롯에서 빠졌다 — 미리보기를 더하면서 받기가 사라졌다"
+    );
+    // 🔴 **차례도 잰다.** 사용자가 화면을 보고 지시한 것이라 차례가 바뀌면 지시와 다른
+    //    것이 된다. [삭제]는 화면(서브모듈)이 이 슬롯 **다음 줄**에 붙인다.
+    assert.ok(
+      rowActions.indexOf("<QuotePreviewLink") < rowActions.indexOf("<QuoteDownloadLink"),
+      "차례가 뒤집혔다 — [미리보기 · PDF] → [견적서 받기] 여야 한다"
     );
 
     // 🔴 그 주소에 실제로 통로가 있어야 한다 — 없는 곳으로 보내는 링크는 3a 가 막던 그것이다.
@@ -376,6 +405,84 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     assert.ok(
       link.includes("<UnavailableDownload reason={QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE} />"),
       "양식 없는 종류 갈래가 다른 모양이다"
+    );
+  });
+
+  /**
+   * ==========================================================================
+   * 🔴 조각 PO 3j — [미리보기 · PDF] 는 **이 사이트의 주소**로 간다
+   * ==========================================================================
+   * 이 단추는 A/S 의 `PreviewLink`(저쪽 QuoteListScreen.tsx — 2026-09-28 실측)를 그대로
+   * 옮긴 것이고 **다른 것은 `href` 하나뿐**이다. 그래서 여기서 재는 것은 둘이다.
+   *
+   *  ㉠ **같아 보이는가** — 글자(`미리보기 · PDF`)와 상자 모양(className)이 저쪽과 한
+   *     글자다. 🔴 `dark:` 스타일도 그대로다. 이 사이트에 다크 모드가 없어 안 켜지지만,
+   *     지우면 두 사이트가 같아 보이지 않는다(2026-09-28 사용자 결정).
+   *  ㉡ 🔴 **수리 건을 싣지 않는가** — 저쪽은 주소를 `quotePrintHref({ quoteId,
+   *     repairCaseId })` 로 짓는다. 그 함수를 베껴 오면 「돌아가기는 시스템을 건너가지
+   *     않는다」(2026-09-28 원칙)가 깨지고, 실린 수리 건은 이 사이트에 없는 화면으로
+   *     사람을 보낸다. **이 단언이 그 자물쇠다** — 이웃한 「수리 건 몫(Ⓐ)의 이름이 이
+   *     저장소 어디에도 없다」와 같은 것을 지키되, 여기서는 **이 링크 한 조각**만 본다.
+   * ==========================================================================
+   */
+  test("🔴 조각 PO 3j — 미리보기 주소는 `/quotes/{id}/print` 한 줄이다. 수리 건을 싣지 않는다", () => {
+    const slots = flat(slotsSource);
+    const previewSource = sliceBetween(slotsSource, "function QuotePreviewLink(", "\n}\n");
+    const preview = flat(previewSource);
+    // 🔴 **주석을 뺀 코드만** 보는 자리가 아래 ㉡ 이다 — 이 조각의 머리말이 저쪽의 함수
+    //    이름(`quotePrintHref`)을 **안 쓰기로 한 것**으로 그대로 적어 두었다.
+    const previewCode = codeOf(previewSource);
+
+    // ㉠ 같아 보이는가 — 주소만 다르고 나머지는 저쪽과 한 글자다.
+    assert.ok(
+      preview.includes("href={`/quotes/${row.id}/print`}"),
+      "미리보기 주소가 이 사이트의 인쇄 화면(`/quotes/{id}/print`)이 아니다"
+    );
+    assert.ok(preview.includes("미리보기 · PDF"), "미리보기 단추의 글자가 A/S 와 다르다");
+    assert.ok(
+      preview.includes(
+        'className="inline-block rounded-md border border-zinc-300 px-2 py-1 text-xs ' +
+          'text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 ' +
+          'dark:hover:bg-zinc-800"'
+      ),
+      "미리보기 단추의 상자 모양이 A/S 와 다르다 — dark: 스타일도 그대로 둔다"
+    );
+    // 같은 사이트 안 주소다 — 저쪽과 같이 next/link 로 그린다.
+    assert.ok(preview.includes("<Link"), "미리보기를 next/link 로 그리지 않는다");
+    assert.ok(slots.includes('import Link from "next/link";'), "next/link 를 들여오지 않는다");
+
+    // ㉡ 🔴 **수리 건을 싣지 않는다.** 이것이 저쪽에서 안 베껴 온 몫의 자물쇠다.
+    for (const forbidden of ["quotePrintHref", "repairCaseId"]) {
+      assert.equal(
+        previewCode.includes(forbidden),
+        false,
+        `미리보기 주소가 ${forbidden} 로 지어진다 — 수리 건을 싣는 주소는 이 사이트에 없는 화면으로 간다`
+      );
+    }
+
+    // 🔴 앱 양식이 없는 종류에는 **아예 안 선다**(null). 이웃한 받기는 같은 조건에서
+    //    꺼진 단추와 까닭을 그리는데 **그것을 흉내 내지 않는다** — 저쪽이 그렇게 갈라
+    //    두었다(받기는 「왜 못 받는지」를 말해야 하는 자리, 미리보기는 조용히 빠지는 자리).
+    assert.ok(
+      previewCode.includes("if (!canRenderQuoteDocument(row)) return null;"),
+      "양식 없는 종류에서 미리보기가 빠지지 않는다"
+    );
+    assert.equal(
+      previewCode.includes("disabled"),
+      false,
+      "미리보기가 꺼진 단추를 그린다 — 받기와 갈라 둔 자리다"
+    );
+    assert.equal(
+      previewCode.includes("UnavailableDownload"),
+      false,
+      "미리보기가 받기의 꺼진 단추 조각을 쓴다 — 저쪽은 그 둘을 갈라 두었다"
+    );
+
+    // 🔴 그 주소에 실제로 화면이 있어야 한다 — 없는 곳으로 보내는 링크는 3a 가 막던 그것이다.
+    assert.equal(
+      existsSync(fileURLToPath(new URL("src/app/(app)/quotes/[id]/print/page.tsx", repoUrl))),
+      true,
+      "미리보기 링크가 가리키는 화면이 없다"
     );
   });
 
@@ -1001,6 +1108,12 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
         "returnHrefForNewQuote",
         "trustedLinkedRepairCaseId",
         "returnHrefForEditQuote",
+        // 🔴 2026-09-28(**조각 PO 3j**)에 늘었다. 목록에 [미리보기 · PDF] 를 세우면서
+        //    저쪽의 `PreviewLink` 를 옮겼는데, 그 링크가 주소를 짓는 함수가 이것이다 —
+        //    **수리 건을 싣는다.** 옮기면서 `href` 만 이 사이트의 것으로 갈았고, 그
+        //    이름이 언젠가 따라 들어오지 않도록 여기에 못 박는다(그 조각 자체를 잰
+        //    단언은 위 「미리보기 주소는 `/quotes/{id}/print` 한 줄이다」).
+        "quotePrintHref",
         "returnHrefForQuotePrint",
         "repairCaseDetailHrefs",
       ]) {

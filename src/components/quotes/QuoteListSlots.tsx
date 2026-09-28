@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ComponentProps } from "react";
+import Link from "next/link";
 
 import QuoteListScreen from "@dss/core/ui/quotes/QuoteListScreen";
 import type { QuoteListItem } from "@dss/core/ui/quotes/quote-list-rows";
@@ -56,6 +57,12 @@ import { QUOTE_EXCEL_MISSING_NOTICE } from "./quote-attachment-files";
  *                                                     (2026-09-28) — 까닭 둘이 아래
  *                                                     `renderRowActions` 자리에 있다.
  *                                                     화면은 지금 [받기] 하나 그대로다
+ *                                                     ⚠️ 🔴 **조각 PO 3j 가 더했다**
+ *                                                     (2026-09-28 · 사용자 지시).
+ *                                                     위 두 줄은 **그때의 기록**이다 —
+ *                                                     줄마다 [미리보기 · PDF]가 서고,
+ *                                                     차례는 미리보기 → 받기다
+ *                                                     (삭제는 화면이 그 뒤에 붙인다)
  *
  * 🔴 **남은 하나(`intakeHref`)도 `page.tsx` 가 아니라 여기에 건다.** 저기서 넘기면
  * 화면이 똑같이 죽는다. 남은 셋(`newQuoteControl` · `notice` 는 ReactNode,
@@ -261,6 +268,44 @@ function QuoteDownloadLink({ row }: { row: QuoteListItem }) {
 
 /**
  * ============================================================================
+ * 🔴 줄마다의 [미리보기 · PDF] — **링크 한 줄** (조각 PO 3j)
+ * ============================================================================
+ * A/S 의 같은 자리(`QuoteListScreen.tsx` 의 `PreviewLink` — 2026-09-28 실측)를 그대로
+ * 옮겼다. 🔴 **다른 것은 `href` 하나뿐**이다 — 글자도 상자 모양(className)도 한 글자까지
+ * 같다. 두 화면을 나란히 놓고 보는 사람에게 같아 보여야 한다는 것이 사용자 지시였다.
+ *
+ * 🔴 **주소는 `/quotes/{row.id}/print` 한 줄이다.** 저쪽은 `quotePrintHref({ quoteId,
+ * repairCaseId })` 로 짓는데 그것은 **수리 건을 싣는 함수**이고, 이 사이트에는 그 몫이
+ * 없다(조각 3e-3 이 quote-new-link.ts 의 Ⓐ 를 일부러 뺐다). 베껴 오면 「돌아가기는
+ * 시스템을 건너가지 않는다」(2026-09-28 원칙)가 깨지고, 실린 수리 건은 이 사이트에 아예
+ * 없는 화면으로 사람을 보낸다. 그래서 미리보기의 돌아가기는 **언제나 그 견적서**다
+ * (`quotes/[id]/print/page.tsx` 의 `backHref` — 그 파일 머리말 ③).
+ *
+ * 🔴 **`dark:` 스타일을 지우지 않는다.** 이 사이트에 다크 모드가 없어 아무것도 안 켜지지만,
+ * 지우면 A/S 와 같은 모양이 깨진다(2026-09-28 사용자 결정).
+ *
+ * 🔴 **앱 양식이 없는 종류에는 아예 안 선다**(`null`). 이웃한 `QuoteDownloadLink` 는 같은
+ * 조건에서 **꺼진 단추와 까닭**을 그리는데 **그것을 흉내 내지 않는다** — 받기는 「왜 못
+ * 받는지」를 말해야 하는 자리이고(사람이 기다리는 파일이 있다), 미리보기는 그 옆에 조용히
+ * 빠지면 되는 자리다. 저쪽이 그렇게 갈라 두었고, 이쪽도 같게 둔다. 판정은 두 자리가 **같은
+ * 함수** 하나를 본다(domain/quote-document-support.ts) — 미리보기 화면도 같은 함수로
+ * 거절하므로 화면과 서버가 한 답이다.
+ * ============================================================================
+ */
+function QuotePreviewLink({ row }: { row: QuoteListItem }) {
+  if (!canRenderQuoteDocument(row)) return null;
+  return (
+    <Link
+      href={`/quotes/${row.id}/print`}
+      className="inline-block rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+    >
+      미리보기 · PDF
+    </Link>
+  );
+}
+
+/**
+ * ============================================================================
  * 🔴 목록 머리의 [새 견적서] — 누르면 **팝업**이 뜬다 (조각 3e-3)
  * ============================================================================
  * 2026-09-22 에는 여기가 `/quotes/new` 로 곧바로 가는 링크 하나였다. 팝업을 미룬 까닭은
@@ -384,8 +429,29 @@ export default function QuoteListSlots({ asAppBaseUrl, ...props }: QuoteListSlot
        *         지시서 범위 밖이다(그 지시서가 시킨 것은 편집 폼의 단추와 인쇄 화면이다).
        *    🔴 **세우려면 주소는 `/quotes/{row.id}/print` 한 줄이면 된다** — 그 화면이
        *    이제 있고, 돌아가기도 그 견적서로 돌아온다. **사용자 판단을 기다린다.**
+       *
+       * ── 🔴 **세웠다** (2026-09-28 · 조각 PO 3j — 사용자 지시) ─────────────────
+       * 위 문단은 **그때의 기록이라 그대로 둔다.** 그 판단이 나왔다 — 사용자가 두 화면을
+       * 나란히 놓고 「A/S 처럼 만들어 달라」고 지시했고, 적혀 있던 그대로 세웠다.
+       *  · 🔴 **까닭 ① 은 주소로 풀렸다.** 이 사이트의 링크는 `/quotes/{row.id}/print`
+       *    한 줄이고 **수리 건을 싣지 않는다.** 그래서 「돌아가기는 시스템을 건너가지
+       *    않는다」가 그대로 지켜진다 — 미리보기의 돌아가기는 언제나 그 견적서다.
+       *    저쪽의 `quotePrintHref` 는 **들여오지 않았다**(곁의 시험이 못 박는다).
+       *  · 까닭 ② 는 범위 이야기였다 — 3j 의 지시서가 바로 그 범위다.
+       *  · **발행 단추(3c-3)** 는 그대로 없다. 위 갈래에 적은 까닭 그대로다.
+       *
+       * 차례는 **[미리보기 · PDF] → [견적서 받기]** 이고, [삭제]는 화면이 그 뒤에 붙인다.
+       * 🔴 조각 둘이 나란히 서야 해서 슬롯이 **조각(fragment)** 을 돌려준다. 화면은 이 한
+       * 자리를 **표와 카드 두 곳에 같이 건다**(서브모듈 QuoteListScreen.tsx 의 `QuoteTable`
+       * ·`QuoteCardList` — 둘 다 `{renderRowActions?.(row)}` 다음 줄이 [삭제]다). 그래서
+       * **서브모듈은 한 글자도 손대지 않았다.**
        */
-      renderRowActions={(row) => <QuoteDownloadLink row={row} />}
+      renderRowActions={(row) => (
+        <>
+          <QuotePreviewLink row={row} />
+          <QuoteDownloadLink row={row} />
+        </>
+      )}
       /**
        * 🔴 조각 3c-2(눈 확인 뒤) · 3d-0 — **왼쪽 「견적서」 칸의 파일 딱지.**
        *
