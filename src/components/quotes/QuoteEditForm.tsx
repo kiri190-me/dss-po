@@ -73,12 +73,14 @@ import type {
    `"0"` 은 "무상 부품"이라는 실제 값이다. 참고 목록 둘이 그 구분을 그대로 보인다. */
 import { isPriceUnset, toPriceFieldValue } from "@dss/core/ui/inventory/part-price-field";
 import { quoteTemplateKey } from "@/lib/domain/quote-template-variant";
+import type { QuoteAttachmentSlots } from "@/lib/db/queries/attachments";
 import type { QuoteEditData, QuoteIntakeLookup } from "@/lib/db/queries/quotes";
 import {
   createQuoteAction,
   lookupIntakeForQuoteAction,
   updateQuoteAction,
 } from "@/lib/server/actions/quotes";
+import QuoteAttachmentsSection, { useQuoteAttachments } from "@/components/quotes/QuoteAttachmentsSection";
 import {
   ExcelOnlyClearLinesDialog,
   ExcelOnlySwitch,
@@ -102,10 +104,18 @@ import {
  * 자리들을 **슬롯째 비웠다**(주석은 남긴다 — 그 조각이 올 때 여기를 채운다):
  *
  *  ① **첨부 구역**(`QuoteAttachmentsSection` · `useQuoteAttachments` ·
- *     `attachmentSlots` 프롭) → **조각 3d**. 곁딸린 「수기 견적서 엑셀로 칸 채우기」
- *     (quote-excel-parse · quote-excel-autofill · new-quote-excel-handoff)도 함께
- *     비웠다 — 그 길의 입구가 **첨부 칸에 파일을 고르는 순간**(onExcelPicked)
- *     하나뿐이라, 첨부가 없으면 부를 수 있는 사람이 없다.
+ *     `attachmentSlots` 프롭) → 🔴 **조각 3d-4 에서 돌아왔다**(2026-09-28).
+ *     상단 정보 바로 아래에 「견적서 파일」 구역이 선다 — 🔴 **`attachmentSlots` 가
+ *     온 경우(= 견적서 수정 화면)에만**이다. 새 견적서 화면에는 아직 서지 않는다:
+ *     「만든 직후 올리기」(아래 handleSubmit 의 그 항목)가 없어 칸만 세우면 고른
+ *     파일이 [저장] 때 말없이 사라진다.
+ *     🔴 곁딸린 「수기 견적서 엑셀로 칸 채우기」(quote-excel-parse ·
+ *     quote-excel-autofill · new-quote-excel-handoff)는 **여전히 비어 있다** — 그
+ *     길의 입구가 **첨부 칸에 파일을 고르는 순간**(훅의 onExcelPicked) 하나뿐인데,
+ *     3d-4 는 그 콜백을 잇지 않았다(그 묶음의 파일들이 아직 이 사이트에 없다 —
+ *     QuoteAttachmentsSection.tsx 머리말의 「안 가져온 것 넷」). 아래 A/S 머리말의
+ *     「수기 견적서 엑셀로 칸 채우기」 · 「[새 견적서] 팝업이 건네준 엑셀」 두 절은
+ *     **그래서 아직 저쪽 이야기다.**
  *  ② **[견적서 받기] · [폴더 열기] 머리 단추와 그 결과 줄** → **조각 3c**.
  *     그 둘과 함께 「저장하지 않은 변경이 있는가」(savedFieldsSnapshot)도 비웠다 —
  *     그 값은 발행 통로를 부를지 가르는 데에만 쓰였다.
@@ -537,6 +547,7 @@ export default function QuoteEditForm({
   cableMaxLines,
   workScopeDefaults,
   returnHref = null,
+  attachmentSlots = null,
 }: {
   /** 수정이면 기존 값, 새로 만들기면 null. */
   quote: QuoteEditData | null;
@@ -626,10 +637,22 @@ export default function QuoteEditForm({
    * 것은 그때 폼을 다시 열지 않기 위해서다.
    */
   returnHref?: string | null;
-  /*
-   * 🔴 **조각 3d 가 여기에 `attachmentSlots` 를 더한다** — 결재 PDF · 수기 엑셀 두
-   * 칸에 지금 붙어 있는 파일(A/S queries/attachments.ts 의 listQuoteAttachmentSlots).
+  /**
+   * 결재 PDF · 수기 엑셀 두 칸에 지금 붙어 있는 파일(queries/attachments.ts 의
+   * `listQuoteAttachmentSlots`). 🔴 **조각 3d-4 에 왔다**(2026-09-28).
+   *
+   * 🔴 **이 값이 곧 「첨부 구역을 그릴 것인가」다.** 넘기는 곳은 견적서 **수정
+   * 화면**(`app/(app)/quotes/[id]/page.tsx`) 하나이고, 새 견적서 화면은 넘기지
+   * 않아(null) 그 화면에는 구역이 서지 않는다 — 새 견적서에서 파일을 고르게 하려면
+   * handleSubmit 이 「만든 직후 올리기」까지 해야 하고, 그것 없이 칸만 세우면 고른
+   * 파일이 [저장] 때 말없이 사라진다(QuoteAttachmentsSection.tsx 머리말의 「배선이
+   * 어디까지 왔나」).
+   *
+   * 🔴 타입만 들여온다(`import type`) — 그 조회 파일의 첫 줄은 `import "server-only"`
+   * 이고, 타입 전용 import 는 컴파일할 때 지워져 그 사슬이 브라우저 묶음에 실리지
+   * 않는다(quote-attachment-files.ts 가 같은 규율을 지킨다).
    */
+  attachmentSlots?: QuoteAttachmentSlots | null;
 }) {
   const router = useRouter();
 
@@ -898,21 +921,27 @@ export default function QuoteEditForm({
   const [clearLinesAsk, setClearLinesAsk] = useState<QuoteLineCounts | null>(null);
   /*
    * 🔴 **뒤 조각들이 여기에 상태 여섯을 되돌려 놓는다**:
-   *  · 3d — `createdQuote` · `attachmentNotice`. 새 견적서를 만든 **직후** 들고
-   *    있던 파일을 올리는 자리다. 🔴 그때 `savedQuote` 가 다시
+   *  · **새 견적서의 첨부** — `createdQuote` · `attachmentNotice`. 새 견적서를 만든
+   *    **직후** 들고 있던 파일을 올리는 자리다. 🔴 그때 `savedQuote` 가 다시
    *    `quote ? {…} : createdQuote` 가 되어야 한다 — 올리다 실패해 이 화면에
    *    머물면 **다음 [저장]은 고치기**여야 하고, 아니면 같은 견적서가 두 장 생긴다.
+   *    🔴 **조각 3d-4 는 이 둘을 되돌려 놓지 않았다** — 그 조각이 세운 것은 견적서
+   *    **수정 화면**의 첨부 구역이고(그 화면에는 id 가 이미 있어 곧바로 올라간다),
+   *    새 견적서 화면은 그대로다. 올리는 길(uploadQueuedAfterCreate)은 훅에 와 있다.
    *  · 3c-3 — `issueNotice`([견적서 받기]의 결과 줄) · `folderOpenOutcome`([폴더 열기]).
    *    🔴 **조각 3c-2 는 이 둘을 되돌려 놓지 않았다** — 그 조각이 만든 것은 받기
    *    통로와 **목록의 받기 링크**뿐이고, 이 화면의 단추는 발행(공유폴더 · 첨부 칸)과
    *    한 벌이라 함께 미뤘다(아래 머리 단추 자리의 주석).
-   *  · 3d — `excelAutofill` · `excelReader` · `handoffSheetIndex`(수기 엑셀로 칸 채우기).
+   *  · **수기 엑셀로 칸 채우기** — `excelAutofill` · `excelReader` ·
+   *    `handoffSheetIndex`. 🔴 3d-4 도 이것을 잇지 않았다(훅의 `onExcelPicked` 가
+   *    입구인데, 그 묶음의 파일들이 이 사이트에 아직 없다).
    */
 
   /**
    * 저장된 견적서 — 수정 화면의 그 장. 🔴 새 견적서(quote === null)에서는 null 이고,
-   * 저장에 성공하면 곧바로 목록으로 떠난다(아래 handleSubmit) — 파일을 올릴 것이
-   * 없으므로 이 화면에 머무는 길이 없다. 조각 3d 가 그 길을 만든다(바로 위 항목).
+   * 저장에 성공하면 곧바로 목록으로 떠난다(아래 handleSubmit) — 🔴 **새 견적서 화면에는
+   * 첨부 칸이 서지 않으므로**(attachmentSlots 프롭 항목) 올릴 파일이 없고, 이 화면에
+   * 머무는 길도 없다. 그 길은 새 견적서의 첨부를 잇는 날 만든다(바로 위 항목).
    */
   const savedQuote = quote ? { id: quote.id, version: quote.version } : null;
 
@@ -945,13 +974,23 @@ export default function QuoteEditForm({
    * 말고 그 함수를 부를 것** — 받기 통로 둘 · 미리보기 화면 · 목록이 같은 답을 내야
    * 한다(그 파일 머리말).
    *
-   * 🔴 **조각 3d 가 여기에 `attachments`(useQuoteAttachments)를 되돌려 놓는다** —
-   * 결재 PDF · 수기 엑셀 두 칸의 상태다. 그때 **구역 안이 아니라 폼이 들고 있어야
-   * 한다**: 미리보기(3f)는 폼을 통째로 갈아 그리므로, 구역 안에 두면 미리보기를 여는
-   * 순간 골라 둔 파일이 사라진다. 그 훅의 `onExcelPicked` 가 「수기 엑셀로 칸 채우기」
-   * (`excelFormValues` · `latestExcelFormValues` · `handleExcelPicked`)의 유일한
-   * 입구다 — 그래서 그 묶음도 3d 에서 함께 돌아온다.
+   * 🔴 **조각 3d-4 가 `attachments`(useQuoteAttachments)를 되돌려 놓았다** — 바로
+   * 아래다. 🔴 **구역 안이 아니라 폼이 들고 있는 것**이 요점이다: 미리보기(3f)는 폼을
+   * 통째로 갈아 그리므로, 구역 안에 두면 미리보기를 여는 순간 골라 둔 파일이 사라진다.
+   * 🔴 그 훅의 `onExcelPicked`(「수기 엑셀로 칸 채우기」의 유일한 입구)는 **아직 오지
+   * 않았다** — `quote-excel-parse` · `quote-excel-autofill` 묶음이 이 사이트에 없다.
    */
+
+  /**
+   * 결재 PDF · 수기 엑셀 두 칸의 상태 — 고르기 · 올리기 · 지우기 확인 창까지.
+   *
+   * 🔴 **훅은 늘 부르고, 그리는 것만 가른다.** 아래 구역은 `attachmentSlots` 가 온
+   * 경우(= 견적서 수정 화면)에만 선다. 훅을 조건부로 부르면 React 의 규칙을 깬다.
+   */
+  const attachments = useQuoteAttachments({
+    quoteId: quote?.id ?? null,
+    serverSlots: attachmentSlots,
+  });
 
   /**
    * 합계 미리보기 — 서버가 금액을 셈하는 그 함수 하나로(domain/quote-list.ts 의
@@ -1715,8 +1754,13 @@ export default function QuoteEditForm({
       }
 
       /*
-       * 🔴 **조각 3d 가 여기에 「만든 직후 파일 올리기」를 되돌려 놓는다** — 들고
-       * 있던 결재 PDF · 수기 엑셀을 **지금** 올린다(id 가 이제야 생겼다).
+       * 🔴 **여기에 「만든 직후 파일 올리기」가 돌아온다** — 들고 있던 결재 PDF ·
+       * 수기 엑셀을 **지금** 올린다(id 가 이제야 생겼다). 부를 함수는 이미 와 있다:
+       * `attachments.uploadQueuedAfterCreate`(QuoteAttachmentsSection.tsx).
+       *
+       * 🔴 **조각 3d-4 는 이 자리를 채우지 않았다.** 그 조각이 세운 것은 견적서
+       * **수정 화면**의 첨부 구역이고, 새 견적서 화면(`/quotes/new`)에는 칸이 서지
+       * 않는다 — 그래서 지금 들고 있는 파일이 있을 수 없다.
        *
        * 🔴 그때 지킬 것 둘(A/S 원본):
        *  · 올리기 **전에** `setCreatedQuote({ id, version })` — 올리다 무엇이
@@ -2127,9 +2171,17 @@ export default function QuoteEditForm({
         </div>
       </section>
 
-      {/* 🔴 **여기에 「견적서 파일(결재 PDF · 수기 엑셀)」 구역이 돌아온다**(조각 3d) —
-          상단 정보 바로 아래다. 수정 화면에서는 [저장]과 **따로 곧바로** 반영되고,
-          새 견적서는 [저장] 뒤에 올라간다(handleSubmit 의 그 항목). */}
+      {/* ── 견적서 파일(결재 PDF · 수기 엑셀) ─────────────────────────────
+          상단 정보 바로 아래 — 저쪽과 같은 자리다(조각 3d-4). [저장]과 **따로 곧바로**
+          반영된다: 올리기 · 바꾸기는 fetch 로, 지우기는 서버 액션으로 간다.
+
+          🔴 **수정 화면에서만 선다.** `attachmentSlots` 가 오지 않은 새 견적서 화면에는
+          그리지 않는다 — 「만든 직후 올리기」 배선(handleSubmit 의 그 항목)이 아직 없어,
+          칸만 세우면 고른 파일이 [저장] 때 말없이 사라진다
+          (QuoteAttachmentsSection.tsx 머리말의 「배선이 어디까지 왔나」). */}
+      {attachmentSlots !== null ? (
+        <QuoteAttachmentsSection controller={attachments} isExcelOnly={isExcelOnly} disabled={disabled} />
+      ) : null}
 
       {/* ── 엑셀 전용이면 부품 · 작업 구역을 접는다 (2026-09-15 Q3) ──────
           줄은 켤 때 비웠고(저장 전에 끄면 돌아온다), 금액은 위의 공급가액 칸이 받는다.

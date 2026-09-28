@@ -62,6 +62,14 @@ const slotsSource = read("src/components/quotes/QuoteListSlots.tsx");
 /** 목록 딱지의 규칙과 그리는 조각 — 🔴 A/S 와 같은 이름 · 같은 자리다(조각 3c-2 · 3d). */
 const filesSource = read("src/components/quotes/quote-attachment-files.ts");
 const partsSource = read("src/components/quotes/QuoteAttachmentParts.tsx");
+/**
+ * 🔴 조각 3d-4 — 「엑셀 없음」 문장이 가리키는 **붙이는 칸**이 실제로 서는지 보는 셋.
+ * 그 문장을 A/S 말로 되돌리면서 옛 단언(「견적서 수정 화면」 금지)을 지웠고, 그 자리를
+ * 이 셋이 메운다(아래 3d-5 묶음의 마지막 시험).
+ */
+const sectionSource = read("src/components/quotes/QuoteAttachmentsSection.tsx");
+const editFormSource = read("src/components/quotes/QuoteEditForm.tsx");
+const detailPageSource = read("src/app/(app)/quotes/[id]/page.tsx");
 /** 🔴 조각 3d-5 — 받을 수 없는 줄이 띄우는 알림 팝업(공용 자리 · A/S 로 그대로 옮길 수 있게). */
 const popupSource = read("src/components/common/NoticePopup.tsx");
 const actionSource = read("src/lib/server/actions/quotes.ts");
@@ -359,23 +367,83 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     const badgeRule = flat(sliceBetween(filesSource, "export function quoteListFileBadges(", "\n}\n"));
     assert.ok(badgeRule.includes("title: QUOTE_EXCEL_MISSING_NOTICE"), "딱지가 그 상수를 쓰지 않는다");
 
-    // 🔴 **서버 문장을 화면이 끌어다 쓰지 않는다.** `QUOTE_EXCEL_MISSING_MESSAGE`
-    //    (api/quotes/[id]/xlsx/download-source.ts — A/S 와 바이트 동일)는 「견적서
-    //    수정 화면에서 올린 뒤」라고 말하는데, 이 사이트에는 그 칸이 아직 없다.
+    // 🔴 **서버 문장을 화면이 끌어다 쓰지 않는다.** 까닭은 ㉢ 이다 — 팝업과 딱지가
+    //    한 글자여야 하므로 화면은 제 상수를 쓴다. `QUOTE_EXCEL_MISSING_MESSAGE`
+    //    (api/quotes/[id]/xlsx/download-source.ts — A/S 와 바이트 동일)는 **받기를
+    //    거절하는 말**(「다시 받아 주세요」)이라 쓰임 자체가 다르고, 그 파일은 저쪽과
+    //    바이트가 같아야 해서 여기 사정으로 고칠 수도 없다.
     assert.equal(
       codeOf(slotsSource).includes("QUOTE_EXCEL_MISSING_MESSAGE"),
       false,
-      "A/S 의 서버 문장을 화면이 그대로 보이고 있다 — 이 사이트에 없는 칸을 가리킨다"
+      "서버의 거절 문장을 목록 화면이 그대로 보이고 있다 — 화면 문장은 딱지와 한 글자여야 한다"
     );
     const notice = sliceBetween(filesSource, "export const QUOTE_EXCEL_MISSING_NOTICE =", ";");
-    assert.ok(notice.includes("A/S 관리 시스템에서 붙여 주세요"), "붙일 수 있는 곳을 가리키지 않는다");
-    // 🔴 이 줄이 걸리는 날이 **조각 3d-3 · 3d-4 가 붙이는 칸을 가져온 날**이다 — 그때는
-    //    이 사이트에서 붙일 수 있으므로 문장이 저쪽 말로 돌아가고, 이 단언을 지운다.
-    assert.equal(
-      notice.includes("견적서 수정 화면"),
-      false,
-      "이 사이트에 아직 없는 칸을 가리킨다(3d-3 · 3d-4 의 것이다)"
+    // 🔴 **조각 3d-4 — 문장이 저쪽 말로 돌아왔다.** 그 전까지 이 자리에는 「A/S 관리
+    //    시스템에서 붙여 주세요」를 요구하고 「견적서 수정 화면」이라는 낱말을 **막는**
+    //    단언이 있었고, 그 곁말이 푸는 조건을 스스로 못 박아 두었다 — 「이 줄이 걸리는
+    //    날이 붙이는 칸을 가져온 날이다. 그때는 이 사이트에서 붙일 수 있으므로 문장이
+    //    저쪽 말로 돌아가고, 이 단언을 지운다.」 3d-4 가 그 칸을 세웠으므로 지웠다.
+    assert.ok(
+      notice.includes("견적서 수정 화면에서 붙여 주세요"),
+      "붙일 수 있는 곳(이 사이트의 견적서 수정 화면)을 가리키지 않는다"
     );
+  });
+
+  /**
+   * ==========================================================================
+   * 🔴 조각 3d-4 — 위에서 지운 단언의 **대신**이다
+   * ==========================================================================
+   * 바로 위 문장은 이제 「견적서 **수정 화면에서** 붙여 주세요」라고 말한다. 그 말이
+   * 참이려면 **그 화면에 붙이는 칸이 실제로 서야 한다.** 화면을 렌더해 볼 수 없는
+   * 자리(서버 액션 · `server-only` 사슬)라 원본을 글자로 읽어 사슬을 따라간다:
+   *
+   *     수정 화면 page.tsx → 칸 조회 → 폼의 attachmentSlots → 첨부 구역 → 두 칸
+   *
+   * 🔴 한 마디라도 끊기면 **화면이 거짓말을 하기 시작한다** — 목록의 딱지와 팝업은
+   * 「수정 화면에서 붙이라」고 하는데 그 화면에는 칸이 없는 상태다. 옛 단언이 막던
+   * 것이 바로 그 상태였고, 이 시험이 그 자리를 이어받는다.
+   * ==========================================================================
+   */
+  test("🔴 조각 3d-4 — 그 문장이 가리키는 붙이는 칸이 견적서 수정 화면에 실제로 선다", () => {
+    const page = codeOf(detailPageSource);
+    const form = codeOf(editFormSource);
+    const section = codeOf(sectionSource);
+
+    // ① 수정 화면이 칸을 읽어 폼에 넘긴다.
+    assert.ok(page.includes("listQuoteAttachmentSlots(quote.id)"), "수정 화면이 첨부 칸을 읽지 않는다");
+    assert.ok(page.includes("attachmentSlots={attachmentSlots}"), "읽은 칸을 폼에 넘기지 않는다");
+
+    // ② 폼이 그 값으로 첨부 구역을 그린다.
+    assert.ok(form.includes("<QuoteAttachmentsSection"), "편집 폼이 첨부 구역을 그리지 않는다");
+    assert.ok(
+      form.includes("attachmentSlots !== null ?"),
+      "첨부 구역을 그릴지 가르는 조건이 attachmentSlots 가 아니다"
+    );
+
+    // ③ 구역이 두 칸을 그리고, 지우기는 서버 액션으로 간다.
+    assert.ok(section.includes("<QuoteAttachmentSlotsView"), "첨부 구역이 두 칸을 그리지 않는다");
+    assert.ok(section.includes("await softDeleteAttachmentAction({"), "지우기가 서버 액션을 부르지 않는다");
+    assert.ok(section.includes("await uploadQuoteAttachment("), "올리기 통로를 부르지 않는다");
+
+    // ④ 칸이 [파일 올리기] · [보기] · [내려받기] · [바꾸기] · [지우기]를 실제로 세운다 —
+    //    문장이 약속하는 일이 그것이다.
+    //
+    // 🔴 여기서 **주소 짓는 함수의 이름을 글자로 적지 않는다.** 이웃 시험
+    //    (quote-attachment-files.test.ts)이 `src/` 를 훑어 「그 주소를 짓는 곳은 칸
+    //    조각 하나뿐」을 재는데, 그 이름을 여기 적으면 이 시험 파일이 **짓는 곳으로
+    //    세어진다**(2026-09-28 실측으로 걸렸다). 눈에 보이는 이름과 콜백으로 잰다.
+    const card = flat(sliceBetween(partsSource, "export function QuoteAttachmentSlotCard(", "두 칸"));
+    for (const mark of [
+      'label="파일 올리기"',
+      "> 보기 </a>",
+      // 새 탭에서 연다 — 이 화면 안에 끼워 보여 주지 않는다.
+      'target="_blank" rel="noopener noreferrer"',
+      "> 내려받기 </a>",
+      'label="바꾸기"',
+      "onClick={onRequestDelete}",
+    ]) {
+      assert.ok(card.includes(mark), `칸에 '${mark}' 가 없다 — 「수정 화면에서 붙여 주세요」가 거짓이 된다`);
+    }
   });
 
   test("🔴 조각 3d-5 — 알림 팝업은 사람이 닫는다. 저절로 닫히지 않는다", () => {

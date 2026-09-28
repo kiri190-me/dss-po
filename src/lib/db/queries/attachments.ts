@@ -30,11 +30,18 @@ import {
  *
  * 🔴 **잃은 규칙은 없다.** 견적서가 쓰는 길 셋이 통째로 여기 있다.
  *
- * ── 🔴 `listQuoteAttachmentSlots` 는 **아직 아무도 부르지 않는다** (3d-3b) ──
- * 화면(견적서 수정 화면의 첨부 칸)에 잇는 것은 **조각 3d-4** 의 몫이다. 지금 이으면
- * 목록 화면의 울타리(components/quotes/quote-list-screen-source.test.ts 의 「첨부 사슬을
- * 끌고 오지 않는다」)에 걸린다. 그동안 이 함수가 썩지 않게 **DB 시험이 덮는다**
- * (mutations/attachments.integration.test.ts).
+ * ── 🔴 `listQuoteAttachmentSlots` 를 부르는 곳 (조각 3d-4, 2026-09-28) ────
+ * **견적서 수정 화면**(`app/(app)/quotes/[id]/page.tsx`) 하나다. 거기서 읽은 칸이
+ * 편집 폼의 `attachmentSlots` 로 내려가고, 그 값이 온 경우에만 「견적서 파일」 구역이
+ * 그려진다(components/quotes/QuoteAttachmentsSection.tsx).
+ *
+ * 🔴 **목록 화면은 이 조회에 닿지 않는다** — 거기 걸린 울타리
+ * (components/quotes/quote-list-screen-source.test.ts 의 「첨부 사슬을 끌고 오지
+ * 않는다」)는 그대로다. 목록이 쓰는 것은 질의 한 번으로 걷는 깃발 둘이다
+ * (queries/quotes.ts 의 loadAttachmentFlagsByQuoteId).
+ *
+ * 이 함수는 그와 별개로 **DB 시험이 덮는다**(mutations/attachments.integration.test.ts) —
+ * 가장 값진 단언은 **내부 경로를 싣지 않는다**는 것이다(바로 아래 함수의 🔴).
  *
  * ── 🔴 스키마 경로가 다르다 ─────────────────────────────────────────────
  * 저쪽은 `../schema`(제 저장소의 표 정의)를 보지만, 이 사이트는 서브모듈 한 벌

@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   QUOTE_ATTACHMENT_SLOTS,
@@ -153,21 +153,40 @@ describe("주소", () => {
 
   /**
    * ==========================================================================
-   * 🔴 위 둘이 가리키는 라우트는 **이 사이트에 아직 없다** (조각 3d-3d)
+   * 🔴 라우트가 왔다 — 울타리의 **뜻을 바꾼다**(지우지 않는다) (조각 3d-4)
    * ==========================================================================
-   * `/api/attachments/[id]/download` 는 조각 3d-4 가 가져온다. 그 전에 이 둘을 화면에
-   * 걸면 **누르면 404 가 뜨는 링크**가 선다 — 이 저장소가 조각 3a 부터 막아 온 바로
-   * 그것이다(「없는 곳으로 보내는 링크」).
+   * 3d-3d 가 여기 세운 것은 「이 저장소의 **어느 파일도** 이 두 주소를 부르지
+   * 않는다」였다. 까닭은 `/api/attachments/[id]/download` 라우트가 이 사이트에
+   * **없었기** 때문이다 — 화면에 걸면 누르면 404 가 뜨는 링크가 섰다. 그 울타리는
+   * 의도대로 작동했다: 조각 3d-3f 가 칸을 가져오려다 걸려 멈췄다.
    *
-   * 그래서 「부르는 데가 없다」를 **글자로 훑어** 못 박는다. 화면에 거는 날 이 시험이
-   * 걸리고, 그때 사람이 **라우트가 함께 왔는지**를 보게 된다.
+   * 🔴 **조각 3d-4 가 라우트를 함께 가져왔다**(2026-09-28). 그래서 옛 단언의 전제가
+   * 사라졌다. 🔴 **그냥 지우면 보호가 줄어든다** — 그러면 아무나 아무 데서나 그 주소를
+   * 짓기 시작해도 아무도 모른다. 그래서 **둘로 바꾼다**:
+   *
+   *   ㉠ **라우트가 실제로 있다.** 파일이 사라지는 날(또는 이름이 바뀌는 날) 칸의
+   *      [보기] · [내려받기]가 조용히 죽은 링크가 된다 — 그것을 여기서 잡는다.
+   *   ㉡ **부르는 곳은 칸 조각 하나뿐이다.** 주소를 화면 여기저기서 짓기 시작하면,
+   *      질의값(`?view=full`)이 바뀌는 날 고칠 자리가 코드 전체를 훑어야 나오는
+   *      질문이 된다. 지금 그 자리는 QuoteAttachmentParts.tsx 의
+   *      `QuoteAttachmentSlotCard` 다.
    *
    * 🔴 훑는 곳은 `src/` 뿐이다. 서브모듈(vendor/dss-core)은 사이트 별칭(`@/…`)을 한
    * 줄도 쓰지 않아(quote-list-screen-source.test.ts 의 같은 단언) 이 파일에 닿을 길이
    * 없다.
    * ==========================================================================
    */
-  test("🔴 이 저장소의 어느 파일도 보기 · 내려받기 주소를 부르지 않는다 — 라우트가 아직 없다", () => {
+  test("🔴 ㉠ 두 주소가 가리키는 라우트가 실제로 있다", () => {
+    for (const file of [
+      "src/app/api/attachments/[id]/download/route.ts",
+      // 무엇을 화면 안에서 열어 줄지 가르는 형제 파일 — `?view=full` 이 뜻을 갖는 자리다.
+      "src/app/api/attachments/[id]/download/inline-view.ts",
+    ]) {
+      assert.ok(existsSync(fileURLToPath(new URL(file, repoUrl))), `${file} 이 없다 — 위 두 주소가 죽은 링크다`);
+    }
+  });
+
+  test("🔴 ㉡ 보기 · 내려받기 주소를 짓는 곳은 칸 조각 하나뿐이다", () => {
     const definition = "src/components/quotes/quote-attachment-files.ts";
     const self = "src/components/quotes/quote-attachment-files.test.ts";
     const callers: string[] = [];
@@ -192,15 +211,15 @@ describe("주소", () => {
     };
     walk("src");
 
-    // 🔴 **아무것도 안 훑고 통과하는 길을 막는다.** 훑는 곳이 비면 위 단언은 언제나
+    // 🔴 **아무것도 안 훑고 통과하는 길을 막는다.** 훑는 곳이 비면 아래 단언은 언제나
     //    참이 되고, 이 시험은 도는 척만 한다 — 이 저장소가 「조용히 안 돈다」로 이미
     //    세 번 고생했다(scripts/run-test-list.mjs 머리말).
     assert.ok(scanned > 100, `훑은 파일이 ${scanned}개뿐이다 — 걷는 길이 끊겼는지 보라`);
 
     assert.deepEqual(
       callers,
-      [],
-      "라우트(/api/attachments/[id]/download)가 아직 없는데 주소를 부르는 곳이 생겼다 — 3d-4 가 그 통로를 가져왔는지 먼저 보라"
+      ["src/components/quotes/QuoteAttachmentParts.tsx"],
+      "보기 · 내려받기 주소를 짓는 곳이 칸 조각 말고 또 생겼다 — 주소는 한 자리에서만 짓는다"
     );
   });
 });

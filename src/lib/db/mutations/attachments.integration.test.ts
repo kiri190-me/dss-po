@@ -47,9 +47,11 @@ import type { QuoteFields } from "@/lib/validation/quote-input";
  *  4. **조회 둘** — 올리기가 본문을 받기 전에 보는 대상(getQuoteAttachmentUploadTarget)과
  *     화면이 볼 칸(listQuoteAttachmentSlots).
  *
- * 🔴 **`listQuoteAttachmentSlots` 는 아직 어느 화면도 부르지 않는다**(3d-4 의 몫이다).
- * 아무도 안 부르는데 시험도 없으면 썩으므로 여기서 덮는다 — 그 조회가 **내부 경로를
- * 싣지 않는다**는 것이 그중 가장 값진 단언이다.
+ * 🔴 **`listQuoteAttachmentSlots` 를 이제 견적서 수정 화면이 부른다**(조각 3d-4,
+ * 2026-09-28 — `app/(app)/quotes/[id]/page.tsx`). 그 전에는 아무도 부르지 않아 「안
+ * 부르는데 시험도 없으면 썩는다」가 이 단언들의 까닭이었고, 지금은 까닭이 더 세졌다 —
+ * 그 결과가 **그대로 화면으로 넘어간다.** 그 조회가 **내부 경로(storedPath)를 싣지
+ * 않는다**는 것이 그중 가장 값진 단언이다.
  *
  * 🔴 **인가는 여기서 시험하지 않는다.** 같은 출처 · 세션 · 문턱(quotes WRITE)은 라우트의
  * 몫이고(api/quotes/[id]/attachments/route.ts), 그 순서는 글자를 읽는 시험이 지킨다

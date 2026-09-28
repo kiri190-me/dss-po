@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import QuoteEditForm from "@/components/quotes/QuoteEditForm";
 import { requireAreaAccessForCurrentUser } from "@/lib/auth/area-guard";
 import { hasPermission } from "@/lib/auth/permission-resolver";
+import { listQuoteAttachmentSlots } from "@/lib/db/queries/attachments";
 import { getPartPickerList, getPartPickerUnitPrices } from "@/lib/db/queries/inventory";
 import { getQuoteForEdit } from "@/lib/db/queries/quotes";
 import { listRepairLabor } from "@/lib/db/queries/repair-labor";
@@ -47,7 +48,10 @@ export const dynamic = "force-dynamic";
  *     🔴 저쪽에서 그 값을 쓰는 곳은 **미리보기 한 줄**(`printHeaders`)뿐이고 이
  *     사이트의 폼에는 그 프롭이 아예 없다. 그래서 읽지 않는다.
  *     (**작업 내역 기본값**은 3c-1 이 배선했다 — 아래 `workScopeDefaults`.)
- *   · **첨부 칸**(`listQuoteAttachmentSlots`) → **조각 3d**.
+ *   · **첨부 칸**(`listQuoteAttachmentSlots`) → 🔴 **조각 3d-4 에 들어왔다**
+ *     (2026-09-28 — 아래 `attachmentSlots`). 🔴 **이 화면에만** 있다: 새 견적서
+ *     화면(`/quotes/new`)은 그 값을 넘기지 않아 거기에는 첨부 구역이 서지 않는다
+ *     (QuoteAttachmentsSection.tsx 머리말의 「배선이 어디까지 왔나」).
  *   · **돌아갈 곳**(`returnHrefForEditQuote`) → **조각 3b-2 · 4**. 지금은 늘
  *     `/quotes` 다.
  *   · **mock 모드 갈래**(`getAuthSource`) — 이 사이트에는 mock 모드가 없다.
@@ -74,17 +78,23 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   // (getQuoteForEdit 의 관문). 종류를 접어 열면 다른 종류의 양식으로 문서가 나간다.
   if (!quote) notFound();
 
-  // 🔴 넷을 **함께** 기다린다 — 서로를 쓰지 않으므로 줄줄이 기다릴 까닭이 없다.
+  // 🔴 다섯을 **함께** 기다린다 — 서로를 쓰지 않으므로 줄줄이 기다릴 까닭이 없다.
   //  · 장비 종류별 수리 작업 목록과 단가 — 견적서의 작업비가 여기서 나온다.
   //  · 양식 다섯의 작업 내역 기본값(조각 3c-1) — 종류를 바꿀 때 조사 · 통전 칸에
   //    들어가는 목록이고, **빈 묶음을 그릴 때도 이 값이 기준**이다. 🔴 DB 가 아니라
   //    양식 `.xlsx` 파일을 읽는다(storage/quote-template.ts). 못 읽어도 빈 목록이다.
+  //  · 🔴 **결재 PDF · 수기 엑셀 두 칸**(조각 3d-4) — 칸마다 지금 붙어 있는 파일
+  //    (휴지통 것은 빼고). **내부 경로(storedPath)를 싣지 않는 조회**다
+  //    (queries/attachments.ts 의 listQuoteAttachmentSlots) — 이 값이 그대로 화면으로
+  //    넘어가므로 그 규율이 여기서 값을 한다. 이 값이 폼에 오는 것이 곧
+  //    「첨부 구역을 그린다」는 뜻이다(QuoteEditForm 의 attachmentSlots 프롭).
   //  · 부품 고르개의 두 목록(조각 3b-3 뒤쪽 절반) — 품명 칸에서 고를 부품과 그 단가.
   //    🔴 **재고 · 소유구분 · 내부 비고가 없는 가벼운 조회 둘**이다
   //    (queries/inventory.ts 머리말 — 무거운 형제 getPartList 는 옮겨 오지 않았다).
-  const [repairLabor, workScopeDefaults, partOptions, partPrices] = await Promise.all([
+  const [repairLabor, workScopeDefaults, attachmentSlots, partOptions, partPrices] = await Promise.all([
     listRepairLabor(),
     readAllQuoteWorkSectionDefaults(),
+    listQuoteAttachmentSlots(quote.id),
     getPartPickerList(),
     getPartPickerUnitPrices(),
   ]);
@@ -105,6 +115,9 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
       cableMaxLines={CABLE_QUOTE_MAX_LINES}
       /* 양식의 작업 내역 기본값(조각 3c-1) — 새 견적서 화면과 **같은 값**이다. */
       workScopeDefaults={workScopeDefaults}
+      /* 🔴 결재 PDF · 수기 엑셀 두 칸(조각 3d-4). **새 견적서 화면은 이것을 넘기지
+         않는다** — 그래서 거기에는 첨부 구역이 서지 않는다(폼의 그 프롭 항목). */
+      attachmentSlots={attachmentSlots}
     />
   );
 }

@@ -20,9 +20,11 @@ import { insertAuditLog } from "./audit-logs";
  *  ② **견적서 휴지통이 부르는 다섯**(이 파일 아래쪽) — 견적서를 휴지통에 넣고 ·
  *     되살리고 · 영구 삭제할 때 딸려 가는 첨부.
  *
- * 🔴 **가져오지 않은 것**: 저쪽의 `recordAttachmentDownload`(내려받기 감사)는 별건이라
- * 두고 왔다. **올리기**(createAttachmentRecord · 칸 교체)는 조각 3d-3b 가 이웃 파일
- * `./attachments` 로 가져왔다 — 저쪽과 같은 자리다.
+ * 🔴 **셋째가 왔다 (조각 3d-4, 2026-09-28)** — `recordAttachmentDownload`(내려받기
+ * 감사). 이 자리에 「별건이라 두고 왔다」고 적혀 있던 그것이다. 부르는 쪽인 내려받기
+ * 통로(`app/api/attachments/[id]/download/route.ts`)가 같은 날 함께 왔다 — 화면의
+ * [내려받기] 단추가 그 주소를 가리키기 때문이다. **올리기**(createAttachmentRecord ·
+ * 칸 교체)는 조각 3d-3b 가 이웃 파일 `./attachments` 로 가져왔다 — 저쪽과 같은 자리다.
  *
  * 🔴 **왜 조각 3d 를 기다리지 않는가** — 두 사이트가 **같은 `dss_as`** 를 본다.
  * 견적서를 휴지통에 넣으면 붙어 있던 결재 PDF · 수기 엑셀도 **같은 트랜잭션에서**
@@ -72,7 +74,10 @@ import { insertAuditLog } from "./audit-logs";
  * 위 「가져오지 않은 것」이 「올리기는 조각 3d-3b 의 몫이다」라고 적어 둔 그것이다.
  * `createAttachmentRecord` 와 칸 교체는 이웃 파일 `./attachments` 에 있고, 이 파일은
  * 그대로다 — 여기 있는 함수는 여전히 **DB 의 표시만** 바꾼다.
- * (저쪽의 `recordAttachmentDownload` 는 여전히 오지 않았다.)
+ *
+ * 🔴 **내려받기 감사도 왔다 (조각 3d-4)** — `recordAttachmentDownload`. 그 함수도
+ * 표시를 바꾸지 않는다: `audit_logs` 에 한 줄을 더할 뿐이고 `attachments` 행에는
+ * 손대지 않는다. 위 「⚠️ 이 파일은 storage.delete()를 부르지 않는다」도 그대로다.
  * ============================================================================
  */
 
@@ -379,6 +384,59 @@ export async function restoreAttachment(params: {
     });
 
     return { ok: true, id: params.attachmentId };
+  });
+}
+
+/**
+ * 누가 무엇을 받아 갔는지 남긴다. 상태는 바꾸지 않는다.
+ *
+ * 파일 자체보다 오래 남아야 하는 기록이다(감사 로그 3년 보관). 그래서
+ * 다운로드 라우트는 스트림을 돌려주기 **전에** 이것을 부른다 — 응답을 먼저
+ * 반환하면 스트림이 끝나는 시점을 알 수 없어 기록이 누락될 수 있다.
+ *
+ * 🔴 **조각 3d-4 에 A/S 에서 그대로 왔다**(2026-09-28). 이 파일 머리말이 「가져오지
+ * 않은 것」으로 적어 두었던 그것이고, 부르는 쪽
+ * (`app/api/attachments/[id]/download/route.ts`)이 같은 날 함께 왔다. 상태를 바꾸지
+ * 않는데도 mutations 에 있는 까닭은 **audit_logs 에 쓰기** 때문이다 — 쓰기는
+ * mutations 에 모아 두는 것이 이 저장소의 규율이고, insertAuditLog 가 트랜잭션을
+ * 요구하므로 그 트랜잭션을 열 자리가 필요하다.
+ */
+export async function recordAttachmentDownload(params: {
+  attachmentId: string;
+  actorUserId: string;
+  /**
+   * 이 첨부의 주인. 세 컬럼을 그대로 받아 ownerAuditFields 가 갈라 적는다 —
+   * 부르는 쪽(다운로드 라우트)이 이미 읽어 둔 값이라 조회를 새로 열지 않는다.
+   *
+   * 사람이 읽는 이름(접수번호 · 모델명 · 발행번호)은 싣지 않는다. 그 조회는 파일을
+   * 내보내는 데 필요한 값만 읽고(queries/attachment-download.ts), 이름을 위해
+   * 조인을 더하면 **모든 내려받기가 조인을 더 치른다.** 무엇을 누가 받아
+   * 갔는지는 attachmentId 와 originalFileName 이 이미 답한다.
+   */
+  owner: {
+    repairCaseId: string | null;
+    productModelId: string | null;
+    quoteId: string | null;
+  };
+  originalFileName: string;
+  fileSize: number;
+}): Promise<void> {
+  await db.transaction(async (tx) => {
+    await insertAuditLog(tx, {
+      actorUserId: params.actorUserId,
+      actionType: "FILE_DOWNLOAD",
+      targetEntity: "attachments",
+      targetRecordId: params.attachmentId,
+      // 내려받기는 상태를 바꾸지 않으므로 previousValue가 없다.
+      newValue: {
+        ...ownerAuditFields(params.owner),
+        // 원본 파일명은 사람이 자유롭게 적는 값이라 고객사명이 섞일 수 있다.
+        // 감사 로그는 그 자체가 보관 대상이므로 이름을 그대로 남긴다 —
+        // 무엇을 받아 갔는지 알 수 없으면 기록의 뜻이 없다.
+        originalFileName: params.originalFileName,
+        fileSize: params.fileSize,
+      },
+    });
   });
 }
 

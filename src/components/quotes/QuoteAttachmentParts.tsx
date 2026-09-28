@@ -2,19 +2,29 @@
 
 import { useEffect, useRef } from "react";
 
+import { FileDropZone } from "@/components/common/FileDropZone";
 import type { QuoteAttachmentSlotCategory } from "@/lib/domain/attachment-category";
 import {
+  QUOTE_ATTACHMENT_PENDING_NOTE,
+  QUOTE_ATTACHMENT_SAVED_NOTE,
+  QUOTE_ATTACHMENT_SLOTS,
+  describeQuoteAttachmentFile,
   describeQuoteLineCounts,
+  formatPendingFileSize,
   quoteAttachmentDeleteText,
+  quoteAttachmentDownloadUrl,
+  quoteAttachmentViewUrl,
   quoteListFileBadges,
+  type QuoteAttachmentSlotDefinition,
   type QuoteAttachmentSlotFileView,
   type QuoteLineCounts,
   type QuoteListFileBadge,
+  type ResolvedQuoteSlots,
 } from "./quote-attachment-files";
 
 /**
  * ============================================================================
- * 견적서 파일 · 엑셀 전용 — 그리기 조각 (3b-1 · 3c-2 · 3d-0 · 3d-3f)
+ * 견적서 파일 · 엑셀 전용 — 그리기 조각 (3b-1 · 3c-2 · 3d-0 · 3d-3f · 3d-4)
  * ============================================================================
  * 서버 액션을 부르지 않는다 — 올리기 · 지우기는 부르는 쪽이 넘긴 콜백이 한다. 그래서
  * 이 파일은 `server-only` 사슬 없이 그려 볼 수 있다(QuoteAttachmentParts.test.tsx,
@@ -32,38 +42,39 @@ import {
  *
  * ── 지금 여기 있는 것 ───────────────────────────────────────────────────
  *   · `QuoteAttachmentFilePicker`   — 숨긴 파일 칸을 여는 단추 (3d-3f)
+ *   · `QuoteAttachmentSlotCard`     — 칸 하나 (3d-4)
+ *   · `QuoteAttachmentSlotsView`    — 「견적서 파일」 구역(안내 · 두 칸 · 한 줄) (3d-4)
  *   · `QuoteAttachmentDeleteDialog` — 한 칸의 파일 지우기 확인 창 (3d-3f)
  *   · `ExcelOnlySwitch`             — 「엑셀 전용 견적서」 체크 상자 (3b-1)
  *   · `ExcelOnlyClearLinesDialog`   — 줄이 있는 채로 켜려 할 때 묻는 창 (3b-1)
  *   · `QuoteFileBadges`             — 목록 한 줄의 딱지 셋 (3c-2 · 3d-0)
  *
- * 앞의 넷은 아직 **아무 화면도 부르지 않는다**(편집 폼에 잇는 배선은 조각 3d-4 의
- * 몫이다). 딱지만 지금 쓰인다 — 견적서 목록이 줄마다 「엑셀 전용」 · 「결재 PDF」 ·
- * 「엑셀 없음」을 왼쪽 칸에 붙인다(QuoteListSlots.tsx 의 `renderFileBadges` 슬롯).
+ * 🔴 **이제 화면에 선다 (조각 3d-4, 2026-09-28).** 견적서 **수정 화면**
+ * (`/quotes/{id}`)이 `QuoteAttachmentsSection` 을 거쳐 이 조각들을 그린다 —
+ * QuoteEditForm 의 상단 정보 바로 아래다. 딱지는 그 전부터 쓰였다 — 견적서 목록이
+ * 줄마다 「엑셀 전용」 · 「결재 PDF」 · 「엑셀 없음」을 왼쪽 칸에 붙인다
+ * (QuoteListSlots.tsx 의 `renderFileBadges` 슬롯).
  *
- * ── 🔴 멈춘 자리 — 칸 둘(`QuoteAttachmentSlotCard` · `QuoteAttachmentSlotsView`)
- * 조각 3d-3f 가 저쪽 `:117-391` 의 그 둘을 가져오려다 **멈췄다.** 까닭은 이 저장소가
- * 스스로 세운 울타리다:
+ * ── 🔴 멈춰 있던 자리가 풀렸다 — 칸 둘 ──────────────────────────────────
+ * 조각 3d-3f 는 `QuoteAttachmentSlotCard` · `QuoteAttachmentSlotsView` 앞에서
+ * **멈췄었다.** 까닭은 이 저장소가 스스로 세운 울타리였다: 칸이 저장된 파일에
+ * [보기] · [내려받기]를 세우면서 `quoteAttachmentViewUrl` ·
+ * `quoteAttachmentDownloadUrl` 을 부르는데, 그 주소가 가리키는 라우트
+ * `/api/attachments/[id]/download` 가 이 사이트에 **없었다** — 가져왔으면 누르면
+ * 404 가 뜨는 링크가 섰다. 울타리는 의도대로 작동했다.
  *
- *   `quote-attachment-files.ts` 의 주소 짓는 함수 둘(보기 · 내려받기)이 가리키는
- *   라우트 `/api/attachments/[id]/download` 가 **이 사이트에 아직 없다**(조각 3d-4 가
- *   가져온다). 그래서 조각 3d-3d 가 「이 저장소의 어느 파일도 그 주소를 부르지
- *   않는다」를 `src/` 전체를 훑어 못 박아 두었다
- *   (quote-attachment-files.test.ts 의 같은 이름 시험).
- *
- * 🔴 `QuoteAttachmentSlotCard` 는 저장된 견적서 칸에 [보기] · [내려받기]를 세우면서
- * 그 함수 둘을 **곧바로 부른다.** 지금 가져오면 그 울타리가 걸린다 — 그리고 걸리는
- * 것이 맞다: 라우트가 없으므로 그 단추는 **누르면 404 가 뜨는 링크**다. 울타리의
- * 곁말이 「걸리는 날 사람이 **라우트가 함께 왔는지**를 보게 된다」고 적어 둔 그 자리다.
- *
- * 🔴 **울타리를 풀지 않았다.** 푸는 길은 둘뿐이고 둘 다 이 조각의 몫이 아니다 —
- * 라우트를 함께 가져오거나(조각 3d-4), 칸에서 그 두 단추를 빼거나(A/S 와 글자가
- * 갈린다). 사용자에게 보고하고 멈춘다.
+ * 🔴 **3d-4 가 라우트를 함께 가져오면서 그 전제가 사라졌다**
+ * (`src/app/api/attachments/[id]/download/route.ts`). 울타리는 지우지 않고 **뜻을
+ * 바꿨다** — 이제 「그 주소를 부르는 곳은 이 파일뿐이고, 라우트가 실재한다」를 잰다
+ * (quote-attachment-files.test.ts).
  *
  * ── 🔴 안 가져온 것 ─────────────────────────────────────────────────────
  *   · `QuoteExcelAutofillNotice`(저쪽 `:544-629`) — 수기 엑셀로 칸 채우기. 별 조각이다.
- *   · `QuoteAttachmentsSection.tsx`(저쪽 368줄) — `useRouter` + 서버 액션 직접 호출.
- *     조각 3d-4(배선)의 몫이다.
+ *     그래서 `QuoteAttachmentSlotCard` 의 `details` · `QuoteAttachmentSlotsView` 의
+ *     `slotDetails` 는 **받기만 하고 아무도 넘기지 않는다**(저쪽과 모양을 맞춰 둔다).
+ *   · `QuoteAttachmentSlotsView` 의 `statusDetails` 도 같다 — 저쪽은 결재 PDF 의
+ *     공유폴더 결과 줄을 여기 끼우는데, 공유폴더 복사는 **발행(조각 3c-3)** 의 몫이라
+ *     이 사이트의 올리기 통로는 `archive` 에 언제나 null 을 싣는다.
  *
  * ── 확인창은 native `<dialog>` + `showModal()` ─────────────────────────
  * 이 앱의 관례다(common/NoticePopup.tsx 도 같은 방식). 열려 있는 동안만 그린다.
@@ -72,16 +83,17 @@ import {
 
 const SMALL_BUTTON_CLASS =
   "inline-block rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:border-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300";
+/*
+ * 🔴 **조각 3d-4 에 왔다.** 이 자리에 「저쪽에서 이것을 쓰는 곳은 칸의 [지우기] 단추
+ * 하나뿐이고 그 칸이 막혀 있어 함께 오지 않았다 — 쓰는 데 없이 두면 lint 가 잡는다」고
+ * 적혀 있었다. 칸이 왔고, 그 단추가 이 값을 쓴다(저쪽 `:56-57` 과 한 글자도 같다).
+ */
+const SMALL_DANGER_BUTTON_CLASS =
+  "rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:border-red-600 disabled:opacity-50 dark:border-red-800 dark:text-red-400";
 const DIALOG_CLASS =
   "w-full max-w-md rounded-lg border border-zinc-200 bg-white p-4 text-zinc-900 backdrop:bg-black/40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50";
 const DIALOG_CANCEL_CLASS =
   "rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
-
-/*
- * 🔴 `SMALL_DANGER_BUTTON_CLASS`(저쪽 `:56-57`)는 함께 오지 않았다 — 저쪽에서 그것을
- * 쓰는 곳은 칸의 [지우기] 단추 하나뿐이고, 그 칸이 위 「멈춘 자리」에서 막혔다.
- * 쓰는 데 없이 두면 lint 가 잡는다. 칸이 오는 날 함께 온다.
- */
 
 // ────────────────────────────────────────────────── 파일 고르기 단추
 
@@ -132,14 +144,279 @@ export function QuoteAttachmentFilePicker({
 
 // ────────────────────────────────────────────────── 칸 하나
 
-/**
- * 🔴 칸을 그리는 조각(`QuoteAttachmentSlotCard`)은 위 「멈춘 자리」에서 막혔다. 받는
- * 타입 둘은 그 칸과 두 칸 구역이 함께 쓰는 것이라 **먼저 와 있다** — A/S 와 같은
- * 이름 · 같은 자리다(저쪽 `:112-114`).
- */
 export type PendingFileLike = { name: string; size: number };
 
 export type QuoteAttachmentSlotsMode = "saved" | "pending";
+
+/** 칸 하나. 이름이 길어도 줄바꿈한다(break-all) — 폭 400px 에서 가로로 넘치지 않는다. */
+export function QuoteAttachmentSlotCard({
+  definition,
+  mode,
+  file,
+  pending,
+  error,
+  busy,
+  disabled,
+  onPickFile,
+  onRetry,
+  onClearPending,
+  onRequestDelete,
+  details = null,
+}: {
+  definition: QuoteAttachmentSlotDefinition;
+  mode: QuoteAttachmentSlotsMode;
+  /** 지금 칸에 붙어 있는 파일(수정 화면). 새 견적서에서는 방금 올린 것만 온다. */
+  file: QuoteAttachmentSlotFileView | null;
+  /** 들고 있는 파일 — 새 견적서면 [저장] 뒤에 올릴 것, 수정 화면이면 올리지 못한 것. */
+  pending: PendingFileLike | null;
+  error: string | null;
+  /** 이 칸을 올리는 중인가. */
+  busy: boolean;
+  disabled: boolean;
+  onPickFile: (file: File) => void;
+  onRetry: () => void;
+  onClearPending: () => void;
+  onRequestDelete: () => void;
+  /**
+   * 칸 맨 아래에 붙는 것 — 저쪽에서는 「수기 견적서 엑셀」 칸의 엑셀 읽기 알림
+   * (견적서 ①b, QuoteExcelAutofillNotice)이 여기 들어간다. 🔴 **이 사이트에는 그
+   * 조각이 아직 없어 아무도 넘기지 않는다**(파일 머리말의 「안 가져온 것」) — 저쪽과
+   * 모양을 맞춰 두려고 받는 자리만 둔다. 안 주면 지금 그대로다.
+   */
+  details?: React.ReactNode;
+}) {
+  const { label, accept, viewableInBrowser } = definition;
+  const failedHold = mode === "saved" && pending !== null;
+
+  return (
+    /*
+      칸 위에 폴더에서 끌어다 놓아도 된다 — 떨군 파일은 고르기 단추와 **같은
+      onPickFile** 을 타므로 판정(quote-attachment-files.ts 의 checkQuoteAttachmentFile)도
+      같다. 칸마다 파일은 하나라 multiple 은 false 다 — 여럿을 놓으면 거절하고 알린다.
+    */
+    <FileDropZone
+      name={`quote-attachment-${definition.category}`}
+      multiple={false}
+      disabled={disabled || busy}
+      hint={`${label} 하나를 여기에 놓으세요`}
+      onFiles={(files) => onPickFile(files[0])}
+      className="flex min-w-0 flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{label}</span>
+        <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+          {definition.extensions.join(" · ")} · 20MB 까지
+        </span>
+      </div>
+
+      {file ? (
+        <div className="min-w-0">
+          <p className="break-all text-sm text-zinc-800 dark:text-zinc-200">{file.originalFileName}</p>
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{describeQuoteAttachmentFile(file)}</p>
+        </div>
+      ) : mode === "pending" && pending ? (
+        <div className="min-w-0">
+          <p className="break-all text-sm text-zinc-800 dark:text-zinc-200">{pending.name}</p>
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            {formatPendingFileSize(pending.size)} · [저장]하면 올라갑니다
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          {mode === "pending" ? "아직 고른 파일이 없습니다." : "아직 붙인 파일이 없습니다."}
+        </p>
+      )}
+
+      {busy ? (
+        <p role="status" className="text-xs text-zinc-700 dark:text-zinc-300">
+          올리는 중…
+        </p>
+      ) : null}
+
+      {failedHold && pending ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <p className="break-all">
+            올리지 못한 파일: {pending.name}
+            {error ? ` — ${error}` : ""}
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <button type="button" onClick={onRetry} disabled={disabled} className={SMALL_BUTTON_CLASS}>
+              다시 올리기
+            </button>
+            <button type="button" onClick={onClearPending} disabled={disabled} className={SMALL_BUTTON_CLASS}>
+              빼기
+            </button>
+          </div>
+        </div>
+      ) : error ? (
+        <p role="alert" className="break-all text-xs text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap gap-1.5">
+        {file && mode === "saved" ? (
+          <>
+            {viewableInBrowser ? (
+              // 새 탭에서 페이지 안으로 연다(받기 통로의 view=full → inline).
+              //
+              // 🔴 이 화면 안에 끼워(iframe) 보여 주지 않는다. 저쪽에서 적어 둔 까닭은
+              // 「모든 주소에 걸린 frame-ancestors 'none'」인데, **이 사이트의
+              // next.config.ts 에는 헤더 규칙이 한 줄도 없다**(2026-09-28 실측). 그래도
+              // 새 탭으로 여는 것을 바꾸지 않는다 — 끼워서 보여 주면 PDF 가 이 페이지와
+              // 같은 문서 안에서 열리고(세션 쿠키가 닿는 자리다), 저쪽과 화면도 갈린다.
+              // 그 위험을 저울질한 내용은 받기 통로의 inline-view.ts 에 있다.
+              <a
+                href={quoteAttachmentViewUrl(file.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={SMALL_BUTTON_CLASS}
+              >
+                보기
+              </a>
+            ) : null}
+            <a href={quoteAttachmentDownloadUrl(file.id)} className={SMALL_BUTTON_CLASS}>
+              내려받기
+            </a>
+            <QuoteAttachmentFilePicker
+              accept={accept}
+              label="바꾸기"
+              ariaLabel={`${label} 바꾸기`}
+              disabled={disabled}
+              onFile={onPickFile}
+            />
+            <button
+              type="button"
+              onClick={onRequestDelete}
+              disabled={disabled}
+              aria-label={`${label} 지우기`}
+              className={SMALL_DANGER_BUTTON_CLASS}
+            >
+              지우기
+            </button>
+          </>
+        ) : mode === "pending" && pending ? (
+          <>
+            <QuoteAttachmentFilePicker
+              accept={accept}
+              label="다른 파일로"
+              ariaLabel={`${label} 다른 파일로`}
+              disabled={disabled}
+              onFile={onPickFile}
+            />
+            <button type="button" onClick={onClearPending} disabled={disabled} className={SMALL_BUTTON_CLASS}>
+              빼기
+            </button>
+          </>
+        ) : file ? null : (
+          <QuoteAttachmentFilePicker
+            accept={accept}
+            label="파일 올리기"
+            ariaLabel={`${label} 파일 올리기`}
+            disabled={disabled}
+            onFile={onPickFile}
+          />
+        )}
+      </div>
+
+      {details}
+    </FileDropZone>
+  );
+}
+
+// ────────────────────────────────────────────────── 두 칸
+
+/** 「견적서 파일」 구역 — 안내 · 두 칸 · 방금 한 일의 한 줄. */
+export function QuoteAttachmentSlotsView({
+  mode,
+  slots,
+  pending,
+  errors,
+  busyCategory,
+  statusText,
+  statusDetails = null,
+  notice,
+  disabled,
+  onPickFile,
+  onRetry,
+  onClearPending,
+  onRequestDelete,
+  slotDetails = {},
+}: {
+  mode: QuoteAttachmentSlotsMode;
+  slots: ResolvedQuoteSlots;
+  pending: Partial<Record<QuoteAttachmentSlotCategory, PendingFileLike>>;
+  errors: Partial<Record<QuoteAttachmentSlotCategory, string>>;
+  busyCategory: QuoteAttachmentSlotCategory | null;
+  statusText: string | null;
+  /**
+   * 방금 한 일의 한 줄 아래에 붙는 것 — 저쪽에서는 결재 PDF 의 공유폴더 결과 줄
+   * (2026-09-15 B1c)이다. 🔴 **이 사이트에는 공유폴더 복사가 아직 없어 아무도
+   * 넘기지 않는다**(발행 조각 3c-3 의 몫 — quote-attachment-upload.ts 머리말).
+   * 안 주면 지금 그대로다.
+   */
+  statusDetails?: React.ReactNode;
+  /** 엑셀 전용인데 엑셀이 없을 때의 안내(quote-attachment-files.ts 의 excelOnlyMissingExcelNotice). */
+  notice: string | null;
+  disabled: boolean;
+  onPickFile: (category: QuoteAttachmentSlotCategory, file: File) => void;
+  onRetry: (category: QuoteAttachmentSlotCategory) => void;
+  onClearPending: (category: QuoteAttachmentSlotCategory) => void;
+  onRequestDelete: (category: QuoteAttachmentSlotCategory) => void;
+  /** 칸마다 맨 아래에 붙는 것(QuoteAttachmentSlotCard 의 details). 안 주면 지금 그대로다. */
+  slotDetails?: Partial<Record<QuoteAttachmentSlotCategory, React.ReactNode>>;
+}) {
+  return (
+    <section
+      aria-label="견적서 파일"
+      className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">견적서 파일</h2>
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">결재 PDF 1개 · 수기 엑셀 1개</span>
+      </div>
+      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        {mode === "saved" ? QUOTE_ATTACHMENT_SAVED_NOTE : QUOTE_ATTACHMENT_PENDING_NOTE}
+      </p>
+
+      {notice ? (
+        <p
+          role="alert"
+          className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm font-medium text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+        >
+          {notice}
+        </p>
+      ) : null}
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {QUOTE_ATTACHMENT_SLOTS.map((definition) => (
+          <QuoteAttachmentSlotCard
+            key={definition.category}
+            definition={definition}
+            mode={mode}
+            file={slots[definition.category]}
+            pending={pending[definition.category] ?? null}
+            error={errors[definition.category] ?? null}
+            busy={busyCategory === definition.category}
+            disabled={disabled}
+            onPickFile={(file) => onPickFile(definition.category, file)}
+            onRetry={() => onRetry(definition.category)}
+            onClearPending={() => onClearPending(definition.category)}
+            onRequestDelete={() => onRequestDelete(definition.category)}
+            details={slotDetails[definition.category] ?? null}
+          />
+        ))}
+      </div>
+
+      {statusText ? (
+        <p role="status" className="mt-2 text-xs text-zinc-700 dark:text-zinc-300">
+          {statusText}
+        </p>
+      ) : null}
+      {statusDetails}
+    </section>
+  );
+}
 
 // ────────────────────────────────────────────────── 확인창
 

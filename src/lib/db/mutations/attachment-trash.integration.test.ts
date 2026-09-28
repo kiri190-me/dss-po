@@ -32,9 +32,15 @@ import type { QuoteFields } from "@/lib/validation/quote-input";
  * 저쪽에서 이 mutation 을 보는 시험은 둘로 나뉘어 있다:
  *
  *  · `mutations/attachment-trash.integration.test.ts`(803줄) — 접수 건 · 제품 모델
- *    첨부와 내려받기 감사. **이 사이트에는 그 세 가지가 없다** — 접수 건 화면도
- *    모델 화면도 오지 않고(설계서 「A/S 에 남길 것」), `recordAttachmentDownload`
- *    는 가져오지 않았다(mutations/attachment-trash.ts 머리말).
+ *    첨부와 내려받기 감사. 앞의 둘은 **이 사이트에 없다** — 접수 건 화면도 모델
+ *    화면도 오지 않는다(설계서 「A/S 에 남길 것」).
+ *    🔴 **내려받기 감사(`recordAttachmentDownload`)는 조각 3d-4 에 왔다**
+ *    (2026-09-28 — 견적서 칸의 [내려받기]가 그 통로를 부른다). 그 함수를 DB 에 대고
+ *    보는 시험은 **아직 없다** — 이 파일에 더하지 않았다. 지금 덮고 있는 것은 글자를
+ *    읽는 시험(app/api/attachments/download-route-source.test.ts)이 「감사를 스트림
+ *    **전에** 부르는가 · inline 에는 안 부르는가」를 재는 데까지다. DB 쪽 단언을
+ *    더한다면 저쪽 803줄의 그 묶음을 여기로 옮기는 것이 맞고, 격리 이름은 이 파일의
+ *    `PO-ATTRASH-TEST-` 를 그대로 쓰면 된다.
  *  · `mutations/quote-attachments.integration.test.ts`(952줄)의
  *    「첨부 지우기 · 되살리기 — 견적서 행을 잠근다」와 「내려받기 — 조회」 —
  *    **여기 있는 것이 그 두 묶음이다.** 단언을 거의 그대로 옮겼다.
