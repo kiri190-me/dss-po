@@ -402,3 +402,19 @@ src/components/quotes/quote-attachment-upload.test.ts
 #    `recordAttachmentDownload`(audit_logs 한 줄) 하나이고, 그 자리는
 #    db/mutations/attachment-trash.integration.test.ts 머리말에 적어 두었다.
 src/app/api/attachments/download-route-source.test.ts
+
+# ── 조각 3d-6a — 「새 견적서」 팝업의 받침돌(일부) ──────────────────────
+# 🔴 **셋 가운데 하나만 왔다.** 지시서는 `quote-excel-parse.ts` ·
+# `quote-excel-autofill.ts` · `new-quote-excel-handoff.ts` 셋을 함께 들여오라 했는데,
+# 앞의 둘이 **이 저장소에 없는 것을 import** 하고 있어 멈췄다(A/S 의
+# `lib/xlsx/handwritten-quote-reader.ts` · `components/quotes/quote-issue-messages.ts`).
+# 상자 하나만 import 가 **아예 없어** 혼자 설 수 있었다.
+#
+#  · new-quote-excel-handoff.test.ts — 팝업이 고른 엑셀 하나를 작성 화면으로 나르는
+#    모듈 수준 상자. 🔴 **A/S 에는 이 시험이 없다** — 여기서 새로 적었다. 담고 꺼내면
+#    같은 객체가 나오는가 · **한 번 꺼내면 비우는가**(두 번째는 null) · `put(null)` 이
+#    비우는가 · 자리가 하나인가(뒤가 앞을 덮는가) · sheetIndex null 을 그대로 나르는가.
+#    DB 도 화면도 fetch 도 없다 — 값만 본다.
+# 🔴 **아무도 안 부른다** — 담는 쪽(NewQuoteDialog)도 꺼내는 쪽(QuoteEditForm 의 첫
+#    그림)도 아직 이 저장소에 없다. 다음 조각(팝업)이 잇는다.
+src/components/quotes/new-quote-excel-handoff.test.ts
