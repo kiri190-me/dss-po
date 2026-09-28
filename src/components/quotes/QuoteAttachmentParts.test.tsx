@@ -40,6 +40,15 @@ import type { QuoteAttachmentSlotFileView, ResolvedQuoteSlots } from "./quote-at
  * 어디까지 왔나」). 조각 자체는 `mode="pending"` 을 저쪽과 똑같이 그리므로 여기서
  * 재 둔다 — 배선이 오는 날 이 시험이 이미 지키고 있다.
  *
+ * ⚠️ 위 문단은 **그때(3d-4)의 기록**이다. 🔴 **그날이 조각 PO 3k 다**(2026-09-28) —
+ * 새 견적서 화면(`/quotes/new`)에도 이 구역이 **실제로 선다.** 폼(QuoteEditForm)이
+ * 구역을 그릴지 가르던 조건(`attachmentSlots !== null ?`)이 없어져 A/S 처럼 **조건
+ * 없이** 그리고, 거기서 고른 파일은 [저장]이 견적서를 만든 **직후** 올라간다(폼의
+ * handleSubmit → `attachments.uploadQueuedAfterCreate` → quote-attachment-upload.ts 의
+ * `uploadQueuedQuoteAttachments`). 🔴 그래서 아래 「새 견적서」 묶음은 더 이상 「그려
+ * 보는 것일 뿐」이 아니라 **사람이 실제로 보는 화면**을 지킨다.
+ * 🔴 **재는 것은 한 글자도 바꾸지 않았다** — 그날 고친 것은 이 머리말뿐이다.
+ *
  * ── 하나 더한 것 ────────────────────────────────────────────────────────
  * 「파일 고르기 단추」 묶음은 A/S 에 없다. 저쪽에서는 그 단추가 칸 안에서만 서서 칸
  * 시험이 함께 재는데, 이 사이트에서는 3d-3f 가 그 단추만 먼저 가져와 **아무도 재지

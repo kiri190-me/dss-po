@@ -596,9 +596,20 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
    * 🔴 한 마디라도 끊기면 **화면이 거짓말을 하기 시작한다** — 목록의 딱지와 팝업은
    * 「수정 화면에서 붙이라」고 하는데 그 화면에는 칸이 없는 상태다. 옛 단언이 막던
    * 것이 바로 그 상태였고, 이 시험이 그 자리를 이어받는다.
+   *
+   * ⚠️ 위는 **그때(3d-4)의 기록**이고 **그 사슬은 지금도 그대로 잰다.**
+   * 🔴 **조각 PO 3k 가 그 사슬의 마지막 마디를 바꿨다**(2026-09-28): 첨부 구역을
+   * 그릴지 가르던 조건(`attachmentSlots !== null ?`)이 **없어졌다** — 저쪽처럼
+   * **조건 없이** 그리므로 **새 견적서 화면에도 칸이 선다.**
+   *
+   * 🔴 그래서 이 시험의 ② 가 늘었다. 새 견적서 화면의 칸이 거짓말을 하지 않는 까닭은
+   * 폼의 handleSubmit 이 「만든 직후 올리기」를 하기 때문이고, 그것이 빠지면 3d-4 가
+   * 두려워한 **「고른 파일이 [저장] 때 말없이 사라지는」** 상태로 되돌아간다. 아래
+   * ②-ㄴ 이 그것을 잰다 — 부른다는 것과, 🔴 **`setCreatedQuote` 가 그보다 앞**이라는
+   * 차례까지. 뒤집히면 올리다 실패했을 때 같은 견적서가 **두 장**이 된다.
    * ==========================================================================
    */
-  test("🔴 조각 3d-4 — 그 문장이 가리키는 붙이는 칸이 견적서 수정 화면에 실제로 선다", () => {
+  test("🔴 조각 3d-4 · PO 3k — 그 문장이 가리키는 붙이는 칸이 선다. 새 견적서 화면에도 서고, 고른 파일은 만든 직후 올라간다", () => {
     const page = codeOf(detailPageSource);
     const form = codeOf(editFormSource);
     const section = codeOf(sectionSource);
@@ -607,11 +618,83 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     assert.ok(page.includes("listQuoteAttachmentSlots(quote.id)"), "수정 화면이 첨부 칸을 읽지 않는다");
     assert.ok(page.includes("attachmentSlots={attachmentSlots}"), "읽은 칸을 폼에 넘기지 않는다");
 
-    // ② 폼이 그 값으로 첨부 구역을 그린다.
-    assert.ok(form.includes("<QuoteAttachmentsSection"), "편집 폼이 첨부 구역을 그리지 않는다");
+    // ②-ㄱ 폼이 첨부 구역을 그리고, 넘겨받은 칸을 컨트롤러의 `serverSlots` 로 잇는다.
+    //
+    // ⚠️ 여기 있던 단언 한 줄은 **그때의 기록**이라 지우지 않고 옮겨 적는다:
+    //
+    //     assert.ok(form.includes("attachmentSlots !== null ?"),
+    //       "첨부 구역을 그릴지 가르는 조건이 attachmentSlots 가 아니다");
+    //
+    // 🔴 **풀었다**(2026-09-28 · 조각 PO 3k). 그 조건의 전제는 「새 견적서 화면에서
+    //    고른 파일은 [저장] 때 말없이 사라진다」였고, 그 배선이 이제 왔다(②-ㄴ).
+    //    🔴 **약하게 하지 않고 긍정 단언으로 갈았다** — 3i 가 `intakeHref`,
+    //    3j 가 `renderRowActions` 에서 한 방식과 같다. 조건이 없어져도 **사슬은
+    //    여전히 이어진다**: 수정 화면이 칸을 읽어 폼에 넘기고(①), 폼이 그것을
+    //    컨트롤러의 `serverSlots` 로 넘긴다(바로 아래).
     assert.ok(
+      form.includes("<QuoteAttachmentsSection controller={attachments}"),
+      "편집 폼이 첨부 구역을 그리지 않는다"
+    );
+    assert.ok(
+      form.includes("serverSlots: attachmentSlots,"),
+      "폼이 넘겨받은 칸을 컨트롤러의 serverSlots 로 잇지 않는다 — 수정 화면의 붙은 파일이 칸에 안 뜬다"
+    );
+    assert.ok(form.includes("attachmentSlots = null,"), "프롭의 기본값이 null 이 아니다");
+
+    // 🔴 **조건 없이 그린다** — 이 한 줄이 「새 견적서 화면에도 칸이 선다」를 만든다.
+    //    되살리는 순간 그 화면의 칸이 사라지고, 팝업에서 고른 엑셀도 갈 곳을 잃는다.
+    assert.equal(
       form.includes("attachmentSlots !== null ?"),
-      "첨부 구역을 그릴지 가르는 조건이 attachmentSlots 가 아니다"
+      false,
+      "첨부 구역이 다시 조건부다 — 저쪽은 조건 없이 그리고, 그래야 새 견적서 화면에도 칸이 선다"
+    );
+    // 그 화면이 폼을 그리고, 🔴 **서버 칸은 넘기지 않는다**(새 장에는 붙어 있는 것이 없다).
+    const newPage = codeOf(newPageSource);
+    assert.ok(newPage.includes("<QuoteEditForm"), "새 견적서 화면이 그 폼을 그리지 않는다");
+    assert.equal(
+      newPage.includes("attachmentSlots"),
+      false,
+      "새 견적서 화면이 서버 칸을 넘긴다 — 아직 붙어 있는 것이 없는 화면이다"
+    );
+
+    // ②-ㄴ 🔴 **이 조각의 핵심** — 새 견적서 화면의 칸이 거짓말을 하지 않는 까닭.
+    //    [저장]이 견적서를 만든 **직후** 들고 있던 파일을 올린다.
+    const submit = codeOf(sliceBetween(editFormSource, "async function handleSubmit(", "const disabled ="));
+    const createdAt = submit.indexOf("setCreatedQuote({ id: result.id, version: result.version })");
+    const uploadAt = submit.indexOf("attachments.uploadQueuedAfterCreate(result.id");
+    assert.ok(
+      uploadAt >= 0,
+      "handleSubmit 이 uploadQueuedAfterCreate 를 부르지 않는다 — 새 견적서 화면에서 고른 파일이 [저장] 때 말없이 사라진다"
+    );
+    assert.ok(createdAt >= 0, "만든 장을 setCreatedQuote 로 기억하지 않는다");
+    // 🔴 **차례가 곧 안전장치다.** 올리기가 먼저면, 올리다 실패했을 때 다음 [저장]이
+    //    다시 **만들기**가 되어 같은 견적서가 두 장 생긴다.
+    assert.ok(
+      createdAt < uploadAt,
+      "setCreatedQuote 가 uploadQueuedAfterCreate 보다 뒤다 — 올리다 실패하면 같은 견적서가 두 장이 된다"
+    );
+    // 🔴 하나라도 못 올리면 **목록으로 넘기지 않는다** — 견적서는 이미 저장됐고,
+    //    칸이 못 올린 파일을 까닭과 함께 들고 [다시 올리기]를 내밀어야 한다.
+    assert.ok(
+      submit.includes(
+        "if (upload.failures.length > 0) { setAttachmentNotice(createdWithAttachmentFailuresText(upload.total, upload.failures)); return; }"
+      ),
+      "못 올린 것이 있어도 목록으로 넘어간다 — 그 파일을 다시 올릴 길이 화면에서 사라진다"
+    );
+    assert.ok(
+      submit.indexOf("upload.failures.length > 0") <
+        submit.indexOf('showSavePopup({ message: "견적서를 등록했습니다.'),
+      "올리기 결과를 보기 전에 목록으로 넘어간다"
+    );
+    // 🔴 그 자리에 머문 장은 **저장된 장**이다 — 훅의 quoteId 가 `savedQuote?.id` 라야
+    //    [다시 올리기]가 실제로 올라간다(retry 는 quoteId 가 null 이면 아무 일도 안 한다).
+    assert.ok(
+      form.includes("const savedQuote = quote ? { id: quote.id, version: quote.version } : createdQuote;"),
+      "방금 만든 장을 저장된 장으로 보지 않는다 — 다음 [저장]이 같은 견적서를 또 만든다"
+    );
+    assert.ok(
+      form.includes("quoteId: savedQuote?.id ?? null,"),
+      "훅이 방금 만든 장의 id 를 못 받는다 — 못 올린 파일의 [다시 올리기]가 말없이 아무 일도 하지 않는다"
     );
 
     // ③ 구역이 두 칸을 그리고, 지우기는 서버 액션으로 간다.
@@ -1027,6 +1110,12 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     //   · `queries/attachments` — **새 견적서 화면에 첨부 칸을 세우는 것은 아직 아니다.**
     //     「만든 직후 올리기」(폼 handleSubmit 의 그 자리)가 없어, 칸만 세우면 고른
     //     파일이 [저장] 때 말없이 사라진다(3d-4 가 일부러 안 세웠다).
+    //     ⚠️ 그 까닭은 **그때의 기록**이다 — 🔴 **조각 PO 3k 가 새 견적서 화면에도
+    //     칸을 세웠다**(2026-09-28). 🔴 **그래도 이 금지는 그대로다**: 까닭이 바뀌었을
+    //     뿐이다. 아직 만들지도 않은 견적서에는 **붙어 있는 파일이 있을 수 없으므로**
+    //     이 화면은 서버 칸을 읽을 일이 없다(`attachmentSlots` 를 안 넘긴다 — 위
+    //     「3d-4 · PO 3k」 시험이 그것을 잰다). 읽기 시작하면 id 도 없이 무엇을
+    //     물을지부터 없다.
     //
     // 🔴 푼 자리는 아래 이웃 시험이 **긍정 단언**으로 메운다 — 무엇을 들여오는지,
     //    그리고 🔴 **수리 건 몫(Ⓐ)의 이름이 저장소 어디에도 없는지**까지.
