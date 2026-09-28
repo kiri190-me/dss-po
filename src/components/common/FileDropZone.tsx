@@ -1,0 +1,163 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { createFileDropHandlers, droppedFilesText, installFileDropGuard } from "./file-drop";
+
+/**
+ * ============================================================================
+ * 끌어다 놓기 — 파일을 올리는 자리를 감싸는 조각 하나
+ * ============================================================================
+ * 규칙과 문구는 전부 file-drop.ts 에 있다(그 파일 머리말을 먼저 읽을 것). 여기는
+ * 그것을 화면에 붙이기만 한다 — 끌어오는 중임을 보이고, 못 받은 까닭을 한 줄 적는다.
+ *
+ * ── 🔴 이 사이트의 사실 (조각 3d-3f) ────────────────────────────────────
+ * A/S 관리 시스템의 **같은 이름 · 같은 경로** 파일에서 그대로 왔다
+ * (`RF_Service_System/src/components/common/FileDropZone.tsx`, 152줄 — 2026-09-28
+ * 실측). 🔴 **코드는 한 글자도 고치지 않았다** — 조각 4 에서 두 벌을 글자로 대조한다.
+ *
+ * 🔴 **이 사이트에는 이 조각을 부르는 화면이 아직 하나도 없다.** 첫 자리는 첨부
+ * 칸(quotes/QuoteAttachmentParts.tsx 의 QuoteAttachmentSlotCard)이고, 그 칸은 조각
+ * 3d-3f 에서 막혔다 — 까닭은 그 파일 머리말의 「멈춘 자리」에 있다. 그때까지 이
+ * 파일은 「와 있지만 아직 아무도 안 부르는」 상태다(이 저장소가 여러 번 쓴 방식이다).
+ * 아래 곁말의 「떨구는 자리 대부분」 · 「담는 자리는 둘」도 저쪽 사실이다.
+ *
+ * 🔴 **검사하지 않는다.** 받은 파일은 `onFiles` 로 그대로 넘기고, 부르는 쪽이 지금
+ * 고르기 칸(`<input type="file">`)의 onChange 가 하던 그 자리에 태운다. 떨구기 전용
+ * 검사를 새로 짜면 고르기와 두 길이 갈린다.
+ *
+ * 기존 고르기 칸은 **그대로 둔다** — 이 조각은 더하기만 한다.
+ *
+ * ── 🔴 받은 파일의 이름을 적는다 (2026-09-23) ────────────────────────────
+ * 떨군 파일은 고르기 칸에 **안 보인다** — 「선택된 파일 없음」은 브라우저가 그리는
+ * 글자라 바꿀 수 없다. 그래서 사람은 들어갔는지조차 모르고, 엉뚱한 파일이 들어가도
+ * 눈치채지 못한다. 받은 이름과 크기를 한 줄 적는다(file-drop.ts 의 droppedFilesText).
+ *
+ * 🔴 고르기 칸을 쓰면 이 줄을 **지운다.** 안 지우면 「놓은 파일」이 실제로 보낼
+ * 파일과 달라져서, 없던 것보다 나쁜 거짓말이 화면에 남는다.
+ * ============================================================================
+ */
+
+export const DEFAULT_FILE_DROP_HINT = "여기에 파일을 놓으세요";
+
+export function FileDropZone({
+  name,
+  onFiles,
+  multiple,
+  disabled = false,
+  hint = DEFAULT_FILE_DROP_HINT,
+  className = "",
+  children,
+}: {
+  /** 어느 자리인가 — `data-file-drop` 으로 남는다(시험과 디버깅이 짚는 이름). */
+  name: string;
+  onFiles: (files: File[]) => void;
+  /** 고르기 칸의 같은 이름 속성과 **같은 값**. 하나만 받는 자리는 false. */
+  multiple: boolean;
+  disabled?: boolean;
+  /** 끌어오는 중에 보일 한 줄. */
+  hint?: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  /**
+   * 끌기가 몇 겹 들어와 있는가(file-drop.ts 의 depth). useRef 가 아니라 state 의
+   * 첫 값으로 든 그릇이다 — ref 를 그릴 때 함수에 넘기는 것은 lint(react-hooks/refs)
+   * 가 막는다. 그리는 값이 아니라 다시 그릴 일도 없으므로 그릇만 계속 들고 있으면 된다.
+   */
+  const [depth] = useState(() => ({ current: 0 }));
+  const [dragging, setDragging] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  /** 방금 받은 파일을 사람에게 되읽어 주는 한 줄(위 머리말). */
+  const [received, setReceived] = useState<string | null>(null);
+
+  // 떨구는 자리가 하나라도 떠 있는 동안 창 전체의 기본 동작을 막는다 — 빗나간
+  // 자리에 떨궈도 브라우저가 파일을 열지 않게(file-drop.ts 의 installFileDropGuard).
+  useEffect(() => installFileDropGuard(window), []);
+
+  const handlers = createFileDropHandlers({
+    depth,
+    disabled,
+    multiple,
+    // 🔴 받은 것을 부르는 쪽에 넘기는 일은 그대로다 — 되읽어 줄 한 줄만 더 든다.
+    onFiles: (files) => {
+      setReceived(droppedFilesText(files));
+      onFiles(files);
+    },
+    onNotice: (next) => {
+      setNotice(next);
+      // 못 받았다고 말하는 순간, 지난번에 받은 것을 적어 둔 줄은 거짓이 된다.
+      if (next !== null) setReceived(null);
+    },
+    setDragging,
+  });
+
+  return (
+    <div
+      data-file-drop={name}
+      data-dragging={dragging ? "true" : undefined}
+      onDragEnter={handlers.onDragEnter}
+      onDragOver={handlers.onDragOver}
+      onDragLeave={handlers.onDragLeave}
+      onDrop={handlers.onDrop}
+      // 안쪽 고르기 칸을 쓰면 「놓은 파일」 줄을 지운다 — 그 순간 보낼 파일이
+      // 바뀌므로(위 머리말). 떨군 것을 칸에 담는 putFilesInPicker 는 change 를
+      // 일으키지 않으므로 그 두 자리의 줄은 그대로 남는다.
+      onChangeCapture={(event) => {
+        const target = event.target as HTMLInputElement | null;
+        if (target?.type === "file") setReceived(null);
+      }}
+      className={`relative ${className}`}
+    >
+      {children}
+
+      {/*
+        끌어오는 중에만 덮는다 — 어디에 놓아야 하는지 보이게. pointer-events-none 이
+        없으면 이 덮개가 dragleave 를 일으켜 표시가 깜빡인다.
+      */}
+      {dragging ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-sky-500 bg-sky-50/90 px-3 text-center text-sm font-medium text-sky-900 dark:border-sky-400 dark:bg-sky-950/90 dark:text-sky-100"
+        >
+          {hint}
+        </span>
+      ) : null}
+
+      {/*
+        🔴 받았다는 영수증. `w-full` 은 멋이 아니다 — 떨구는 자리 대부분이
+        `flex flex-wrap` 이라, 없으면 이 줄이 단추 옆에 끼어 눌려 버린다.
+        `role="status"` 로 화면 낭독기에도 들린다.
+      */}
+      {received ? (
+        <p
+          role="status"
+          data-role="file-drop-received"
+          className="mt-2 w-full text-xs text-zinc-600 dark:text-zinc-400"
+        >
+          {received}
+        </p>
+      ) : null}
+
+      {notice ? (
+        <p role="alert" className="mt-2 w-full text-xs text-red-600 dark:text-red-400">
+          {notice}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 떨군 파일을 **고르기 칸에 그대로 담는다.** 올릴 때 칸의 `files` 를 읽는 자리
+ * (제품 모델 사진·도면 · 접수 건 파일 올리기)가 쓴다 — 떨구기용 상태를 따로 두면
+ * 「올리기」 단추가 보는 것이 둘이 되고, 두 길이 갈린다.
+ *
+ * 담고 나면 화면에도 「N개 파일」로 보이므로, 고르기 칸으로 고른 것과 구분되지 않는다.
+ */
+export function putFilesInPicker(input: HTMLInputElement | null, files: readonly File[]): boolean {
+  if (!input || files.length === 0) return false;
+  const transfer = new DataTransfer();
+  for (const file of files) transfer.items.add(file);
+  input.files = transfer.files;
+  return true;
+}

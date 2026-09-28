@@ -11,7 +11,8 @@
     "test": "node scripts/run-test-list.mjs unit -- --conditions=react-server --import tsx --import ./scripts/test-template-bootstrap.ts --test",
     "test:db:safety": "node scripts/run-test-list.mjs db-safety -- --require ./scripts/node-windows-test-preload.cjs --import tsx --test --test-concurrency=1",
     "pretest:db": "npm run test:db:safety",
-    "test:db": "node scripts/run-test-list.mjs db -- --require ./scripts/node-windows-test-preload.cjs --conditions=react-server --import tsx --import ./scripts/test-db-bootstrap.ts --test --test-concurrency=1"
+    "test:db": "node scripts/run-test-list.mjs db -- --require ./scripts/node-windows-test-preload.cjs --conditions=react-server --import tsx --import ./scripts/test-db-bootstrap.ts --test --test-concurrency=1",
+    "test:components": "node scripts/run-test-list.mjs components -- --import tsx --test"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
