@@ -53,6 +53,10 @@ export const dynamic = "force-dynamic";
  *                                — 함수라 여기서는 못 넘긴다. 줄마다 [견적서 받기]
  *                                링크가 서고, 엑셀 전용 줄에는 링크 대신 곁말이
  *                                선다. [미리보기] 는 3f 에서 그 자리에 더한다.
+ *                                ⚠️ 🔴 **3f 는 여기 안 더했다**(2026-09-28) — 미리보기
+ *                                화면(`/quotes/{id}/print`)은 섰지만 **목록 줄에는**
+ *                                안 세웠다. 까닭 둘은 QuoteListSlots.tsx 의
+ *                                `renderRowActions` 자리에 적었다(사용자 판단 대기).
  *   ✅ renderFileBadges         → 조각 3c-2 에서 채웠다. 🔴 **QuoteListSlots 에서**
  *                                — 함수라 여기서는 못 넘긴다. 왼쪽 「견적서」 칸에
  *                                「엑셀 전용」 배지 하나가 붙는다(그 값은 quotes 의

@@ -32,7 +32,7 @@ import { STORED_QUOTE_KINDS, quoteKindLabels } from "@/lib/validation/quote-inpu
  *
  * 🔴 **나머지 셋은 가져오지 않았다** — 없는 파일을 읽는 시험은 「무엇이 깨졌는지」가
  * 아니라 「아직 안 왔다」를 말할 뿐이다:
- *   · 미리보기 화면(`quotes/[id]/print/page.tsx`) — **조각 3f**.
+ *   · 미리보기 화면(`quotes/[id]/print/page.tsx`) — **조각 3f**. 🔴 **왔다**(아래).
  *   · 발행 통로(POST issue · `services/quote-issue.ts`) — **조각 3c-3**(3d 뒤로 미뤘다).
  *   · 편집 화면의 두 단추(`canGetDocument`) — 그 단추가 **발행과 한 벌**이라 3c-3 과
  *     함께 온다(QuoteEditForm 의 머리 단추 자리 주석).
@@ -44,6 +44,12 @@ import { STORED_QUOTE_KINDS, quoteKindLabels } from "@/lib/validation/quote-inpu
  * 3f)다. 편집 화면 묶음 안에도 그 하나를 기다리는 단언이 있다 —
  * [미리보기 · PDF] 단추가 아직 없음을 재는 줄이고, 3f 가 그것을 저쪽 것으로
  * 되돌린다.
+ *
+ * ── ⚠️ 위도 그때의 기록이다 — 🔴 **조각 3f 가 마지막 하나를 더했다**(2026-09-28) ──
+ * 미리보기 화면(`quotes/[id]/print/page.tsx`)이 왔다. 🔴 **이제 「나머지 셋」이 다
+ * 왔고 기다리는 묶음은 없다** — 막는 자리가 다섯이다(받기 통로 · 목록 · 발행 통로 ·
+ * 미리보기 화면 · 편집 화면). 편집 화면 묶음의 「아직 없다」 단언도 **저쪽 것으로
+ * 되돌렸다**(그 자리의 곁말).
  * ============================================================================
  */
 
@@ -117,13 +123,15 @@ const read = (relativePath: string) =>
   readFileSync(new URL(relativePath, repoUrl), "utf8").replace(/\r\n/g, "\n");
 const flat = (source: string) => source.replace(/\s+/g, " ");
 
-describe("㉡ 막는 자리 — 받기 통로 · 목록 · 발행 통로 · 편집 화면이 같은 판정을 부른다", () => {
+describe("㉡ 막는 자리 — 받기 통로 · 목록 · 발행 통로 · 미리보기 화면 · 편집 화면이 같은 판정을 부른다", () => {
   const xlsxRoute = flat(read("src/app/api/quotes/[id]/xlsx/route.ts"));
   const listSlots = flat(read("src/components/quotes/QuoteListSlots.tsx"));
   // 🔴 조각 3c-3 이 더한 둘(아래 그 두 묶음).
   const issueService = flat(read("src/lib/server/services/quote-issue.ts"));
   const issueRoute = flat(read("src/app/api/quotes/[id]/issue/route.ts"));
   const editForm = flat(read("src/components/quotes/QuoteEditForm.tsx"));
+  // 🔴 조각 3f 가 더한 하나 — 미리보기 화면(머리말의 「남은 것은 미리보기 화면 하나」).
+  const printPage = flat(read("src/app/(app)/quotes/[id]/print/page.tsx"));
 
   test("🔴 GET 받기 통로 — 견적서를 읽은 **직후**, 채우기보다 앞에서 거절한다", () => {
     const at = xlsxRoute.indexOf(
@@ -202,6 +210,36 @@ describe("㉡ 막는 자리 — 받기 통로 · 목록 · 발행 통로 · 편�
     assert.ok(issueRoute.includes("KIND_NOT_SUPPORTED: 501,"), "발행 통로의 응답 코드가 없다");
   });
 
+  /**
+   * ============================================================================
+   * 🔴 조각 3f 가 더한 하나 — **미리보기 화면** (2026-09-28)
+   * ============================================================================
+   * 이 파일 머리말의 「나머지 셋」 가운데 **마지막 하나**다. 이제 셋이 다 왔고,
+   * 기다리는 묶음은 **없다.**
+   *
+   * 🔴 저쪽 단언과 다른 것은 한 자리뿐이다 — 거절할 때 그리는 조각의 **이름**.
+   * 저쪽은 `<PlaceholderPage …>` 를 쓰는데 이 사이트에는 그 파일이 없어
+   * (`components/layout/PlaceholderPage.tsx` 를 안 가져왔다) 인쇄 화면이 **같은
+   * 마크업을 제 안에 `UnsupportedPrintPage` 로** 적었다(그 페이지 머리말의 ②).
+   * 🔴 **재는 것은 그대로다**: 까닭을 말하는가 · 「없는 장」이라 하지 않는가 ·
+   * 그리기보다 앞인가 셋.
+   * ============================================================================
+   */
+  test("🔴 미리보기 화면 — 그리기 전에 멈추고, 「없는 장」이라고 하지 않는다", () => {
+    const at = printPage.indexOf("if (!canRenderQuoteDocument(quote)) {");
+    assert.ok(at >= 0, "미리보기 화면이 거절하지 않는다");
+    assert.ok(
+      printPage
+        .slice(at)
+        .includes('<UnsupportedPrintPage title="견적서 미리보기" description={QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE} />'),
+      "까닭을 말하지 않는다"
+    );
+    // 🔴 notFound() 로 보내지 않는다 — 그 장은 목록에도 수정 화면에도 멀쩡히 있다.
+    assert.ok(printPage.slice(at).indexOf("notFound()") < 0, "없는 장으로 답한다");
+    // 그리는 쪽(QuotePrintView)보다 앞이다.
+    assert.ok(printPage.indexOf("<QuotePrintView") > at, "그리기가 거절보다 앞이다");
+  });
+
   test("🔴 편집 화면 — 화면도 같은 판정을 본다(엑셀 전용 케이블은 열려 있다)", () => {
     assert.ok(editForm.includes("const canGetDocument = canRenderQuoteDocument({ kind, isExcelOnly });"), "판정을 안 부른다");
     assert.ok(editForm.includes("{savedQuote && canGetDocument && ( <QuoteIssueButton"), "발행 단추가 그 값을 안 본다");
@@ -212,16 +250,22 @@ describe("㉡ 막는 자리 — 받기 통로 · 목록 · 발행 통로 · 편�
      * 🔴 [미리보기 · PDF] 단추는 **아직 없다**(조각 3f). 저쪽은 여기서
      * `{canGetDocument && ( <button type="button" onClick={() => setShowPreview(true)}` 도
      * 함께 본다 — 그 단추가 서는 날 이 줄을 저쪽 것으로 되돌린다.
+     *
+     * ⚠️ **그날이 왔다**(조각 3f, 2026-09-28). 🔴 위 「없다」 단언을 지우고 **저쪽
+     * 줄로 되돌렸다** — 아래 한 줄이 그것이고 저쪽과 글자가 같다. 방향이 뒤집혔다:
+     * 「아직 없다」에서 「**있고, 같은 판정으로 갈린다**」로.
      */
-    assert.equal(editForm.includes("setShowPreview(true)"), false, "미리보기가 왔다 — 이 단언을 저쪽 것으로 되돌릴 것");
+    assert.ok(editForm.includes("{canGetDocument && ( <button type=\"button\" onClick={() => setShowPreview(true)}"));
   });
 
-  test("🔴 네 곳 어디에도 종류를 손으로 적은 갈림이 없다 — 판정은 한 곳이다", () => {
+  // 🔴 조각 3f 가 「미리보기 화면」을 이 목록에 더했다(넷 → 다섯).
+  test("🔴 다섯 곳 어디에도 종류를 손으로 적은 갈림이 없다 — 판정은 한 곳이다", () => {
     for (const [name, source] of [
       ["GET 받기 통로", xlsxRoute],
       ["목록의 받기 링크", listSlots],
       ["발행 통로", issueService],
       ["발행 라우트", issueRoute],
+      ["미리보기 화면", printPage],
     ] as const) {
       assert.ok(!source.includes('=== "CABLE"'), `${name} 가 종류를 손으로 가른다`);
       assert.ok(!source.includes('!== "CABLE"'), `${name} 가 종류를 손으로 가른다`);

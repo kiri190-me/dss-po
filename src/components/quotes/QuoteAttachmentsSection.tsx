@@ -14,8 +14,10 @@ import {
   quoteAttachmentDeletedText,
   quoteAttachmentUploadedText,
   resolveQuoteSlots,
+  signedPdfForPreview,
   withPendingQuoteAttachment,
   type PendingQuoteAttachments,
+  type QuotePrintSignedPdf,
   type QuoteSlotLocalChanges,
   type ResolvedQuoteSlots,
 } from "./quote-attachment-files";
@@ -55,6 +57,11 @@ import { QuoteIssueNoticeLines } from "./QuoteIssueButton";
  * 구역은 그 훅이 돌려준 것을 그리기만 한다. 🔴 **이 사이트에 미리보기는 아직
  * 없지만**(조각 3f) 자리를 저쪽과 같게 둔다 — 3f 가 올 때 폼을 다시 뜯지 않는다.
  *
+ * ⚠️ 위 문단은 **그때의 기록**이다. 🔴 **조각 3f 가 왔다**(2026-09-28) — 폼에
+ * [미리보기 · PDF] 가 서고 누르면 폼을 통째로 갈아 그린다. 🔴 **그 자리를 저쪽과
+ * 같게 둔 것이 값을 했다** — 상태가 훅에 있어서 미리보기를 열었다 닫아도 골라 둔
+ * 파일이 그대로 남는다. 이 구역은 한 줄도 뜯지 않았다.
+ *
  * ── 두 모드 ────────────────────────────────────────────────────────────
  *  · 저장된 견적서 — 올리기 · 바꾸기 · 지우기가 [저장]과 따로 **곧바로** 반영된다.
  *    파일은 견적서 칸이 아니고, 올려도 견적서의 version 이 오르지 않는다
@@ -88,6 +95,8 @@ import { QuoteIssueNoticeLines } from "./QuoteIssueButton";
  *    (quote-attachment-upload.ts 머리말).
  *  · `signedPdfForPreview` — **조각 3f(미리보기)** 의 것이다. 그 함수 자체가 아직
  *    이 사이트에 없다(quote-attachment-files.test.ts 머리말의 「뺀 것 셋」).
+ *    ⚠️ 그때의 기록이다 — 🔴 **조각 3f 가 그 함수를 가져왔다**(2026-09-28,
+ *    quote-attachment-files.ts 맨 끝). 부르는 곳은 `QuoteEditForm.tsx` 다.
  *  · ⚠️ `onExcelPicked`(수기 엑셀로 칸 채우기, 견적서 ①b) — 그때의 기록이다.
  *    🔴 **조각 3e-3 에 왔다**(2026-09-28). 아래 `pickFile` 이 「수기 견적서 엑셀」
  *    칸일 때만 폼에 알리고, `excelSlotDetails` 도 이제 폼이 그린 알림을 받는다.
@@ -130,6 +139,12 @@ import { QuoteIssueNoticeLines } from "./QuoteIssueButton";
  *    🔴 **공유폴더가 실패해도 올리기는 성공**이라 오류가 아니라 이 줄로만 드러난다 —
  *    이 줄이 없으면 그 실패가 화면에서 조용히 사라진다.
  *    🔴 **안 가져온 것은 이제 하나**다 — `signedPdfForPreview`(조각 3f).
+ *
+ * ⚠️ 위 마지막 줄도 **그때의 기록**이고, 🔴 **수도 틀렸다.** 조각 3f 가 시작하며
+ *    실측하니 `quote-attachment-files.ts` 에서 안 온 것은 하나가 아니라 **넷**이었다
+ *    (`QuotePrintSignedPdf` · `excelOnlyPrintAttachments` · `signedPdfForPreview` ·
+ *    `EXCEL_ONLY_NO_SIGNED_PDF_TEXT`). 🔴 **넷 다 2026-09-28 에 왔다** — 이제 이
+ *    구역이 기다리는 것은 **없다.**
  * ============================================================================
  */
 
@@ -150,6 +165,8 @@ export type QuoteAttachmentsController = {
   isDeleting: boolean;
   /** 엑셀 칸이 차 있거나 새 견적서가 들고 있다 — 엑셀 전용 안내를 끈다. */
   excelAttachedOrQueued: boolean;
+  /** 겹쳐 뜬 미리보기(엑셀 전용)에 보일 결재 PDF. 🔴 조각 3f 가 되돌려 놓았다(2026-09-28). */
+  signedPdfForPreview: QuotePrintSignedPdf | null;
   pickFile: (category: QuoteAttachmentSlotCategory, file: File) => void;
   retry: (category: QuoteAttachmentSlotCategory) => void;
   clearPending: (category: QuoteAttachmentSlotCategory) => void;
@@ -369,6 +386,11 @@ export function useQuoteAttachments({
       isNewQuote,
       excelSlot: slots.QUOTE_EXCEL,
       hasPendingExcel: pending.QUOTE_EXCEL !== undefined,
+    }),
+    signedPdfForPreview: signedPdfForPreview({
+      isNewQuote,
+      slot: slots.SIGNED_QUOTE_PDF,
+      pendingFileName: pending.SIGNED_QUOTE_PDF?.name ?? null,
     }),
     pickFile,
     retry,

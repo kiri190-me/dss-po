@@ -125,11 +125,16 @@ describe("지금 어디까지 왔나", () => {
   });
 });
 
-describe("🔴 발행을 막지 않는다 — 발행 통로는 결재 표를 읽지 않는다", () => {
+describe("🔴 발행도 미리보기도 막지 않는다 — 그 통로들은 결재 표를 읽지 않는다", () => {
   /**
    * 🔴 **이 사이트에서** 견적서 파일이 실제로 나가는 길 전부. 여기 있는 어느
    * 파일이든 결재 표를 읽기 시작하면, 그 순간 「결재 전에는 발행 못 함」이 조용히
    * 생긴다.
+   *
+   * 🔴 **미리보기도 같은 울타리 안이다**(조각 3f, 2026-09-28 — 2026-09-18 사용자
+   * 결정은 「결재는 아무 문도 잠그지 않는다」이지 「발행만」이 아니다). 사람이
+   * 화면에서 보는 종이는 곧 받아 갈 종이라, 미리보기가 결재를 읽기 시작하면
+   * **받기는 되는데 미리보기만 막히는** 이상한 상태가 생긴다.
    *
    * ⚠️ 결재-B 때는 넷이었다 — 저쪽 목록의 `server/services/quote-issue.ts` 와
    * `api/quotes/[id]/issue/route.ts` 가 이 사이트에 없어(조각 3c-3) 뺐고, 대신
@@ -137,6 +142,15 @@ describe("🔴 발행을 막지 않는다 — 발행 통로는 결재 표를 읽
    * 🔴 **조각 3c-3(발행)이 왔다**(2026-09-28) — 그 둘을 **저쪽 목록 그대로**
    * 더해 이제 여섯이다. 🔴 `quote-workbook.ts` 는 그대로 둔다: 뺄 까닭이 없고,
    * 빼면 그 파일이 결재를 읽기 시작해도 아무도 소리를 내지 않는다.
+   *
+   * ⚠️ 위도 **그때의 기록**이다. 🔴 **조각 3f(미리보기)가 왔다**(2026-09-28) —
+   * 미리보기가 세운 **서버 통로 둘**을 더해 이제 **여덟**이다:
+   *   · `api/quotes/[id]/excel-preview/route.ts` — 엑셀 전용 장의 붙인 엑셀을
+   *     인쇄 격자로 내준다. 🔴 사람이 미리보기에서 보는 것이 곧 받아 갈 파일이다
+   *   · `lib/server/services/quote-excel-preview.ts` — 그 격자를 실제로 만드는 곳
+   * 🔴 **화면 쪽(QuotePrintView 등)은 이 목록에 넣지 않는다** — 여기는 **서버에서
+   * 파일·내용을 내주는 길**을 재는 목록이고, 화면은 서버가 준 것을 그릴 뿐이다.
+   * 화면이 결재를 읽어도 문이 잠기지는 않는다(잠그는 것은 서버뿐이다).
    */
   const ISSUE_PATH_SOURCES = [
     "src/app/api/quotes/[id]/xlsx/route.ts",
@@ -145,6 +159,9 @@ describe("🔴 발행을 막지 않는다 — 발행 통로는 결재 표를 읽
     "src/lib/server/services/quote-issue.ts",
     "src/lib/server/services/quote-workbook.ts",
     "src/lib/db/mutations/quote-exports.ts",
+    // 🔴 조각 3f — 미리보기 통로 둘.
+    "src/app/api/quotes/[id]/excel-preview/route.ts",
+    "src/lib/server/services/quote-excel-preview.ts",
   ] as const;
 
   for (const relativePath of ISSUE_PATH_SOURCES) {

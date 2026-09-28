@@ -31,4 +31,20 @@ src/components/quotes/quote-approval-screen.test.tsx
 # A/S 의 같은 이름 시험(158줄)에서 **앞의 두 묶음만** 가져왔다(단추 · 결과 줄).
 # 🔴 뒤의 두 묶음은 `QuotePrintView` 를 그려 보는데 그 화면이 이 사이트에 없다
 #    (조각 3f). 그 조각이 여기에 되돌려 놓는다 — 까닭은 그 파일 머리말에 있다.
+# ⚠️ 🔴 **조각 3f 가 되돌려 놓았다**(2026-09-28) — 저쪽 73~158줄을 바이트 동일로.
+#    이제 이 파일은 저쪽 158줄을 통째로 갖고 있다.
 src/components/quotes/QuoteIssueButton.test.tsx
+
+# ── 조각 PO 3f — 인쇄 · 미리보기 ([미리보기 · PDF] 단추) (2026-09-28) ────
+# A/S 의 미리보기 화면 시험 넷을 **저쪽과 바이트 동일**로 가져왔다.
+#  · QuotePrintView.test.tsx(305) — 앱 양식 · 🔴 **겹쳐 뜬 미리보기에는 견적서
+#    주소로 가는 링크가 아예 없다**(단추이고, 누르면 닫혀 폼으로 돌아간다)
+#  · quote-print-cable.test.tsx(264) — 케이블 양식의 모양
+#  · quote-print-excel-only.test.tsx(201) — 엑셀 전용 갈래(앱 양식 대신 결재 PDF)
+#  · quote-print-excel-preview-screen.test.tsx(329) — 붙인 엑셀의 인쇄 격자를 그린다.
+#    🔴 이 하나가 SheetPrintGridView 가 낸 마크업까지 끝에서 다시 본다(그 파일의
+#    저쪽 시험 627줄이 못 와서 남은 구멍을 일부 메운다 — 그 파일 머리말).
+src/components/quotes/QuotePrintView.test.tsx
+src/components/quotes/quote-print-cable.test.tsx
+src/components/quotes/quote-print-excel-only.test.tsx
+src/components/quotes/quote-print-excel-preview-screen.test.tsx

@@ -97,16 +97,19 @@ import {
   type QuoteExcelFieldChange,
   type QuoteExcelFormValues,
 } from "@/components/quotes/quote-excel-autofill";
-import {
-  scopeLinesFilledFromTemplate,
-  startNewQuoteLines,
-  type QuoteTemplateScopeDefaults,
-} from "@/components/quotes/quote-new-start";
+// 🔴 조각 3f 가 `QuoteTemplateScopeDefaults` 를 여기서 뺐다 — `workScopeDefaults`
+//    프롭이 머리글까지 담은 `QuoteWorkScopeSectionView` 로 **넓어져서**(그 프롭의
+//    머리말) 좁은 타입이 더는 쓰이지 않는다. 🔴 quote-new-start.ts 쪽 타입은 **그대로
+//    둔다** — 그 파일이 여전히 제 프롭으로 쓰고, 넓은 쪽이 좁은 쪽에 그대로 들어간다.
+import { scopeLinesFilledFromTemplate, startNewQuoteLines } from "@/components/quotes/quote-new-start";
 import {
   countQuoteLinesForExcelOnly,
   planExcelOnlyToggle,
   type QuoteLineCounts,
 } from "@/components/quotes/quote-attachment-files";
+// 🔴 조각 3f — 미리보기 화면과 그것이 받는 타입 둘.
+import QuotePrintView, { type QuoteWorkSections } from "@/components/quotes/QuotePrintView";
+import type { QuoteTemplateHeader, QuoteWorkScopeSectionView } from "@/lib/storage/quote-template";
 import QuoteIssueButton, { QuoteIssueNoticeLines } from "@/components/quotes/QuoteIssueButton";
 import { shouldReloadSlotsAfterIssue, type QuoteIssueRunOutcome } from "@/components/quotes/quote-issue-download";
 import type { QuoteIssueNoticeLine } from "@/components/quotes/quote-issue-messages";
@@ -141,6 +144,10 @@ import {
  *     그 값은 발행 통로를 부를지 가르는 데에만 쓰였다.
  *  ③ **미리보기(`QuotePrintView`)** → **조각 3f**. `printHeaders` 프롭과
  *     `previewWorkSections` 가 그 화면에서만 쓰였다.
+ *     ⚠️ 그때의 기록이다 — 🔴 **조각 3f 가 2026-09-28 에 셋을 다 되돌려 놓았다**:
+ *     `printHeaders` 프롭 · `previewWorkSections` · `if (showPreview) { … }` 블록,
+ *     그리고 머리의 [미리보기 · PDF] 단추. 🔴 **머리 단추로 아직 없는 것은
+ *     [폴더 열기] 하나**다(별도 조각, 2026-09-28 사용자 결정).
  *  ④ 🔴 **`workScopeDefaults` 가 비어 있다** — 바로 아래 항목.
  *
  * 그리고 이 조각이 **3b 전체가 아니라 그 첫 조각**이라 함께 비운 것 셋:
@@ -503,6 +510,50 @@ function writtenScopeTexts(rows: readonly ScopeRow[]): string[] {
  * 문서가 같은 뜻으로 읽어야 한다(아래 그 함수의 머리말 · toggleInvestigationExcluded).
  */
 
+/**
+ * ⚠️ 위 표지는 **그때의 기록**이다. 🔴 **조각 3f 가 왔다**(2026-09-28) — 아래가 그
+ * 되돌려 놓은 함수이고, A/S 의 같은 함수와 **바이트가 같다**(저쪽 397~429줄).
+ * 🔴 「빈 묶음은 양식의 기본 목록으로」도 **이제 성립한다** — 조각 3c-1 이
+ * `readAllQuoteWorkSectionDefaults` 를 배선했고, 3f 가 프롭 타입을 머리글까지 담은
+ * `QuoteWorkScopeSectionView` 로 **넓혔다**(아래 `workScopeDefaults` 의 머리말).
+ * 🔴 표지가 시킨 대로 `writtenScopeTexts` 를 그대로 쓴다.
+ */
+
+/**
+ * 미리보기에 그릴 작업 내역 세 묶음 — **지금 화면에 적혀 있는 값**으로 만든다.
+ *
+ * 🔴 저장된 견적서를 그릴 때와 **같은 답이 나와야 한다**
+ * (storage/quote-template.ts 의 readQuoteWorkSections). 세 가지가 같아야 한다:
+ *
+ *   · **빈 묶음은 양식의 기본 목록**으로 그린다. 파일도 정확히 그 규칙으로
+ *     나가기 때문이다(xlsx/quote-sheet-layout.ts 의 '빈 묶음은 양식 그대로
+ *     둔다'). 여기서 빈 채로 그리면 화면에는 아무것도 없는데 파일에는 표준
+ *     통전검사 7줄이 적힌, 서로 다른 문서가 된다.
+ *   · **빈 줄과 앞뒤 공백은 버린다.** 저장할 때 그렇게 걸러지므로
+ *     (validation/quote-input.ts 의 normalizeWorkScopeLines), 여기서 남겨 두면
+ *     저장 전 미리보기와 저장 뒤 미리보기의 줄 수가 달라진다.
+ *   · **머리글은 그 양식에 적힌 그대로**다 — 매쳐는 `조사작업`, 제너레이터 O/H
+ *     의 ② 는 `OH 및 수리 작업` 이다. 그래서 사람이 장비 종류·견적서 종류를
+ *     바꾸면 미리보기의 머리글도 따라 바뀐다.
+ */
+function previewWorkSections(
+  templateDefaults: Record<QuoteWorkScopeSection, QuoteWorkScopeSectionView> | undefined,
+  scopeLines: Record<QuoteWorkScopeSection, readonly ScopeRow[]>
+): QuoteWorkSections {
+  const sections = {} as Record<QuoteWorkScopeSection, { label: string; items: string[] }>;
+  for (const section of QUOTE_WORK_SCOPE_SECTIONS) {
+    const written = writtenScopeTexts(scopeLines[section]);
+    const fromTemplate = templateDefaults?.[section];
+    sections[section] = {
+      // 양식을 아예 못 읽었을 때만 화면 표기로 물러선다 — 머리글 자리가 빈 채로
+      // 그려지는 것보다는 낫다.
+      label: fromTemplate?.label ?? quoteWorkScopeSectionLabels[section],
+      items: written.length > 0 ? written : (fromTemplate?.items ?? []),
+    };
+  }
+  return sections;
+}
+
 function formatAmount(value: number): string {
   return `₩${AMOUNT_FORMAT.format(Math.round(value))}`;
 }
@@ -593,6 +644,7 @@ export default function QuoteEditForm({
   partOptions,
   partPrices,
   cableMaxLines,
+  printHeaders,
   workScopeDefaults,
   initialKind = null,
   initialExcelOnly = false,
@@ -661,8 +713,26 @@ export default function QuoteEditForm({
    * 그 머리글은 **미리보기(조각 3f)만** 쓴다. 여기서는 줄 목록만 쓰므로
    * `QuoteTemplateScopeDefaults`(quote-new-start.ts)로 좁혀 받는다. 3f 가 올 때
    * 넓히면 되고, 넓히는 것은 부르는 쪽을 깨지 않는다.
+   *
+   * ⚠️ 위는 **그때의 기록**이다. 🔴 **조각 3f 가 넓혔다**(2026-09-28) — 이제 저쪽과
+   * **같은 타입**이고, 머리글을 `previewWorkSections` 가 쓴다. 🔴 **부르는 쪽은 한
+   * 줄도 안 고쳤다**: 두 페이지가 넘기는 `readAllQuoteWorkSectionDefaults()` 의
+   * 결과가 이미 머리글을 싣고 있었다(storage/quote-template.ts). 좁게 받고 있었을
+   * 뿐이다. 아래 세 자리(`?.[section]?.items`)도 그대로 돈다.
    */
-  workScopeDefaults: Record<string, QuoteTemplateScopeDefaults>;
+  workScopeDefaults: Record<string, Record<QuoteWorkScopeSection, QuoteWorkScopeSectionView>>;
+  /**
+   * 양식 **넷**의 회사 정보·기본 문구·계좌(장비 종류 × 견적서 종류).
+   *
+   * 넷을 다 들고 있다가 사람이 종류를 바꾸는 순간 그에 맞는 것으로 갈아 끼운다 —
+   * 서버에 다시 묻지 않으니 기다리는 시간이 없다. 못 읽은 양식은 칸이 전부
+   * null 이고, 그래도 미리보기는 뜬다.
+   *
+   * 🔴 **조각 3f 가 되돌려 놓았다**(2026-09-28). 두 페이지의 머리말이 「양식 머리말
+   * (`readAllQuoteTemplateHeaders`) → 조각 3f(미리보기)」라고 적어 두었던 그 값이고,
+   * 쓰는 곳은 아래 `activePrintHeader` **한 줄**뿐이다.
+   */
+  printHeaders: Record<string, QuoteTemplateHeader>;
   /*
    * 🔴 **`initialIntakeNumber` 는 조각 4·5 의 것이다** — 수리 건의 「견적서」 탭에서
    * 건너왔을 때 그 인수번호로 [불러오기]를 한 번 대신 눌러 주는 값이고, **건너올
@@ -953,6 +1023,14 @@ export default function QuoteEditForm({
    * 미리보기는 **폼을 떠나지 않고** 같은 컴포넌트 안에서 그리는 것만 바꾼다 — 그래야
    * 돌아왔을 때 적어 둔 값이 하나도 사라지지 않는다. 3f 가 올 때 그 방식을 바꾸지 말 것.
    */
+  /**
+   * ⚠️ 위는 **그때의 기록**이다. 🔴 **조각 3f 가 왔다**(2026-09-28) — 아래 한 줄이
+   * 그것이고, 표지가 시킨 방식을 **그대로** 지켰다: 아래 `if (showPreview) { … }` 는
+   * 같은 컴포넌트 안에서 **그리는 것만** 바꾼다. 상태(useState)는 전부 살아 있으므로
+   * 미리보기를 열었다 닫아도 적어 둔 값 · 골라 둔 파일이 하나도 사라지지 않는다.
+   * 🔴 **`router.push` 로 다른 주소에 보내지 않는다** — 그 순간 폼이 통째로 버려진다.
+   */
+  const [showPreview, setShowPreview] = useState(false);
 
   /**
    * 견적서에 적히는 작업 내역. 묶음마다 줄 목록을 들고 있다.
@@ -1092,6 +1170,10 @@ export default function QuoteEditForm({
    * 🔴 **규칙을 여기에 새로 적지 않는다** — 받기 통로 둘(GET xlsx · POST issue) ·
    * 목록 · (3f 의) 미리보기 화면이 같은 답을 내야 하므로 판정은
    * `domain/quote-document-support.ts` 한 곳이다(그 파일 머리말).
+   *
+   * ⚠️ 위는 **그때의 기록**이다. 🔴 **조각 3f 가 왔다**(2026-09-28) — [미리보기 · PDF]
+   * 단추가 `{canGetDocument && (…)}` 로 **이 값 그대로** 갈린다. 인쇄 화면
+   * (`quotes/[id]/print/page.tsx`)도 같은 함수로 거절하므로 **화면과 서버가 한 답**이다.
    */
   const canGetDocument = canRenderQuoteDocument({ kind, isExcelOnly });
 
@@ -2074,6 +2156,31 @@ export default function QuoteEditForm({
    */
 
   /**
+   * ⚠️ 위는 **그때의 기록**이다. 🔴 **조각 3f 가 둘을 되돌려 놓았다**(2026-09-28,
+   * 바로 아래) — 저쪽과 **바이트 동일**이고, 표지가 시킨 대로 규칙을 새로 적지 않고
+   * `quoteTemplateKey` 를 그대로 썼다.
+   */
+
+  /**
+   * 지금 고른 장비 종류·견적서 종류에 맞는 양식의 문구.
+   *
+   * 넷 중 하나를 고르는 규칙은 domain/quote-template-variant.ts 한 곳에만 있다 —
+   * 화면과 서버가 같은 규칙을 봐야 "화면에 뜨는 납기와 실제로 나가는 납기가
+   * 다른" 일이 생기지 않는다.
+   */
+  const activePrintHeader = printHeaders[quoteTemplateKey(laborKind, kind)];
+
+  /**
+   * 미리보기에 그릴 작업 내역 — **지금 적혀 있는 값**이다(저장된 값이 아니다).
+   * 규칙은 previewWorkSections 주석에 있고, 저장된 견적서를 그리는 쪽
+   * (`/quotes/{id}/print`)과 같은 답이 나와야 한다.
+   */
+  const activeWorkSections = previewWorkSections(
+    workScopeDefaults[quoteTemplateKey(laborKind, kind)],
+    scopeLines
+  );
+
+  /**
    * 제너레이터 견적서에서 수리 작업을 하나도 고르지 않았는가 — 그러면 「2) 수리
    * 작업」이 문서에서 빠진다(domain/quote-work-scope-suppression.ts). 고른 작업은
    * 저장되는 그 목록(selectedTasks)으로 센다 — 저장된 견적서를 그리는 쪽이 세는
@@ -2115,6 +2222,106 @@ export default function QuoteEditForm({
     reloadSlotsAfterIssue(outcome);
   }
 
+  if (showPreview) {
+    /**
+     * 지금 폼에 적힌 값 그대로 미리보기를 그린다.
+     *
+     * ── 빈 칸은 null 로 넘긴다 ────────────────────────────────────────
+     * 미리보기는 유효기간·납기·결재조건을 `?? 양식의 기본 문구` 로 채우는데,
+     * 빈 문자열은 null 이 아니라서 그 기본값이 안 뜬다. 그러면 실제로 나갈
+     * 문서에는 "발행일로부터 4주"가 찍히는데 미리보기만 비어 보인다.
+     *
+     * ── 미리보기의 받기도 발행 단추다 (견적서 B1c) ──────────────────────
+     * 이 화면은 수정 권한자만 들어오므로 canIssue 다. 🔴 저장하지 않은 변경이 있으면 머리의
+     * 단추와 **같은 규칙**으로 통로를 부르지 않는다 — 미리보기는 지금 폼 값을 그리지만 통로는
+     * DB 에 저장된 값으로 파일을 만들기 때문이다.
+     */
+    const orNull = (value: string) => (value.trim() === "" ? null : value);
+    return (
+      <QuotePrintView
+        quoteId={savedQuote?.id ?? null}
+        onClose={() => setShowPreview(false)}
+        canIssue
+        hasUnsavedChanges={hasUnsavedChanges}
+        onIssueOutcome={reloadSlotsAfterIssue}
+        header={activePrintHeader}
+        workSections={activeWorkSections}
+        signedPdf={attachments.signedPdfForPreview}
+        hasExcel={attachments.excelAttachedOrQueued}
+        quote={{
+          // 엑셀 전용이면 앱 양식 대신 결재 PDF 를 보인다(QuotePrintView 의 엑셀 전용 갈래) —
+          // 받아 볼 문서가 손으로 만든 엑셀이기 때문이다. 일반 견적서는 아래 값으로 지금 그대로.
+          isExcelOnly,
+          manualSupplyAmount: isExcelOnly ? orNull(manualSupplyAmount) : null,
+          /**
+           * 🔴 종류를 넘겨야 케이블이 **케이블 양식의 모양**으로 그려진다 (2026-09-17
+           * 케이블 ④). 안 넘기면 미리보기가 내자 · OH 모양을 그리고, 그 종이에는 없는
+           * 작업 범위 · 작업비 구역이 화면에만 뜬다.
+           */
+          kind,
+          quoteNumber,
+          quoteDate,
+          customerNameText,
+          subject,
+          validity: orNull(validity),
+          delivery: orNull(delivery),
+          payment: orNull(payment),
+          modelNameText: orNull(modelNameText),
+          serialNumberText: orNull(serialNumberText),
+          lotNumberText: orNull(lotNumberText),
+          workCost,
+          // 켜면 미리보기에서도 「③ 통전검사」 묶음이 사라진다 — 파일이 정확히
+          // 그렇게 나가기 때문이다. 둘이 다르면 받아 본 쪽이 다른 문서로 읽는다.
+          powerTestExcluded,
+          // 수리 작업을 하나도 안 골랐으면 「② 수리 작업」도 사라진다 — 같은 이유.
+          repairSectionDropped,
+          // 「조사작업 제외」를 켜면 「① 인수 조사」도 사라진다 — 저장할 때와 같은 그 상태다.
+          investigationExcluded,
+          // 저장할 때와 **같은 규칙으로** 거른다 — 여기서만 빈 줄을 남겨 두면
+          // 미리보기의 줄 수와 실제 문서의 줄 수가 달라진다.
+          // 🔴 설명 줄은 넘기지 않는다 — 내자 · OH 모양을 그리는 쪽은 수량 · 단가가 있는
+          // 품목 줄만 안다(queries/quotes.ts 의 items · itemLines). 케이블 모양은 아래
+          // itemLines 를 본다 — 두 목록이 갈리는 까닭이 그 조회의 머리말에 있다.
+          items: items
+            .filter((row) => row.lineKind === "ITEM")
+            .filter((row) => row.partNameText.trim() !== "" || row.unitPrice.trim() !== "")
+            .map((row) => ({
+              partId: row.partId,
+              partNameText: row.partNameText,
+              isOverhaulPart: kind === "OVERHAUL" ? row.isOverhaulPart : false,
+              quantity: Number(row.quantity) || 0,
+              unitPrice: row.unitPrice.trim() === "" ? "0" : row.unitPrice,
+            })),
+          /**
+           * 특이사항은 **케이블에만 있는 칸**이다 — 저장에 싣는 규칙(collectFields)과 같게
+           * 가른다. 종류를 되돌려도 칸의 글자는 지우지 않으므로 여기서 한 번 더 가른다.
+           */
+          remarks: isCable ? remarks : null,
+          /**
+           * 🔴 품목 표 **전체** — 설명 줄까지 **차례 그대로**. 케이블 모양이 이것을 그린다.
+           * 위 items 처럼 종류로 거르면 미리보기에서 설명 줄이 사라져, 받아 본 문서와 다른
+           * 종이가 된다. 빈 줄을 거르는 규칙은 저장과 같다(collectFields 의 그 항목).
+           */
+          itemLines: items
+            .filter((row) => row.partNameText.trim() !== "" || row.unitPrice.trim() !== "")
+            .map((row) => {
+              const isNote = row.lineKind === "NOTE";
+              return {
+                partId: row.partId,
+                kind: row.lineKind,
+                partNameText: row.partNameText,
+                partSpecText: isCable && !isNote ? row.partSpecText : null,
+                isOverhaulPart: row.isOverhaulPart,
+                // 설명 줄은 수량 · 단가가 **없다** — 0 으로 접으면 합계에 0원짜리 품목으로 섞인다.
+                quantity: isNote ? null : Number(row.quantity) || 0,
+                unitPrice: isNote ? null : row.unitPrice,
+              };
+            }),
+        }}
+      />
+    );
+  }
+
   /*
    * ============================================================================
    * 🔴 조각 3f 가 **미리보기**를 되돌려 놓는다
@@ -2135,6 +2342,13 @@ export default function QuoteEditForm({
    *  · 빈 칸은 `null` 로 넘긴다 — 빈 문자열은 양식의 기본 문구를 못 부른다.
    *  · 거르는 규칙은 **저장과 같게** 한다(빈 줄 · 설명 줄) — 다르면 미리보기의
    *    줄 수와 실제 문서의 줄 수가 갈린다.
+   *
+   * ⚠️ 위 넷도 **그때의 기록**이다. 🔴 **조각 3f 가 왔다**(2026-09-28, **바로 위**) —
+   * 그 블록 99줄은 저쪽(A/S QuoteEditForm 1992~2090줄)과 **바이트가 같고**, 위에 적은
+   * 셋이 그 안에 그대로 들어 있다. 🔴 **`backHref` 를 넘기지 않는다** — 겹쳐 뜬
+   * 미리보기에는 견적서 주소로 가는 링크가 **아예 없고**, 대신 `onClose` 가 준 단추를
+   * 누르면 닫혀 이 폼으로 돌아온다(저쪽 시험이 못 박은 그대로). 사이트를 건너가는
+   * 주소는 이 블록에 한 줄도 없다.
    *
    * ── ⚠️ 3d: `excelConflicts` · `excelAutofillLines` · `excelAutofillPanel` ──
    * 그때의 기록이다 — 🔴 **조각 3e-3 에 왔다**(2026-09-28, 바로 아래).
@@ -2187,6 +2401,30 @@ export default function QuoteEditForm({
               별건**이라 이 조각이 가져오지 않았다(A/S 의 QuoteFolderOpenButton ·
               quote-folder-helper · api/quote-folder-helper/*). 둘 다 **저장된 값이
               아니라 지금 화면의 값**을 놓고 판단해야 한다는 규칙이 붙어 있다. */}
+          {/* ⚠️ 위는 **그때의 기록**이다. 🔴 **[미리보기 · PDF] 가 2026-09-28 에
+              왔다**(조각 3f, 바로 아래 — 저쪽 단추와 바이트 동일). 🔴 **아직 없는 것은
+              [폴더 열기] 하나**이고, 사용자가 가져오기로 정했지만 **별도 조각**이다
+              (2026-09-28). */}
+          {/* 🔴 **지금 화면의 값으로** 그린다 — 저장 여부와 무관하다.
+              새 견적서도 저장하기 전에 어떻게 나갈지 볼 수 있어야 하고(그게
+              미리보기의 본래 쓸모다), 수정 중일 때도 DB 의 옛 값이 아니라
+              방금 고친 값이 보여야 한다. 예전에는 `/quotes/{id}/print` 로
+              보냈는데, 그 통로는 저장된 값을 그려서 고치는 중에 누르면 화면과
+              다른 문서가 나왔다. */}
+          {/* 🔴 **앱 양식이 없는 종류에는 이 단추가 없다**(2026-09-16 케이블 ③). 미리보기는
+              내자 · OH 양식을 그리는 화면이라, 케이블 장을 그리면 **다른 종류의 문서**가 보이고
+              그대로 인쇄된다. 그 화면과 받기 통로 둘은 **서버에서도 거절한다** — 여기서 감추는
+              것은 「눌러서 실패하는 단추를 두지 않는다」이지 그것이 관문인 것은 아니다.
+              못 하는 일을 잠긴 단추로 두지 않는 것은 이 저장소의 규칙이다 — 「왜 안 눌리지」가 된다. */}
+          {canGetDocument && (
+            <button
+              type="button"
+              onClick={() => setShowPreview(true)}
+              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700"
+            >
+              미리보기 · PDF
+            </button>
+          )}
           {/* 파일은 저장된 장에서만 받을 수 있다 — 만드는 통로가 DB 의 그 줄을
               읽기 때문이다. 그래서 이 단추만 저장 뒤에 나타난다.
               🔴 이 화면은 수정 권한자만 들어온다(page 가 redirect) — 그래서 링크가 아니라 발행

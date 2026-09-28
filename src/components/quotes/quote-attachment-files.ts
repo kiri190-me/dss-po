@@ -21,7 +21,8 @@ import type { QuoteAttachmentSlotFile, QuoteAttachmentSlots } from "@/lib/db/que
  * 올리기 자체는 quote-attachment-upload.ts 가 한다(같은 조각에 함께 왔다).
  * 그리기(파일 칸 · 끌어놓기 · 지우기 확인 창)는 **조각 3d-3f**, 편집 화면에 잇는
  * 배선은 **조각 3d-4** 가 했다 — 🔴 **2026-09-28 부터 견적서 수정 화면에 실제로
- * 그려진다**(QuoteAttachmentsSection.tsx).
+ * 그려진다**(QuoteAttachmentsSection.tsx). 미리보기 넷은 **조각 3f** 가 맨 끝에
+ * 되돌려 놓았다(같은 날).
  *
  * 🔴 **여기의 판정은 편의일 뿐이다.** 형식 · 크기는 올리기 통로
  * (api/quotes/[id]/attachments/route.ts — 조각 3d-3b 에 왔다)가 다시 본다. 20MB 를 다
@@ -55,6 +56,9 @@ import type { QuoteAttachmentSlotFile, QuoteAttachmentSlots } from "@/lib/db/que
  *     (vendor/dss-core/src/ui/quotes/quote-list-rows.ts). 여기 다시 적으면 두 벌이 된다.
  *   · 미리보기 넷(`QuotePrintSignedPdf` · `excelOnlyPrintAttachments` ·
  *     `signedPdfForPreview` · `EXCEL_ONLY_NO_SIGNED_PDF_TEXT`) — **조각 3f**(미리보기).
+ *     ⚠️ **그 넷이 2026-09-28 에 왔다**(조각 3f). 이 파일 맨 끝의 「미리보기 넷」
+ *     머리말 아래가 그것이고, 저쪽 455~488줄과 바이트가 같다. 위 줄은 그때의 기록이다.
+ *     🔴 **이제 안 가져온 것은 `quoteListAmountNote` 하나**다.
  *   · 🔴 `QUOTE_EXCEL_MISSING_NOTICE` — **조각 3d-4 에서 A/S 문장으로 돌아왔다**
  *     (2026-09-28). 이 자리에 「붙이는 칸이 실제로 서는 날의 몫」이라 적혀 있던 그것이고,
  *     그날이 왔다. 상수 자체는 남는다 — 딱지와 팝업이 한 글자를 써야 하기 때문이다
@@ -574,3 +578,57 @@ export function quoteListFileBadges(row: {
   }
   return badges;
 }
+
+/**
+ * ============================================================================
+ * 🔴 미리보기 넷 — 조각 3f 가 되돌려 놓았다 (2026-09-28)
+ * ============================================================================
+ * 위 머리말의 「미리보기 넷(`QuotePrintSignedPdf` · `excelOnlyPrintAttachments` ·
+ * `signedPdfForPreview` · `EXCEL_ONLY_NO_SIGNED_PDF_TEXT`) — **조각 3f**(미리보기)」가
+ * 기다리던 자리다. 🔴 **그 넷이 여기 다 왔다** — 아래 코드는 저쪽(A/S
+ * `quote-attachment-files.ts` 455~488줄)과 **한 바이트도 다르지 않다.**
+ *
+ * ⚠️ 앞 조각(3c-3b)이 `QuoteAttachmentsSection.tsx` 머리말에 「안 가져온 것은 이제
+ * 하나다 — signedPdfForPreview」라고 적어 두었는데, **실측으로는 넷이었다**(조각 3f
+ * 시작 때 확인, 2026-09-28). 그 곁말도 함께 고쳤다.
+ *
+ * 네 이름이 쓰이는 곳:
+ *   · `QuotePrintSignedPdf`           — 미리보기가 보일 결재 PDF 의 모양
+ *   · `excelOnlyPrintAttachments`     — 인쇄 화면(`quotes/[id]/print/page.tsx`, 서버)
+ *   · `signedPdfForPreview`           — 편집 폼의 겹쳐 뜬 미리보기(`QuoteEditForm.tsx`)
+ *   · `EXCEL_ONLY_NO_SIGNED_PDF_TEXT` — 결재 PDF 가 없을 때의 문장(`QuotePrintView.tsx`)
+ * ============================================================================
+ */
+
+// ────────────────────────────────────────────────── 미리보기(엑셀 전용)
+
+/** 미리보기가 보일 결재 PDF — 올라가 있는 것, 또는 새 견적서가 들고 있는 것. */
+export type QuotePrintSignedPdf =
+  | { kind: "saved"; id: string; originalFileName: string }
+  | { kind: "pending"; fileName: string };
+
+/** 인쇄 화면(서버)이 칸 조회에서 미리보기에 넘길 두 값을 고른다. */
+export function excelOnlyPrintAttachments(slots: QuoteAttachmentSlots): {
+  signedPdf: QuotePrintSignedPdf | null;
+  hasExcel: boolean;
+} {
+  const pdf = slots.SIGNED_QUOTE_PDF;
+  return {
+    signedPdf: pdf ? { kind: "saved", id: pdf.id, originalFileName: pdf.originalFileName } : null,
+    hasExcel: slots.QUOTE_EXCEL !== null,
+  };
+}
+
+/** 편집 화면의 겹쳐 뜬 미리보기가 넘길 결재 PDF — 올라간 것이 먼저, 없으면 새 견적서가 든 것. */
+export function signedPdfForPreview(params: {
+  isNewQuote: boolean;
+  slot: QuoteAttachmentSlotFileView | null;
+  pendingFileName: string | null;
+}): QuotePrintSignedPdf | null {
+  if (params.slot) return { kind: "saved", id: params.slot.id, originalFileName: params.slot.originalFileName };
+  if (params.isNewQuote && params.pendingFileName !== null) return { kind: "pending", fileName: params.pendingFileName };
+  return null;
+}
+
+/** 엑셀 전용 미리보기에 결재 PDF 가 없을 때의 문장 — 사용자 결정(2026-09-15) 그대로. */
+export const EXCEL_ONLY_NO_SIGNED_PDF_TEXT = "결재 PDF 가 아직 없습니다 — [견적서 받기]로 붙인 엑셀을 받으세요";

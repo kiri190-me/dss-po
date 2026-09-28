@@ -46,6 +46,10 @@ import { QUOTE_EXCEL_MISSING_NOTICE } from "./quote-attachment-files";
  *                                                     A/S 에서 붙인 파일이 그대로 잡힌다
  *     renderRowActions  줄의 [받기]·[미리보기]        ← 조각 3c-2 (아래, 채웠다)
  *                                                     미리보기는 3f 에 더한다
+ *                                                     ⚠️ 🔴 **3f 는 여기 안 더했다**
+ *                                                     (2026-09-28) — 까닭 둘이 아래
+ *                                                     `renderRowActions` 자리에 있다.
+ *                                                     화면은 지금 [받기] 하나 그대로다
  *
  * 🔴 **남은 하나(`intakeHref`)도 `page.tsx` 가 아니라 여기에 건다.** 저기서 넘기면
  * 화면이 똑같이 죽는다. 남은 셋(`newQuoteControl` · `notice` 는 ReactNode,
@@ -318,6 +322,21 @@ export default function QuoteListSlots(props: PassThroughProps) {
        *
        * 🔴 [미리보기](3f) · 발행 단추(3c-3)는 아직 없다. 그 둘이 오면 이 한 자리에
        * 나란히 선다(화면 쪽 슬롯은 하나다 — 서브모듈은 그때도 손대지 않는다).
+       *
+       * ⚠️ 위 줄은 **그때의 기록**이고, 🔴 **두 조각 다 여기에는 안 섰다.**
+       *  · **발행 단추(3c-3)** — 그 조각이 목록을 링크로 두기로 했다. 이 통로의 문턱은
+       *    READ 이고, 목록에서 누르는 것으로 사람의 서류함(공유폴더)이 바뀌면 안 된다.
+       *  · **[미리보기](3f, 2026-09-28)** — 🔴 **일부러 안 세웠다.** 미리보기 화면 자체는
+       *    이 조각이 세웠고(`/quotes/{id}/print`) 편집 화면에 단추도 섰다. 여기 안 세운
+       *    까닭 둘:
+       *      ① 저쪽의 그 링크(`QuoteListScreen.tsx` 의 `PreviewLink`)는 주소를
+       *         `quotePrintHref({ quoteId, repairCaseId })` 로 짓는다 — **수리 건을 싣는
+       *         함수**이고 이 사이트에는 그 몫이 없다(조각 3e-3 이 뺐다). 베껴 오면
+       *         「돌아가기는 시스템을 건너가지 않는다」(2026-09-28 원칙)가 깨진다.
+       *      ② 목록에 단추를 하나 더 세우는 것은 **눈에 보이는 변경**이라 조각 3f 의
+       *         지시서 범위 밖이다(그 지시서가 시킨 것은 편집 폼의 단추와 인쇄 화면이다).
+       *    🔴 **세우려면 주소는 `/quotes/{row.id}/print` 한 줄이면 된다** — 그 화면이
+       *    이제 있고, 돌아가기도 그 견적서로 돌아온다. **사용자 판단을 기다린다.**
        */
       renderRowActions={(row) => <QuoteDownloadLink row={row} />}
       /**

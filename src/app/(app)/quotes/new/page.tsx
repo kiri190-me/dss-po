@@ -8,7 +8,7 @@ import { getPartPickerList, getPartPickerUnitPrices } from "@/lib/db/queries/inv
 import { listRepairLabor } from "@/lib/db/queries/repair-labor";
 import { toKstDateOnly } from "@/lib/domain/date-only";
 import { parseNewQuoteStart, type SearchParamsInput } from "@/lib/domain/quote-new-link";
-import { readAllQuoteWorkSectionDefaults } from "@/lib/storage/quote-template";
+import { readAllQuoteTemplateHeaders, readAllQuoteWorkSectionDefaults } from "@/lib/storage/quote-template";
 import { CABLE_QUOTE_MAX_LINES } from "@/lib/xlsx/cable-quote-template";
 
 export const metadata: Metadata = {
@@ -60,6 +60,9 @@ export const dynamic = "force-dynamic";
  *     사이트의 폼에는 그 프롭이 아예 없다. 그래서 읽지 않는다 — 양식 다섯을 더
  *     여는 값을 아무도 안 보는 채로 실어 보내지 않는다.
  *     (**작업 내역 기본값**은 3c-1 이 배선했다 — 아래 `workScopeDefaults`.)
+ *     ⚠️ 그때의 기록이다 — 🔴 **조각 3f 가 왔다**(2026-09-28). 폼에 `printHeaders`
+ *     프롭이 생겼고 [미리보기 · PDF] 가 그 값을 쓴다. 그래서 이제 **읽어서 넘긴다**
+ *     (아래 `readAllQuoteTemplateHeaders()`).
  *   · **첨부 칸**(`listQuoteAttachmentSlots`) → **조각 3d**.
  *   · **mock 모드 갈래**(`getAuthSource` → `PlaceholderPage`) — 이 사이트에는
  *     mock 모드가 없다.
@@ -90,9 +93,13 @@ export default async function NewQuotePage({
   //  · 부품 고르개의 두 목록(조각 3b-3 뒤쪽 절반) — 품명 칸에서 고를 부품과 그 단가.
   //    🔴 **재고 · 소유구분 · 내부 비고가 없는 가벼운 조회 둘**이다
   //    (queries/inventory.ts 머리말 — 무거운 형제 getPartList 는 옮겨 오지 않았다).
-  const [repairLabor, workScopeDefaults, partOptions, partPrices] = await Promise.all([
+  const [repairLabor, workScopeDefaults, printHeaders, partOptions, partPrices] = await Promise.all([
     listRepairLabor(),
     readAllQuoteWorkSectionDefaults(),
+    // 🔴 양식 넷의 회사 정보 · 기본 문구 · 계좌 (조각 3f, 2026-09-28) — 쓰는 곳은 폼의
+    //    [미리보기 · PDF] 한 줄(activePrintHeader)이다. 🔴 **DB 가 아니라 양식 `.xlsx`
+    //    파일을 읽고**, 못 읽어도 던지지 않고 칸이 전부 null 인 머리말이 온다.
+    readAllQuoteTemplateHeaders(),
     getPartPickerList(),
     getPartPickerUnitPrices(),
   ]);
@@ -127,6 +134,9 @@ export default async function NewQuotePage({
          그 양식 몫을 꺼내 조사 · 통전 칸을 채운다(quote-new-start.ts 의
          scopeLinesFilledFromTemplate — 손댄 묶음은 건드리지 않는다). */
       workScopeDefaults={workScopeDefaults}
+      /* 양식 넷의 머리말(조각 3f) — [미리보기 · PDF] 가 종류를 바꾸는 순간 그에 맞는
+         것으로 갈아 끼운다. 서버에 다시 묻지 않으니 기다리는 시간이 없다. */
+      printHeaders={printHeaders}
       /* 🔴 팝업에서 고른 두 값(조각 3e-3). **처음 값만 바꾸지 않는다** — 폼은 빈 폼에서
          사람이 ① 종류 select 를 고르고 ② 엑셀 전용 스위치를 켠 것과 **같은 상태**로 연다
          (quote-new-start.ts 의 startNewQuoteLines). 폼에서 그대로 바꿀 수 있다. */

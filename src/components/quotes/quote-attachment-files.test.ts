@@ -44,6 +44,11 @@ import {
  *     (vendor/dss-core/src/ui/quotes/quote-list-rows.ts).
  *   · 「미리보기의 재료」 — `excelOnlyPrintAttachments` · `signedPdfForPreview` ·
  *     `EXCEL_ONLY_NO_SIGNED_PDF_TEXT` 는 **조각 3f**(미리보기)의 것이라 아직 안 왔다.
+ *     ⚠️ 그때의 기록이다 — 🔴 **셋(정확히는 타입까지 넷)이 2026-09-28 에 왔다**
+ *     (조각 3f). 🔴 **그 시험 묶음은 여기 안 가져왔다** — 저쪽에서 그 셋을 재는 것은
+ *     이 파일이 아니라 조각 3f 가 함께 가져온 화면 시험들이다
+ *     (`quote-print-excel-only.test.tsx` · `quote-print-excel-preview-screen.test.tsx` —
+ *     components.txt). 두 벌로 재지 않는다.
  *
  * ── 🔴 왜 단위 목록(unit.txt)에서 도는가 ────────────────────────────────
  * 시험 대상이 `@/lib/db/queries/attachments`(첫 줄이 `import "server-only"`)에서
@@ -186,7 +191,17 @@ describe("주소", () => {
     }
   });
 
-  test("🔴 ㉡ 보기 · 내려받기 주소를 짓는 곳은 칸 조각 하나뿐이다", () => {
+  /**
+   * ⚠️ 🔴 **조각 3f 가 여기에 둘째 자리를 더했다**(2026-09-28) — `QuotePrintView.tsx`.
+   * 엑셀 전용 견적서의 미리보기가 결재 PDF 를 [보기] · [받기]로 내밀기 때문이고,
+   * **A/S 도 정확히 그 두 자리**다(저쪽 QuotePrintView 가 같은 두 함수를 부른다).
+   *
+   * 🔴 **울타리를 약하게 하지 않았다** — 늘린 것은 목록 하나이고 `deepEqual` 은 그대로다.
+   * 🔴 재는 것도 그대로다: **주소를 손으로 짓는 곳이 없다.** 둘 다 이 파일의 두 함수를
+   * 부르는 것이지 `/api/attachments/…` 를 제 손으로 적는 것이 아니다 — 셋째 자리가
+   * 생기거나 누가 주소를 손으로 적으면 이 단언이 그날 터진다.
+   */
+  test("🔴 ㉡ 보기 · 내려받기 주소를 짓는 곳은 칸 조각과 미리보기 둘뿐이다", () => {
     const definition = "src/components/quotes/quote-attachment-files.ts";
     const self = "src/components/quotes/quote-attachment-files.test.ts";
     const callers: string[] = [];
@@ -218,9 +233,21 @@ describe("주소", () => {
 
     assert.deepEqual(
       callers,
-      ["src/components/quotes/QuoteAttachmentParts.tsx"],
-      "보기 · 내려받기 주소를 짓는 곳이 칸 조각 말고 또 생겼다 — 주소는 한 자리에서만 짓는다"
+      [
+        "src/components/quotes/QuoteAttachmentParts.tsx",
+        // 🔴 조각 3f — 엑셀 전용 미리보기가 결재 PDF 를 [보기] · [받기]로 내민다.
+        "src/components/quotes/QuotePrintView.tsx",
+      ],
+      "보기 · 내려받기 주소를 짓는 곳이 그 둘 말고 또 생겼다 — 주소는 이 파일의 두 함수에서만 짓는다"
     );
+    // 🔴 **주소를 손으로 적은 곳이 하나도 없다** — 위 목록은 「누가 부르나」이고,
+    //    이것은 「제 손으로 짓지 않나」다. 둘이 같은 말이 아니다.
+    //    🔴 주석은 위 걷기와 **같은 규칙으로** 뺀다 — 이 저장소의 머리말들이 주소를
+    //    설명으로 적어 둔다(실제로 QuotePrintView 머리말에 그 글자가 있다).
+    const previewCode = read("src/components/quotes/QuotePrintView.tsx")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/^[ \t]*\/\/.*$/gm, " ");
+    assert.equal(previewCode.includes("/api/attachments/"), false, "미리보기가 첨부 주소를 손으로 적는다");
   });
 });
 

@@ -966,7 +966,15 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     );
   });
 
-  test("🔴 엑셀 사슬에서 들여오는 것은 **둘뿐**이다 — 발행 · 미리보기는 아직 아니다", () => {
+  /**
+   * ⚠️ 🔴 **조각 3f 가 여기를 고쳤다**(2026-09-28). 아래 「없는 것」 셋 가운데
+   * `readAllQuoteTemplateHeaders` 가 **왔다** — 폼에 `printHeaders` 프롭이 생겨
+   * [미리보기 · PDF] 가 그 값을 쓴다. 그래서 그 이름을 **금지에서 「있어야 하는 것」으로
+   * 옮겼다**(방향을 뒤집었지 지운 것이 아니다 — 이제 사라지면 미리보기가 빈 머리말로
+   * 그려지므로 여전히 소리가 난다).
+   * 🔴 **나머지 둘(`quote-workbook` · `quote-issue`)의 금지는 그대로다.**
+   */
+  test("🔴 엑셀 사슬에서 들여오는 것은 **셋**이다 — 발행은 아직 아니다", () => {
     // 위 시험에서 `quote-template` · `lib/xlsx/` 를 뺀 자리를 메운다(조각 3c-1).
     // 금지 목록으로는 더 이상 잴 수 없으니 **들여오는 것을 이름으로 못 박는다.**
     const imports = flat(sliceBetween(newPageSource, 'import type { Metadata }', "export const metadata"));
@@ -974,16 +982,18 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     // 있는 것 — 이 둘이 사라지면 종류를 바꿔도 조사 · 통전 칸이 안 채워지고,
     // 케이블 줄 수 상한이 화면에 다시 박히게 된다.
     for (const needed of [
-      'readAllQuoteWorkSectionDefaults } from "@/lib/storage/quote-template"',
+      'readAllQuoteTemplateHeaders, readAllQuoteWorkSectionDefaults } from "@/lib/storage/quote-template"',
       'CABLE_QUOTE_MAX_LINES } from "@/lib/xlsx/cable-quote-template"',
     ]) {
-      assert.ok(imports.includes(needed), `${needed} — 3c-1 이 배선한 것이 사라졌다`);
+      assert.ok(imports.includes(needed), `${needed} — 3c-1 · 3f 가 배선한 것이 사라졌다`);
     }
 
     // 🔴 없는 것 — 다음 조각들이다.
     //  · `readAllQuoteTemplateHeaders` : **조각 3f(미리보기)**. 저쪽에서 그 값을 쓰는
     //    곳은 미리보기 한 줄(`printHeaders`)뿐이고 이 사이트의 폼에는 그 프롭이 아예
     //    없다 — 읽으면 양식 다섯을 더 열고도 아무도 보지 않는다.
+    //    ⚠️ 그때의 기록이다 — 🔴 **조각 3f 가 왔다**(2026-09-28). 위 「있는 것」으로
+    //    옮겼다.
     //  · `quote-workbook` : 2026-09-22(조각 3c-2)에 왔지만 **받기 통로**(api/quotes/[id]/
     //    xlsx)의 것이다 — 새 견적서 화면이 워크북을 만들 일은 없다.
     //  · `quote-issue` : **조각 3c-3**(발행). 아직 이 저장소에 없다.
@@ -993,7 +1003,7 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     //    발행 자체는 여전히 없고, 🔴 **금지는 그대로다** — 이 글자는 부분 일치라
     //    `quote-issue-messages` 도 걸린다. 새 견적서 화면이 발행 알림 문장을 끌고
     //    올 까닭이 없으므로 **그것이 맞는 상태**다. 3c-3 이 오는 날 다시 잰다.
-    for (const notYet of ["readAllQuoteTemplateHeaders", "quote-workbook", "quote-issue"]) {
+    for (const notYet of ["quote-workbook", "quote-issue"]) {
       assert.equal(imports.includes(notYet), false, `${notYet} — 아직 오지 않은 조각을 끌고 왔다`);
     }
   });

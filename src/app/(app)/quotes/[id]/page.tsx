@@ -23,7 +23,7 @@ import {
   QUOTE_APPROVAL_ROUTE_SCOPE,
   isQuoteApprovalRouteInForce,
 } from "@/lib/domain/quote-approval-rules";
-import { readAllQuoteWorkSectionDefaults } from "@/lib/storage/quote-template";
+import { readAllQuoteTemplateHeaders, readAllQuoteWorkSectionDefaults } from "@/lib/storage/quote-template";
 import { isValidQuoteId } from "@/lib/validation/quote-input";
 import { CABLE_QUOTE_MAX_LINES } from "@/lib/xlsx/cable-quote-template";
 
@@ -77,6 +77,9 @@ export const dynamic = "force-dynamic";
  *     🔴 저쪽에서 그 값을 쓰는 곳은 **미리보기 한 줄**(`printHeaders`)뿐이고 이
  *     사이트의 폼에는 그 프롭이 아예 없다. 그래서 읽지 않는다.
  *     (**작업 내역 기본값**은 3c-1 이 배선했다 — 아래 `workScopeDefaults`.)
+ *     ⚠️ 그때의 기록이다 — 🔴 **조각 3f 가 왔다**(2026-09-28). 폼에 `printHeaders`
+ *     프롭이 생겼고 [미리보기 · PDF] 가 그 값을 쓴다. 그래서 이제 **읽어서 넘긴다**
+ *     (아래 `readAllQuoteTemplateHeaders()`) — 새 견적서 화면과 **같은 값**이다.
  *   · **첨부 칸**(`listQuoteAttachmentSlots`) → 🔴 **조각 3d-4 에 들어왔다**
  *     (2026-09-28 — 아래 `attachmentSlots`). 🔴 **이 화면에만** 있다: 새 견적서
  *     화면(`/quotes/new`)은 그 값을 넘기지 않아 거기에는 첨부 구역이 서지 않는다
@@ -128,6 +131,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   const [
     repairLabor,
     workScopeDefaults,
+    printHeaders,
     attachmentSlots,
     partOptions,
     partPrices,
@@ -137,6 +141,10 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   ] = await Promise.all([
     listRepairLabor(),
     readAllQuoteWorkSectionDefaults(),
+    // 🔴 양식 넷의 회사 정보 · 기본 문구 · 계좌 (조각 3f, 2026-09-28) — 쓰는 곳은 폼의
+    //    [미리보기 · PDF] 한 줄(activePrintHeader)이다. 🔴 **DB 가 아니라 양식 `.xlsx`
+    //    파일을 읽고**, 못 읽어도 던지지 않고 칸이 전부 null 인 머리말이 온다.
+    readAllQuoteTemplateHeaders(),
     listQuoteAttachmentSlots(quote.id),
     getPartPickerList(),
     getPartPickerUnitPrices(),
@@ -174,6 +182,9 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
           cableMaxLines={CABLE_QUOTE_MAX_LINES}
           /* 양식의 작업 내역 기본값(조각 3c-1) — 새 견적서 화면과 **같은 값**이다. */
           workScopeDefaults={workScopeDefaults}
+          /* 양식 넷의 머리말(조각 3f) — [미리보기 · PDF] 가 종류를 바꾸는 순간 그에 맞는
+             것으로 갈아 끼운다. 새 견적서 화면과 **같은 값**이다. */
+          printHeaders={printHeaders}
           /* 🔴 결재 PDF · 수기 엑셀 두 칸(조각 3d-4). **새 견적서 화면은 이것을 넘기지
              않는다** — 그래서 거기에는 첨부 구역이 서지 않는다(폼의 그 프롭 항목). */
           attachmentSlots={attachmentSlots}
