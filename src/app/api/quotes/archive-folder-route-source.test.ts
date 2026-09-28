@@ -52,14 +52,14 @@ const GLOBAL_HEADERS = [
  * 날 이 시험이 소리를 내고, 그때 ①의 목록과 맞는지 사람이 보게 한다.
  * ⚠️ **이것은 이 조각이 고칠 일이 아니다** — 전역 설정은 모든 응답에 걸리므로 별건이다.
  *    보고에 올려 두었다(2026-09-28).
+ *
+ * ── 🔴 **되돌렸다** (2026-09-28 · 조각 PO 3h — 전역 보안 헤더) ──────────────
+ * 위 문단은 **그때의 기록이라 지우지 않고 그대로 둔다.** 그 뒤 `next.config.ts` 에
+ * 위 여섯이 들어왔다 — A/S 의 값도 곁말도 그대로 옮겨 왔다. 그래서 뒤집어 두었던
+ * 단언 `assertGlobalHeadersStillAbsent(nextConfig)`(「헤더 설정이 생기면 소리를
+ * 내라」)를 **지우고 저쪽 것으로 되돌렸다.** 이제 아래 루프가 ①과 ②를 함께 잰다:
+ *     assert.ok(nextConfig.includes(`"${name}"`), `next.config.ts 의 전역 헤더 목록이 바뀌었다: ${name}`);
  */
-function assertGlobalHeadersStillAbsent(nextConfig: string): void {
-  assert.equal(
-    /\bheaders\s*\(/.test(nextConfig),
-    false,
-    "next.config.ts 에 헤더 설정이 생겼다 — 위 GLOBAL_HEADERS 목록과 맞는지, 라우트가 같은 이름을 다시 붙이지 않는지 확인할 것"
-  );
-}
 
 function exportedNames(source: string): string[] {
   const names: string[] = [];
@@ -188,7 +188,7 @@ describe("견적서 폴더 위치 통로 — 소스로 지킨다", () => {
   test("전역 보안 헤더와 같은 이름의 헤더를 붙이지 않는다", () => {
     for (const name of GLOBAL_HEADERS) {
       assert.equal(route.includes(`"${name}"`), false, name);
+      assert.ok(nextConfig.includes(`"${name}"`), `next.config.ts 의 전역 헤더 목록이 바뀌었다: ${name}`);
     }
-    assertGlobalHeadersStillAbsent(nextConfig);
   });
 });
