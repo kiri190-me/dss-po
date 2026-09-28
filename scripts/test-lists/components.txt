@@ -25,3 +25,4 @@ src/components/common/file-drop.test.tsx
 src/components/quotes/QuoteAttachmentParts.test.tsx
 src/components/quotes/NewQuoteDialog.test.tsx
 src/components/quotes/quote-excel-autofill-screens.test.tsx
+src/components/quotes/quote-approval-screen.test.tsx

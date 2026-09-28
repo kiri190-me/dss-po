@@ -21,8 +21,8 @@ import { acquireShipmentApprovalRouteSharedLock } from "./approval-route-shared-
  * 🔴 이 사이트(PO/내자)에서 이 파일이 무엇인가 — 먼저 읽을 것
  * ============================================================================
  * A/S 관리 시스템의 `src/lib/db/mutations/quote-approvals.ts`(440줄)를 **통째로**
- * 가져왔다(2026-09-28, 조각 PO 결재-B). 🔴 **머리말 아래 코드는 저쪽과 바이트
- * 그대로 같다.** 고친 것은 **들여오는 줄 넷**과 그 넷을 가리키던 주석 한 줄뿐이다:
+ * 가져왔다(2026-09-28, 조각 PO 결재-B). 고친 것은 **들여오는 줄 넷**과 그 넷을
+ * 가리키던 주석 한 줄, 그리고 🔴 **거절 문구 한 줄**(아래 ⚠️)이다:
  *
  *   저쪽 `../client` 의 `db`                     →  `@/lib/db`
  *   저쪽 `../schema` 의 표 셋                    →  `@dss/core/schema`(공용 서브모듈)
@@ -34,6 +34,14 @@ import { acquireShipmentApprovalRouteSharedLock } from "./approval-route-shared-
  *        (🔴 결재선을 **고치는** 쪽은 이 사이트에 오지 않았다. 공유 잠금 하나만
  *         제 파일로 와 있다 — 조각 결재-A. 열쇠 문자열은 A/S 와 글자 그대로 같고,
  *         그것을 `src/lib/db/approval-route-read-only.test.ts` 가 잰다)
+ *
+ * ⚠️ 🔴 **바이트 동일이 여기서 한 줄 깨졌다**(2026-09-28, 조각 PO 결재-C).
+ * `ROUTE_NOT_CONFIGURED` 의 거절 문구가 A/S 화면 이름(「사용자 관리 > 승인 절차」)을
+ * 가리키고 있었는데, **그 메뉴는 이 사이트에 없다**. 같은 문구가 결재 탭 화면에도
+ * 있어(components/quotes/quote-approval-texts.ts 의 `QUOTE_APPROVAL_MENU_HINT`)
+ * 한 자리만 고치면 눌러 보기 전과 누른 뒤가 서로 다른 메뉴를 가리킨다 — 그래서
+ * **둘을 같은 글자로 함께** 고쳤고, 시험(quote-approval-screen.test.tsx)이 두
+ * 자리를 맞대어 본다. 🔴 **그 문자열 말고는 저쪽과 바이트 그대로 같다.**
  *
  * 🔴 **결재선 설정은 A/S 에서만 한다**(2026-09-28 사용자 결정). 이 파일은 A/S 가
  * 저장해 둔 판을 **읽어서** 결재 행을 만들 뿐이고, 판·단계를 한 줄도 쓰지 않는다.
@@ -252,7 +260,13 @@ export async function requestQuoteApproval(
         // domain/quote-approval-rules.ts 의 isQuoteApprovalRouteInForce 주석.
         fail(
           "ROUTE_NOT_CONFIGURED",
-          "견적서 승인 절차가 아직 설정되지 않았습니다. 사용자 관리 > 승인 절차에서 견적서 승인 절차를 먼저 만들어 주세요."
+          // 🔴 A/S 와 **바이트가 갈리는 유일한 줄**(조각 PO 결재-C). 저쪽은
+          // 「사용자 관리 > 승인 절차에서」인데 그 메뉴는 이 사이트에 없다 —
+          // 결재선 설정은 A/S 에서만 한다(2026-09-28 사용자 결정). 🔴 같은 문구가
+          // 화면에도 있다(components/quotes/quote-approval-texts.ts 의
+          // QUOTE_APPROVAL_MENU_HINT). 한 자리만 고치면 눌러 보기 전과 누른 뒤가
+          // 서로 다른 메뉴를 가리킨다 — quote-approval-screen.test.tsx 가 둘을 맞댄다.
+          "견적서 승인 절차가 아직 설정되지 않았습니다. A/S 관리 시스템의 [사용자 관리 > 승인 절차]에서 견적서 승인 절차를 먼저 만들어 주세요."
         );
       }
 
