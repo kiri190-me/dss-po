@@ -1,39 +1,370 @@
+import {
+  CATEGORY_EXTENSION_ALLOWLIST,
+  MAX_ATTACHMENT_SIZE_BYTES,
+  getAllowedMimeTypesForExtension,
+  isExtensionAllowedForCategory,
+  normalizeFileExtension,
+} from "@/lib/domain/attachment-allowlist";
+import {
+  QUOTE_ATTACHMENT_SLOT_CATEGORIES,
+  attachmentCategoryLabels,
+  type QuoteAttachmentSlotCategory,
+} from "@/lib/domain/attachment-category";
+import { formatBytes } from "@/lib/domain/image-shrink";
+import type { QuoteAttachmentSlotFile, QuoteAttachmentSlots } from "@/lib/db/queries/attachments";
+
 /**
  * ============================================================================
- * 🔴 여기 있는 것은 **엑셀 전용 스위치가 쓰는 것과 목록의 배지 셋**이다 (3b-1 · 3c-2 · 3d-0)
+ * 견적서 파일(결재 PDF · 수기 엑셀) · 엑셀 전용 — 화면의 순수 도우미 (조각 3d-3d)
  * ============================================================================
- * A/S 관리 시스템의 같은 이름 파일(485줄)은 **견적서 파일(결재 PDF · 수기 엑셀)**
- * 화면의 순수 도우미 전부다 — 확장자 허용 목록 · 크기 상한 · 칸 정의 · 파일 이름
- * 다듬기 · 내려받기 주소 · 목록의 파일 딱지 · 미리보기용 PDF 고르기까지. 그것들은
- * **첨부 구역(조각 3d)** 과 **발행(조각 3c-3)** 의 것이다 — 그 가운데
- * `domain/attachment-allowlist.ts`(3d-1b) · `db/queries/attachments.ts`(3d-2, 조회
- * 하나만)는 이미 왔고, **붙이는 칸과 그 화면 도우미**는 3d-3 · 3d-4 것으로 남아 있다.
+ * DOM 도 fetch 도 서버 액션도 만지지 않는다 — 시험이 브라우저 없이 전부 돌린다.
+ * 올리기 자체는 quote-attachment-upload.ts 가 한다(같은 조각에 함께 왔다).
+ * 그리기(파일 칸 · 끌어놓기 · 지우기 확인 창)는 **조각 3d-3f**, 편집 화면에 잇는
+ * 배선은 **조각 3d-4** 의 몫이다.
  *
- * 🔴 **목록의 파일 딱지는 셋 다 와 있다** — 「엑셀 전용」이 2026-09-22(조각 3c-2)에,
- * 「결재 PDF」 · 「엑셀 없음」이 2026-09-23(조각 3d-0)에 왔다. 아래
- * `quoteListFileBadges` 가 그 자리다.
+ * 🔴 **여기의 판정은 편의일 뿐이다.** 형식 · 크기는 올리기 통로
+ * (api/quotes/[id]/attachments/route.ts — 조각 3d-3b 에 왔다)가 다시 본다. 20MB 를 다
+ * 보내고 거절당하기 전에 알려 주려는 것이다. 판정의 재료도 그 통로와 같은 것을 부른다
+ * (분류 허용목록 · 20MB). 여기에 확장자를 따로 적으면 화면은 받는데 서버가 거절하는
+ * (또는 그 반대의) 날이 온다.
  *
- * 🔴 **나머지 둘도 이 사이트에서 참이다** — 이 사이트와 A/S 는 **같은 `attachments`
- * 표**를 본다(같은 DB). 그래서 PO 에 파일을 붙이는 칸이 오기 전에도 **A/S 에서 붙인
- * 파일이 이 목록에 정확히 잡힌다.** 실측(2026-09-23)으로 견적서 13장 가운데 결재 PDF
- * 가 붙은 것 1장 · 엑셀 전용인데 엑셀이 없는 것 5장이 확인됐다. 아직 오지 않은 것은
- * **붙이는 칸**(조각 3d-3 · 3d-4)이지 **세는 값**이 아니다(값은 목록 조회가 이미
- * 싣는다 — db/queries/quotes.ts 의 `loadAttachmentFlagsByQuoteId`).
+ * 🔴 파일 이름은 사람이 붙인 것이라 고객사 이름이 섞일 수 있다. 화면에 보이는 것 말고는
+ * 어디로도 내보내지 않는다 — console 에도 싣지 않는다.
  *
- * 편집 폼이 저쪽 파일에서 실제로 쓰는 것은 **엑셀 전용 스위치** 하나다:
- *   · `countQuoteLinesForExcelOnly` · `QuoteLineCounts` — 켜기 전에 셀 줄 수
- *   · `hasQuoteLines` · `describeQuoteLineCounts` — 물어볼지와 물어보는 말
- *   · `planExcelOnlyToggle` · `ExcelOnlyTogglePlan` — 켜고 끌 때 할 일
+ * ── 🔴 DB 타입은 **타입 전용**으로 들여온다 ─────────────────────────────
+ * 위 마지막 줄이 `import type` 인 것은 실수가 아니다. `@/lib/db/queries/attachments`
+ * 는 첫 줄이 `import "server-only"` 라 **값으로 들여오면 그 사슬이 브라우저 묶음까지
+ * 따라온다.** 타입 전용 import 는 컴파일할 때 통째로 지워지므로 그 일이 없다.
+ * 🔴 **이 파일에서 그 경로를 값으로 들여오지 마라** — 곁의 시험
+ * (quote-list-screen-source.test.ts)이 「`import type` 으로만 · 정확히 한 줄」을
+ * 글자로 잰다.
  *
- * 🔴 **파일 이름과 경로를 A/S 와 똑같이 둔다.** 그래야 조각 3c·3d 가 올 때 저쪽
- * 나머지를 이 파일에 더하기만 하면 되고, 조각 4 에서 두 벌을 글자로 대조할 수 있다
- * (domain/local/validation.ts 와 같은 판단).
+ * ── 🔴 아직 아무도 부르지 않는 것 둘 ────────────────────────────────────
+ * `quoteAttachmentViewUrl` · `quoteAttachmentDownloadUrl` 이 짓는
+ * `/api/attachments/[id]/download` 라우트는 **이 사이트에 아직 없다**(조각 3d-4 가
+ * 가져온다). **그 전까지 이 둘을 화면에 걸지 마라** — 죽은 링크가 된다. 자세한 것은
+ * 아래 「주소」 절의 곁말과 quote-attachment-files.test.ts 의 같은 이름 시험에 있다.
  *
- * 🔴 **아래 함수들을 A/S 와 다르게 고치지 마라** — 엑셀 전용 장의 규칙은 서버가
- * 최종 판정하고(validation/quote-input.ts 의 quoteExcelOnlyFieldErrors, mutation 의
- * 마지막 방어선), 여기 셈이 저쪽과 갈리면 「묻지도 않고 저장이 거절되는」 장이 생긴다.
+ * ── A/S 와 같은 이름 · 같은 자리 ────────────────────────────────────────
+ * 원본은 A/S 관리 시스템의 **같은 이름 · 같은 경로** 파일
+ * (`RF_Service_System/src/components/quotes/quote-attachment-files.ts`, 488줄)이다.
+ * 🔴 **가져오지 않은 것은 셋뿐**이고 셋 다 까닭이 있다:
+ *   · `quoteListAmountNote` — **공용 묶음에 이미 있다**
+ *     (vendor/dss-core/src/ui/quotes/quote-list-rows.ts). 여기 다시 적으면 두 벌이 된다.
+ *   · 미리보기 넷(`QuotePrintSignedPdf` · `excelOnlyPrintAttachments` ·
+ *     `signedPdfForPreview` · `EXCEL_ONLY_NO_SIGNED_PDF_TEXT`) — **조각 3f**(미리보기).
+ *   · `QUOTE_EXCEL_MISSING_NOTICE` 를 A/S 문장으로 되돌리는 일 — 아래 그 상수의
+ *     머리말 참조. **붙이는 칸이 실제로 서는 날**(3d-3f · 3d-4)의 몫이다.
+ *
+ * 🔴 **나머지는 한 글자도 고치지 않았다** — 조각 4 에서 두 벌을 글자로 대조한다.
+ * 이름이나 자리를 옮기면 그 대조가 짝을 잃는다.
  * ============================================================================
  */
+
+// ────────────────────────────────────────────────── 칸 정의
+
+export type QuoteAttachmentSlotDefinition = {
+  category: QuoteAttachmentSlotCategory;
+  /** 칸 이름 — 분류 이름표 그대로(「결재 견적서 PDF」 · 「수기 견적서 엑셀」). */
+  label: string;
+  /** 받는 확장자 — 분류 허용목록(attachment-allowlist.ts) 그대로. */
+  extensions: readonly string[];
+  /** 파일 고르기 칸의 accept — 확장자와 그 MIME. */
+  accept: string;
+  /** 브라우저가 새 탭에서 페이지 안으로 여는 형식인가 — PDF 만(받기 통로의 inline 목록). */
+  viewableInBrowser: boolean;
+};
+
+/**
+ * 형식이 틀렸을 때의 까닭 — 올리기 통로의 415 문구(SLOT_EXTENSION_HINTS)와 같은 말이다.
+ * 사람이 화면에서 먼저 보든 서버에서 받든 같은 문장을 읽는다.
+ */
+const FORMAT_REJECTIONS: Record<QuoteAttachmentSlotCategory, string> = {
+  SIGNED_QUOTE_PDF: "결재 견적서는 PDF 로만 올릴 수 있습니다",
+  QUOTE_EXCEL: "수기 견적서는 엑셀(xlsx · xls)로만 올릴 수 있습니다",
+};
+
+function slotDefinition(category: QuoteAttachmentSlotCategory): QuoteAttachmentSlotDefinition {
+  const extensions = CATEGORY_EXTENSION_ALLOWLIST[category] ?? [];
+  const accept = [
+    ...extensions.map((extension) => `.${extension}`),
+    ...extensions.flatMap((extension) => getAllowedMimeTypesForExtension(extension)),
+  ].join(",");
+  return {
+    category,
+    label: attachmentCategoryLabels[category],
+    extensions,
+    accept,
+    viewableInBrowser: extensions.length > 0 && extensions.every((extension) => extension === "pdf"),
+  };
+}
+
+/** 화면의 칸 차례 — QUOTE_ATTACHMENT_SLOT_CATEGORIES 의 차례가 곧 이것이다. */
+export const QUOTE_ATTACHMENT_SLOTS: readonly QuoteAttachmentSlotDefinition[] =
+  QUOTE_ATTACHMENT_SLOT_CATEGORIES.map(slotDefinition);
+
+export function quoteAttachmentSlotLabel(category: QuoteAttachmentSlotCategory): string {
+  return attachmentCategoryLabels[category];
+}
+
+// ────────────────────────────────────────────────── 한 파일 사전 검사
+
+function formatMegabytes(bytes: number): string {
+  const megabytes = bytes / (1024 * 1024);
+  return `${Number.isInteger(megabytes) ? megabytes : megabytes.toFixed(1)}MB`;
+}
+
+/**
+ * 보내기 전에 거른다. 틀리면 사람이 읽을 까닭, 맞으면 null.
+ *
+ * 순서는 스크린샷 · 파일 화면과 같다 — 형식 → 빈 파일 → 크기. 형식은 **이름의 확장자**로
+ * 본다(서버도 그렇게 본다). 이름만 바꾼 파일은 서버의 앞머리 바이트 대조가 막는다.
+ */
+export function checkQuoteAttachmentFile(
+  file: { name: string; size: number },
+  category: QuoteAttachmentSlotCategory
+): string | null {
+  const extension = normalizeFileExtension(file.name);
+  if (!extension || !isExtensionAllowedForCategory(extension, category)) {
+    return FORMAT_REJECTIONS[category];
+  }
+  if (file.size === 0) return "빈 파일은 올릴 수 없습니다";
+  if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+    return `${formatMegabytes(MAX_ATTACHMENT_SIZE_BYTES)}를 넘습니다 (${formatMegabytes(file.size)})`;
+  }
+  return null;
+}
+
+// ────────────────────────────────────────────────── 주소
+
+/** 올리기 통로. 본문은 파일 바이트 그대로이고 이름 · 칸은 쿼리 문자열이다(multipart 아님). */
+export function quoteAttachmentUploadUrl(
+  quoteId: string,
+  category: QuoteAttachmentSlotCategory,
+  fileName: string
+): string {
+  const query = new URLSearchParams({ fileName, category });
+  return `/api/quotes/${encodeURIComponent(quoteId)}/attachments?${query.toString()}`;
+}
+
+/**
+ * ============================================================================
+ * 🔴 아래 둘이 가리키는 라우트는 **이 사이트에 아직 없다** (조각 3d-3d)
+ * ============================================================================
+ * `/api/attachments/[id]/download` 는 A/S 의 받기 통로다. 이 사이트의 api 는 지금
+ * `auth/sso/*` 와 `quotes/[id]/{attachments,xlsx}` 뿐이다 — **조각 3d-4 가 그 통로를
+ * 가져온다.**
+ *
+ * 🔴 **그 전까지 이 둘을 화면에 걸지 마라.** 누르면 404 가 뜨는 링크가 된다. 그래서
+ * 곁의 시험(quote-attachment-files.test.ts)이 「이 저장소의 어느 파일도 이 둘을
+ * 부르지 않는다」를 실제로 훑어 못 박는다 — 화면에 거는 날 그 시험이 걸리고, 그때
+ * 사람이 **라우트가 함께 왔는지**를 보게 된다.
+ *
+ * 그래도 **지금 가져온** 까닭은 A/S 와 두 벌을 글자로 대조하기 위해서다(조각 4).
+ * 이 저장소가 여러 번 쓴 방식이기도 하다 — 문지기(`isTrustedOrigin`) · 저장소 쓰기 쪽 ·
+ * `listQuoteAttachmentSlots` 가 「와 있지만 아직 아무도 안 부르는」 상태로 기다렸다.
+ * ============================================================================
+ */
+
+/** 보기 — 받기 통로가 PDF 를 페이지 안(inline)으로 내준다(inline-view.ts 의 view=full). */
+export function quoteAttachmentViewUrl(attachmentId: string): string {
+  return `/api/attachments/${encodeURIComponent(attachmentId)}/download?view=full`;
+}
+
+/** 내려받기 — 첨부로 내려가고 감사(FILE_DOWNLOAD)가 남는다. */
+export function quoteAttachmentDownloadUrl(attachmentId: string): string {
+  return `/api/attachments/${encodeURIComponent(attachmentId)}/download`;
+}
+
+// ────────────────────────────────────────────────── 칸에 보이는 파일
+
+/**
+ * 칸에 그리는 파일. 서버 칸 조회(QuoteAttachmentSlotFile)와 같되 **올린 사람이 비어 있을
+ * 수 있다** — 방금 올린 파일은 올리기 통로의 응답만 들고 있고, 그 응답에는 이름이 없다.
+ */
+export type QuoteAttachmentSlotFileView = Omit<QuoteAttachmentSlotFile, "uploadedByName"> & {
+  uploadedByName: string | null;
+};
+
+/** 칸마다 이 화면에서 방금 한 일 — 서버가 다시 그려 오기 전까지 화면이 들고 있는다. */
+export type QuoteSlotLocalChange =
+  | { kind: "uploaded"; file: QuoteAttachmentSlotFileView }
+  | { kind: "deleted"; attachmentId: string };
+
+export type QuoteSlotLocalChanges = Partial<Record<QuoteAttachmentSlotCategory, QuoteSlotLocalChange>>;
+
+function timeOf(iso: string): number {
+  const parsed = new Date(iso).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * 칸에 지금 그릴 파일 — 서버가 준 칸과 이 화면에서 방금 한 일을 맞춘다.
+ *
+ *  · 방금 올렸다: 서버가 **같은 파일**을 돌려주면 서버 것(올린 사람 이름이 있다), 아직
+ *    옛 것을 주면 방금 올린 것. 서버 쪽이 **더 나중에 올린 다른 파일**이면 그것이 이긴다 —
+ *    그 사이 다른 사람이 칸을 바꿨다.
+ *  · 방금 지웠다: 서버가 아직 그 파일을 주면 빈 칸, 다른 파일을 주면 그 파일.
+ *
+ * 새 견적서(서버 칸이 없다)는 방금 올린 것만으로 그린다.
+ */
+export function resolveQuoteSlotFile(
+  server: QuoteAttachmentSlotFile | null | undefined,
+  local: QuoteSlotLocalChange | undefined
+): QuoteAttachmentSlotFileView | null {
+  const serverFile = server ?? null;
+  if (!local) return serverFile;
+  if (local.kind === "deleted") {
+    return serverFile && serverFile.id === local.attachmentId ? null : serverFile;
+  }
+  if (serverFile && (serverFile.id === local.file.id || timeOf(serverFile.uploadedAt) > timeOf(local.file.uploadedAt))) {
+    return serverFile;
+  }
+  return local.file;
+}
+
+export type ResolvedQuoteSlots = Record<QuoteAttachmentSlotCategory, QuoteAttachmentSlotFileView | null>;
+
+export function resolveQuoteSlots(
+  serverSlots: QuoteAttachmentSlots | null,
+  localChanges: QuoteSlotLocalChanges
+): ResolvedQuoteSlots {
+  const resolved = {} as ResolvedQuoteSlots;
+  for (const category of QUOTE_ATTACHMENT_SLOT_CATEGORIES) {
+    resolved[category] = resolveQuoteSlotFile(serverSlots?.[category], localChanges[category]);
+  }
+  return resolved;
+}
+
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/** 올린 때 — `YYYY-MM-DD HH:mm`(KST). 한국은 서머타임이 없어 +9 시간을 더해 UTC 로 읽는다. */
+export function formatQuoteAttachmentUploadedAt(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  const kst = new Date(parsed.getTime() + KST_OFFSET_MS);
+  return (
+    `${kst.getUTCFullYear()}-${pad2(kst.getUTCMonth() + 1)}-${pad2(kst.getUTCDate())} ` +
+    `${pad2(kst.getUTCHours())}:${pad2(kst.getUTCMinutes())}`
+  );
+}
+
+/** 칸의 둘째 줄 — `크기 · 올린 때 · 올린 사람`. 방금 올려 이름을 모르면 「방금 올림」. */
+export function describeQuoteAttachmentFile(file: QuoteAttachmentSlotFileView): string {
+  return [
+    formatBytes(file.fileSize),
+    formatQuoteAttachmentUploadedAt(file.uploadedAt),
+    file.uploadedByName ?? "방금 올림",
+  ].join(" · ");
+}
+
+export function formatPendingFileSize(bytes: number): string {
+  return formatBytes(bytes);
+}
+
+// ────────────────────────────────────────────────── 들고 있는 파일(새 견적서 · 실패한 것)
+
+/**
+ * 칸마다 들고 있는 파일 — **아직 올리지 않았다.** 새 견적서는 id 가 없어 [저장] 뒤에
+ * 올리고, 수정 화면에서는 올리기에 실패한 파일을 [다시 올리기]까지 들고 있는다.
+ */
+export type PendingQuoteAttachments<F> = Partial<Record<QuoteAttachmentSlotCategory, F>>;
+
+/** 한 칸의 파일을 바꾸거나(`file`) 뺀다(`null`). 다른 칸은 그대로다 — 새 객체를 돌려준다. */
+export function withPendingQuoteAttachment<F>(
+  pending: PendingQuoteAttachments<F>,
+  category: QuoteAttachmentSlotCategory,
+  file: F | null
+): PendingQuoteAttachments<F> {
+  const next = { ...pending };
+  if (file === null) delete next[category];
+  else next[category] = file;
+  return next;
+}
+
+/** 올릴 차례 — 칸 차례(결재 PDF → 엑셀) 그대로. 비어 있는 칸은 건너뛴다. */
+export function pendingQuoteAttachmentQueue<F>(
+  pending: PendingQuoteAttachments<F>
+): { category: QuoteAttachmentSlotCategory; file: F }[] {
+  const queue: { category: QuoteAttachmentSlotCategory; file: F }[] = [];
+  for (const category of QUOTE_ATTACHMENT_SLOT_CATEGORIES) {
+    const file = pending[category];
+    if (file !== undefined) queue.push({ category, file });
+  }
+  return queue;
+}
+
+// ────────────────────────────────────────────────── 문구
+
+/** 수정 화면 — 파일은 [저장]과 따로 바로 반영된다(견적서 칸이 아니다). */
+export const QUOTE_ATTACHMENT_SAVED_NOTE =
+  "파일은 견적서 칸이 아니라서 올리기 · 바꾸기 · 지우기가 [저장]을 누르지 않아도 바로 반영됩니다. 다시 올리면 새 파일로 바뀌고 옛 파일은 첨부 휴지통으로 갑니다.";
+
+/** 새 견적서 — 아직 id 가 없어 들고만 있다가 [저장] 뒤에 올린다. */
+export const QUOTE_ATTACHMENT_PENDING_NOTE =
+  "새 견적서는 아직 저장 전이라 고른 파일을 들고만 있습니다 — [저장]을 누르면 견적서를 만든 뒤 차례로 올립니다.";
+
+export type QuoteAttachmentUploadFailure = {
+  category: QuoteAttachmentSlotCategory;
+  fileName: string;
+  reason: string;
+};
+
+/**
+ * `칸(이름): 까닭 · …`. 서버 문구는 마침표로 끝나므로 끝의 마침표를 떼어 잇는다 — 그대로
+ * 두면 문장 안에서 「넘습니다. · …」, 끝에서 「넘습니다..」가 된다.
+ */
+export function formatQuoteAttachmentFailures(failures: readonly QuoteAttachmentUploadFailure[]): string {
+  return failures
+    .map(
+      (failure) =>
+        `${quoteAttachmentSlotLabel(failure.category)}(${failure.fileName}): ${failure.reason.trim().replace(/\.+$/, "")}`
+    )
+    .join(" · ");
+}
+
+/** 「파일 올리는 중 1/2…」 — `current` 는 지금 보내는 파일의 차례(1부터). */
+export function quoteAttachmentUploadProgressText(current: number, total: number): string {
+  return `파일 올리는 중 ${current}/${total}…`;
+}
+
+/**
+ * 새 견적서는 저장됐는데 파일 일부를 못 올렸을 때. **견적서는 이미 있다** — 목록으로 넘기지
+ * 않고 이 화면에 머물러 무엇을 왜 못 올렸는지와 다시 올리는 길을 알린다.
+ */
+export function createdWithAttachmentFailuresText(
+  total: number,
+  failures: readonly QuoteAttachmentUploadFailure[]
+): string {
+  return (
+    `견적서는 등록됐습니다. 파일 ${total}개 중 ${failures.length}개를 올리지 못했습니다 — ` +
+    `${formatQuoteAttachmentFailures(failures)}. 아래 「견적서 파일」 칸에서 [다시 올리기]를 눌러 주세요.`
+  );
+}
+
+/** 수정 화면에서 한 칸을 올린 뒤. 칸 교체로 옛 파일이 밀려났으면 그렇다고 말한다. */
+export function quoteAttachmentUploadedText(category: QuoteAttachmentSlotCategory, replaced: boolean): string {
+  const label = quoteAttachmentSlotLabel(category);
+  return replaced
+    ? `「${label}」 파일을 바꿨습니다 — 옛 파일은 첨부 휴지통으로 옮겼습니다.`
+    : `「${label}」 파일을 올렸습니다.`;
+}
+
+/** 지우기 확인 창의 두 줄. */
+export function quoteAttachmentDeleteText(category: QuoteAttachmentSlotCategory): { title: string; body: string } {
+  return {
+    title: `「${quoteAttachmentSlotLabel(category)}」 파일을 지우시겠습니까?`,
+    body: "첨부 휴지통으로 옮깁니다. [저장]을 누르지 않아도 바로 반영되고, 칸은 비어 새 파일을 올릴 수 있습니다.",
+  };
+}
+
+export function quoteAttachmentDeletedText(category: QuoteAttachmentSlotCategory): string {
+  return `「${quoteAttachmentSlotLabel(category)}」 파일을 첨부 휴지통으로 옮겼습니다.`;
+}
 
 // ────────────────────────────────────────────────── 엑셀 전용
 
@@ -104,6 +435,27 @@ export function planExcelOnlyToggle<T>(params: {
   return { kind: "APPLY", isExcelOnly: false, lines: params.stash, stash: null };
 }
 
+/**
+ * 엑셀 칸이 차 있거나(서버) 새 견적서가 들고 있는가 — 들고 있으면 [저장] 뒤에 올라가므로
+ * 비었다고 알리지 않는다. 수정 화면에서 **올리지 못하고 들고 있는** 파일은 세지 않는다.
+ */
+export function isQuoteExcelAttachedOrQueued(params: {
+  isNewQuote: boolean;
+  excelSlot: QuoteAttachmentSlotFileView | null;
+  hasPendingExcel: boolean;
+}): boolean {
+  return params.excelSlot !== null || (params.isNewQuote && params.hasPendingExcel);
+}
+
+/**
+ * 엑셀 전용인데 엑셀이 없을 때의 안내 — 저장은 된다(새 견적서는 저장한 뒤에야 올릴 수
+ * 있다). 다만 그 장의 [견적서 받기]가 내줄 파일이 없으므로 눈에 띄게 알린다.
+ */
+export function excelOnlyMissingExcelNotice(params: { isExcelOnly: boolean; excelAttachedOrQueued: boolean }): string | null {
+  if (!params.isExcelOnly || params.excelAttachedOrQueued) return null;
+  return "수기 견적서 엑셀을 붙여 주세요 — 엑셀 전용 견적서의 [견적서 받기]는 붙인 엑셀을 내려줍니다. 붙이기 전에는 받을 파일이 없습니다(저장은 됩니다).";
+}
+
 // ────────────────────────────────────────────────── 목록 표시
 
 /**
@@ -144,9 +496,10 @@ export type QuoteListFileBadge = {
  *    수 없다」 문장과 그 상수 파일(domain/quote-excel-only-download.ts)은 사라졌다.
  *  · **「엑셀 없음」** — 🔴 **아직 이 사이트의 사실을 말한다.** 저쪽 문장은 「견적서
  *    **수정 화면에서 붙여 주세요**」로 끝나는데, 이 사이트에는 **붙이는 칸이 아직
- *    없다**(조각 3d-3 · 3d-4). 저쪽 문장으로 되돌리면 화면이 거짓말을 한다 — 사람은
- *    없는 칸을 찾아 헤맨다. 그래서 붙일 수 있는 곳(A/S)을 가리킨다.
- *    🔴 **3d-3 · 3d-4 가 그 칸을 가져오는 날 이 곁말도 저쪽 문장으로 돌아간다.**
+ *    서지 않았다**(그리는 조각 3d-3f · 배선 3d-4). 저쪽 문장으로 되돌리면 화면이
+ *    거짓말을 한다 — 사람은 없는 칸을 찾아 헤맨다. 그래서 붙일 수 있는 곳(A/S)을
+ *    가리킨다.
+ *    🔴 **3d-3f · 3d-4 가 그 칸을 실제로 세우는 날 이 곁말도 저쪽 문장으로 돌아간다.**
  *
  * 「결재 PDF」 곁말은 사실을 말할 뿐이라 처음부터 저쪽 그대로다.
  * ============================================================================
@@ -157,7 +510,7 @@ export type QuoteListFileBadge = {
  * 🔴 「엑셀 없음」의 말 — **딱지와 팝업이 한 글자를 쓴다** (조각 3d-5)
  * ============================================================================
  * 이 문장이 상수로 나온 까닭은 2026-09-23 에 **쓰는 자리가 둘이 되었기** 때문이다:
- *   · 목록 왼쪽 칸의 「엑셀 없음」 딱지 곁말(아래 `quoteListFileBadges`)
+ *   · 목록 왼쪽 칸의 「엑셀 없음」 딱지 곁말(아래 딱지 규칙)
  *   · 그 줄의 [견적서 받기]를 눌렀을 때 뜨는 알림 팝업
  *     (components/quotes/QuoteListSlots.tsx → common/NoticePopup.tsx)
  * 같은 사실을 두 곳에 따로 적으면 한쪽만 고쳐지는 날이 오고, 그때 사람은 마우스를
@@ -166,14 +519,15 @@ export type QuoteListFileBadge = {
  * 🔴 **서버 문장이 아니다.** 통로(api/quotes/[id]/xlsx)가 거절하며 내놓는
  * `QUOTE_EXCEL_MISSING_MESSAGE`(download-source.ts)는 A/S 와 바이트 동일한 파일에
  * 있고 「**견적서 수정 화면에서** 수기 견적서 엑셀을 올린 뒤」라고 말하는데, **이
- * 사이트에는 그 칸이 아직 없다**(조각 3d-3 · 3d-4). 그대로 보여 주면 화면이
- * 거짓말을 하고 사람은 없는 칸을 찾아 헤맨다. 그래서 **화면 쪽 문장을 따로** 둔다 —
- * 서버는 그대로 거절하고(그쪽이 관문이다), 사람에게는 이 말을 한다.
+ * 사이트에는 그 칸이 아직 서지 않았다**(그리는 조각 3d-3f · 배선 3d-4). 그대로 보여
+ * 주면 화면이 거짓말을 하고 사람은 없는 칸을 찾아 헤맨다. 그래서 **화면 쪽 문장을
+ * 따로** 둔다 — 서버는 그대로 거절하고(그쪽이 관문이다), 사람에게는 이 말을 한다.
  *
- * 🔴 **3d-3 · 3d-4 가 붙이는 칸을 가져오는 날 이 문장은 저쪽 말로 돌아간다** —
- * 그때는 「A/S 관리 시스템에서 붙여 주세요」가 틀린 말이 된다(이 사이트에서 붙일 수
- * 있게 되므로). 곁의 시험(quote-list-screen-source.test.ts)이 「견적서 수정 화면」이
- * 여기 들어오지 못하게 막고 있어, 그날 사람이 이 자리를 보게 된다.
+ * 🔴 **조각 3d-3d 가 이 자리를 바꾸지 않은 까닭.** 그 조각은 화면을 그리지 않는
+ * 순수 부분(판정 · 문구 · 타입)만 가져왔다 — 칸은 한 픽셀도 서지 않았다. 문장이
+ * 저쪽 말로 돌아가는 날은 **사람이 이 사이트에서 실제로 붙일 수 있게 되는 날**
+ * (3d-3f · 3d-4)이다. 곁의 시험(quote-list-screen-source.test.ts)이 「견적서 수정
+ * 화면」이 여기 들어오지 못하게 막고 있어, 그날 사람이 이 자리를 보게 된다.
  * ============================================================================
  */
 export const QUOTE_EXCEL_MISSING_NOTICE =

@@ -271,13 +271,19 @@ export default function QuoteListSlots(props: PassThroughProps) {
        */
       renderRowActions={(row) => <QuoteDownloadLink row={row} />}
       /**
-       * 🔴 조각 3c-2(눈 확인 뒤) — **왼쪽 「견적서」 칸의 파일 딱지.**
+       * 🔴 조각 3c-2(눈 확인 뒤) · 3d-0 — **왼쪽 「견적서」 칸의 파일 딱지.**
        *
-       * 지금 붙는 것은 **「엑셀 전용」 하나**다. 그 값은 `quotes.is_excel_only` 칸이라
-       * 첨부를 하나도 보지 않고 알 수 있다 — 그래서 **첨부 조각(3d)을 기다리지 않는다.**
-       * 🔴 나머지 둘(「결재 PDF」 · 「엑셀 없음」)은 실제로 붙은 파일을 세어야 하므로
-       * 3d 것으로 남긴다. 규칙은 quote-attachment-files.ts 의 `quoteListFileBadges`,
-       * 그리는 조각은 A/S 와 같은 이름 · 같은 자리(QuoteAttachmentParts.tsx).
+       * 🔴 **딱지는 셋이다**: 「엑셀 전용」 · 「결재 PDF」 · 「엑셀 없음」. 처음(3c-2)에는
+       * 「엑셀 전용」 하나만 붙였다 — 그 값은 `quotes.is_excel_only` 칸이라 첨부를 하나도
+       * 보지 않고 알 수 있어 첨부 조각을 기다리지 않았다. 🔴 **2026-09-23(조각 3d-0)에
+       * 나머지 둘이 찼다**: 실제로 붙은 파일을 세는 값(`hasSignedPdf` · `hasExcel`)을
+       * **목록 조회가 이미 싣고**(db/queries/quotes.ts 의 `loadAttachmentFlagsByQuoteId`),
+       * 이 사이트와 A/S 가 **같은 `attachments` 표**를 보므로 붙이는 칸이 오기 전에도
+       * 저쪽에서 붙인 파일이 그대로 잡힌다. 🔴 곁의 시험이 셋 전부를 단언한다
+       * (quote-list-screen-source.test.ts 의 「딱지는 **셋**이다」).
+       *
+       * 규칙은 quote-attachment-files.ts 의 `quoteListFileBadges`, 그리는 조각은 A/S 와
+       * 같은 이름 · 같은 자리(QuoteAttachmentParts.tsx).
        *
        * 🔴 이 자리가 **단추 칸이 모든 줄에서 같아지는 까닭**이다 — 받을 수 없는 줄의
        * 표시를 단추 자리에 두면 그 줄만 칸이 밀린다(위 `QuoteDownloadLink` 머리말).

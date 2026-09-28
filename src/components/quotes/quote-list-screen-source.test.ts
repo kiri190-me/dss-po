@@ -67,6 +67,17 @@ const popupSource = read("src/components/common/NoticePopup.tsx");
 const actionSource = read("src/lib/server/actions/quotes.ts");
 const dialogsSource = read("vendor/dss-core/src/ui/common/master-data-trash-dialogs.tsx");
 
+/**
+ * 🔴 화면 조각이 **값으로 끌면 안 되는** 첨부 사슬 넷. 왜 막는지와 누가 무엇을 풀었는지는
+ * 아래 「딱지는 셋이다」 시험 안의 곁말에 있다(조각 3d-0 이 세웠고 3d-3d 가 두 칸을 풀었다).
+ */
+const ATTACHMENT_CHAINS = [
+  "queries/attachments",
+  "attachment-allowlist",
+  "attachment-path",
+  "storage-adapter",
+] as const;
+
 describe("🔴 화면은 한 벌이다 — 이 사이트에 복사본을 두지 않는다", () => {
   test("목록 화면은 서브모듈(vendor/dss-core)에서 들여온다", () => {
     assert.ok(
@@ -429,17 +440,117 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
       "딱지 규칙이 첨부를 세는 값(hasSignedPdf · hasExcel)을 받지 않는다"
     );
 
-    // 🔴 그리고 **첨부 조회를 들여오지 않는다** — 이 사이트에는 그 파일이 아예 없다(3d).
-    //    🔴 **주석을 뺀 코드만** 본다: 세 파일의 머리말이 「이 저장소에는 아직
-    //    `queries/attachments.ts` 도 없다」고 적어 두고 있어, 원본을 그대로 훑으면 그
-    //    설명이 걸린다(시험이 주석을 고치라고 요구하게 된다).
-    for (const chain of ["queries/attachments", "attachment-allowlist", "attachment-path", "storage-adapter"]) {
-      for (const [name, source] of [
-        ["QuoteListSlots", slotsSource],
-        ["quote-attachment-files", filesSource],
-        ["QuoteAttachmentParts", partsSource],
-      ] as const) {
+    // 🔴 그리고 **첨부 사슬을 값으로 끌고 오지 않는다** — 파일마다 따로 잰다(아래 표).
+    //    🔴 **주석을 뺀 코드만** 본다: 세 파일의 머리말이 아직 오지 않은 조각의 파일
+    //    이름을 그대로 적어 두고 있어, 원본을 그대로 훑으면 그 설명이 걸린다(시험이
+    //    주석을 고치라고 요구하게 된다).
+    //
+    // ── 🔴 2026-09-28(조각 3d-3d) — 곁말을 고치고 두 칸을 풀었다 ─────────
+    // 여기 있던 말은 「**이 사이트에는 그 파일이 아예 없다**(3d)」였다. 🔴 **이미
+    // 거짓이다**: `db/queries/attachments.ts` 는 조각 3d-2 에 왔고 3d-3b 가 156줄로
+    // 키웠으며, `domain/attachment-allowlist.ts`(3d-1b) · `domain/attachment-path.ts` ·
+    // `storage/storage-adapter.ts` 도 전부 와 있다.
+    //
+    // 🔴 **막는 것은 「파일이 있느냐」가 아니라 「화면이 그것을 값으로 끄느냐」다.**
+    // 지키려는 것은 둘이다:
+    //   ㉠ **목록이 첨부를 세러 서버로 내려가지 않는다.** 목록 줄은 `hasSignedPdf` ·
+    //      `hasExcel` 을 이미 싣고 있다(db/queries/quotes.ts 의
+    //      `loadAttachmentFlagsByQuoteId`). 화면이 따로 조회를 붙이면 N+1 과 「두 곳이
+    //      다른 답을 하는」 길이 생긴다.
+    //   ㉡ **클라이언트 조각이 `server-only` 사슬을 브라우저로 끌지 않는다.**
+    //      `db/queries/attachments.ts` 의 첫 줄이 `import "server-only"` 다.
+    //      `attachment-path.ts` 는 `node:path`, `storage-adapter` 는 디스크 쓰기다.
+    //
+    // 🔴 **조각 3d-3d 가 `quote-attachment-files.ts` 의 두 칸을 풀었다** —
+    // `queries/attachments`(🔴 **타입 전용으로만**) · `attachment-allowlist`. 그 파일이
+    // 이제 **칸 정의 · 사전 검사**를 하는데, 그 재료(분류별 확장자 · 20MB)를 따로 적으면
+    // 화면은 받는데 서버가 거절하는(또는 그 반대의) 날이 온다 — **같은 정본을 봐야
+    // 한다.** 🔴 지금의 글자 금지는 **타입 전용과 값 import 를 구별하지 못하므로**,
+    // 푼 자리는 아래 이웃 시험이 **더 강한 긍정 단언**으로 메운다. 나머지 **열 칸은
+    // 그대로 금지**다.
+    const chainFence = [
+      { name: "QuoteListSlots", source: slotsSource, forbidden: ATTACHMENT_CHAINS },
+      { name: "QuoteAttachmentParts", source: partsSource, forbidden: ATTACHMENT_CHAINS },
+      // 🔴 푼 둘(`queries/attachments` · `attachment-allowlist`)은 아래 이웃 시험이 잰다.
+      { name: "quote-attachment-files", source: filesSource, forbidden: ["attachment-path", "storage-adapter"] },
+    ] as const;
+    for (const { name, source, forbidden } of chainFence) {
+      for (const chain of forbidden) {
         assert.equal(codeOf(source).includes(chain), false, `${name} 이 첨부 사슬을 끌고 왔다: ${chain}`);
+      }
+    }
+  });
+
+  /**
+   * ==========================================================================
+   * 🔴 조각 3d-3d — 푼 두 칸을 **더 강한 긍정 단언**으로 메운다
+   * ==========================================================================
+   * 위 표에서 `quote-attachment-files.ts` 의 `queries/attachments` ·
+   * `attachment-allowlist` 를 뺀 자리다. 금지 목록으로는 더 이상 잴 수 없으니
+   * **무엇을 어떻게 들여오는지를 이름으로 못 박는다**(3c-1 이 new/page.tsx 에서,
+   * 3c-2 가 받기 링크에서 한 방식과 같다).
+   *
+   * 🔴 글자 금지가 못 하던 구별을 여기서 한다 — **`import type` 은 컴파일할 때
+   * 지워진다.** 그래서 `server-only` 가 브라우저 묶음으로 새지 않는다. 값 import 로
+   * 바뀌는 날 ㉠ 이 걸린다.
+   * ==========================================================================
+   */
+  test("🔴 조각 3d-3d — 첨부 조회는 **타입 전용 한 줄**, 허용목록은 **정해진 이름만**", () => {
+    const code = codeOf(filesSource);
+
+    // ㉠ 🔴 DB 조회는 **타입 전용**으로만 들여온다. 값으로 들여오면 그 파일 첫 줄의
+    //    `import "server-only"` 가 화면 묶음까지 따라온다.
+    assert.ok(
+      code.includes(
+        'import type { QuoteAttachmentSlotFile, QuoteAttachmentSlots } from "@/lib/db/queries/attachments";'
+      ),
+      "첨부 조회를 타입 전용(import type)으로 들여오지 않는다"
+    );
+
+    // ㉡ 그리고 **그 한 줄뿐**이다 — 값 import 가 슬쩍 끼는 것을 막는다.
+    assert.equal(
+      code.split('from "@/lib/db/queries/attachments"').length - 1,
+      1,
+      "첨부 조회를 들여오는 줄이 둘 이상이다 — 값 import 가 끼었는지 보라"
+    );
+
+    // ㉢ 허용목록에서 들여오는 이름은 **실제로 쓰는 다섯 그대로**다. 늘어나는 날은
+    //    화면이 서버의 판정을 흉내 내기 시작한 날이다.
+    const allowlistNames = sliceBetween(filesSource, "import {", 'from "@/lib/domain/attachment-allowlist";')
+      .replace("import {", "")
+      .replace("}", "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter((name) => name !== "");
+    assert.deepEqual(
+      allowlistNames,
+      [
+        "CATEGORY_EXTENSION_ALLOWLIST",
+        "MAX_ATTACHMENT_SIZE_BYTES",
+        "getAllowedMimeTypesForExtension",
+        "isExtensionAllowedForCategory",
+        "normalizeFileExtension",
+      ],
+      "허용목록에서 들여오는 이름이 정해진 목록과 다르다"
+    );
+
+    // ㉣ 🔴 **목록이 첨부를 세러 내려가지 않는다**(위 ㉠ 의 약속). 조회 함수의 이름이
+    //    세 파일 어디에도 없다 — 글자 금지를 푼 파일에도 이 단언은 그대로 걸린다.
+    for (const [name, source] of [
+      ["QuoteListSlots", slotsSource],
+      ["quote-attachment-files", filesSource],
+      ["QuoteAttachmentParts", partsSource],
+    ] as const) {
+      for (const query of [
+        "listQuoteAttachmentSlots",
+        "listLiveQuoteAttachments",
+        "getQuoteAttachmentUploadTarget",
+      ]) {
+        assert.equal(
+          codeOf(source).includes(query),
+          false,
+          `${name} 이 첨부를 세러 서버 조회를 부른다: ${query} — 목록 줄이 이미 싣는 값이다`
+        );
       }
     }
   });

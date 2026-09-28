@@ -346,3 +346,29 @@ src/lib/domain/quote-issue-result.test.ts
 # 🔴 **DB 쪽은 db.txt 에 있다** — src/lib/db/mutations/attachments.integration.test.ts
 #    (칸 교체 · 감사 · 견적서 잠금 · 조회 둘). 격리 이름은 그 줄의 주석 참조.
 src/app/api/quotes/attachments-route-source.test.ts
+
+# ── 조각 3d-3d — 첨부 화면의 「순수 조각」(판정 · 문구 · 타입) ─────────────
+# 화면을 그리지 않는 부분만 A/S 에서 가져왔다. 🔴 **화면은 한 픽셀도 안 바뀐다** —
+# 그리는 조각은 3d-3f, 편집 화면에 잇는 배선은 3d-4 다.
+#
+# 🔴 **왜 단위 목록에서 도는가**(A/S 는 이 둘을 components 목록에 둔다):
+#    A/S 의 components 목록은 `--conditions=react-server` 를 **켜지 않는다** — 그래서
+#    `server-only` 를 들여오는 모듈을 부를 수 없다(그쪽 components.txt 머리말). 저 둘이
+#    거기서 도는 까닭은 **DB 타입을 `import type` 으로만** 들여와 컴파일할 때 지워지기
+#    때문이다. 곁의 렌더 시험(QuoteAttachmentParts.test.tsx 등)과 묶어 두려고 그 목록에
+#    적혀 있을 뿐, **두 목록 어느 쪽에서도 돈다.** 이 저장소에는 아직 components 목록이
+#    없고(그것은 3d-3e 의 몫이다 — 목록만 만들고 package.json 에 스크립트를 안 더하면
+#    **아무도 안 돌리는 목록**이 생긴다), 이 둘은 `.test.ts` 라 렌더가 필요 없다.
+#    🔴 실제로 돌려 확인했다(2026-09-28).
+#
+# 🔴 **DB 시험이 없다** — 두 파일 다 순수하다. 서버도 DB 도 스키마도 건드리지 않았다.
+#
+#  · quote-attachment-files.test.ts  — 칸 정의 · 사전 검사(확장자 · 빈 파일 · 20MB) ·
+#    주소 셋 · 칸 상태(서버 칸 + 방금 한 일) · 대기 파일 · 문구 · 엑셀 전용 켜기/끄기 ·
+#    목록 딱지. 🔴 「이 저장소의 어느 파일도 `quoteAttachmentViewUrl` ·
+#    `quoteAttachmentDownloadUrl` 을 부르지 않는다」도 여기서 훑어 잰다 — 그 둘이
+#    가리키는 /api/attachments/[id]/download 라우트는 3d-4 가 가져온다.
+#  · quote-attachment-upload.test.ts — 가짜 fetch 로 올리기 통로의 응답을 읽는 법과
+#    새 견적서의 차례 올리기(막히면 뒤의 파일은 안 보낸다). 네트워크도 DB 도 없다.
+src/components/quotes/quote-attachment-files.test.ts
+src/components/quotes/quote-attachment-upload.test.ts
