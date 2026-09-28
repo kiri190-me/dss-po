@@ -151,6 +151,19 @@ describe("🔴 발행도 미리보기도 막지 않는다 — 그 통로들은 �
    * 🔴 **화면 쪽(QuotePrintView 등)은 이 목록에 넣지 않는다** — 여기는 **서버에서
    * 파일·내용을 내주는 길**을 재는 목록이고, 화면은 서버가 준 것을 그릴 뿐이다.
    * 화면이 결재를 읽어도 문이 잠기지는 않는다(잠그는 것은 서버뿐이다).
+   *
+   * ⚠️ 위도 **그때의 기록**이다. 🔴 **조각 PO 3g([폴더 열기])가 왔다**(2026-09-28) —
+   * 그 서버 통로 **셋**을 더해 이제 **열하나**다.
+   *
+   * 🔴 **이 목록의 뜻이 여기서 넓어졌다.** 여덟까지는 「견적서 **파일**을 내주는 길」
+   * 이었지만, 이제는 「**견적서를 내주는 서버 길 전부**」다 — 폴더 열기 통로 셋은
+   * 파일을 내주지 않는다. 주는 것은 **폴더가 어디인지**(상대 경로 · 전체 주소)와
+   * **도우미 설치 본문**이다. 🔴 **그래도 같은 울타리 안이다**: 2026-09-18 사용자
+   * 결정은 「결재는 아무 문도 잠그지 않는다」이고, 2026-09-18 에 [폴더 열기]에 대해
+   * **따로 한 번 더** 그렇게 정했다. 이 셋 가운데 하나라도 결재 표를 읽기 시작하면
+   * 「결재 전에는 폴더도 못 연다」가 조용히 생긴다.
+   * ⚠️ **다음 사람에게** — 「파일을 안 주는데 왜 여기 있지?」로 빼지 말 것. 재는 것은
+   * 「파일을 주는가」가 아니라 「**결재를 보는가**」다.
    */
   const ISSUE_PATH_SOURCES = [
     "src/app/api/quotes/[id]/xlsx/route.ts",
@@ -162,6 +175,10 @@ describe("🔴 발행도 미리보기도 막지 않는다 — 그 통로들은 �
     // 🔴 조각 3f — 미리보기 통로 둘.
     "src/app/api/quotes/[id]/excel-preview/route.ts",
     "src/lib/server/services/quote-excel-preview.ts",
+    // 🔴 조각 PO 3g — [폴더 열기] 통로 셋(파일이 아니라 **폴더 위치 · 설치 본문**을 준다).
+    "src/app/api/quotes/[id]/archive-folder/route.ts",
+    "src/app/api/quote-folder-helper/installer/route.ts",
+    "src/app/api/quote-folder-helper/install-command/route.ts",
   ] as const;
 
   for (const relativePath of ISSUE_PATH_SOURCES) {

@@ -113,6 +113,9 @@ import type { QuoteTemplateHeader, QuoteWorkScopeSectionView } from "@/lib/stora
 import QuoteIssueButton, { QuoteIssueNoticeLines } from "@/components/quotes/QuoteIssueButton";
 import { shouldReloadSlotsAfterIssue, type QuoteIssueRunOutcome } from "@/components/quotes/quote-issue-download";
 import type { QuoteIssueNoticeLine } from "@/components/quotes/quote-issue-messages";
+// 🔴 조각 PO 3g — [폴더 열기] 단추와 그 결과 줄(저쪽과 같은 두 줄).
+import QuoteFolderOpenButton, { QuoteFolderOpenNotice } from "@/components/quotes/QuoteFolderOpenButton";
+import type { QuoteFolderOpenOutcome } from "@/components/quotes/quote-folder-open";
 import {
   QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE,
   canRenderQuoteDocument,
@@ -142,12 +145,19 @@ import {
  *  ② **[견적서 받기] · [폴더 열기] 머리 단추와 그 결과 줄** → **조각 3c**.
  *     그 둘과 함께 「저장하지 않은 변경이 있는가」(savedFieldsSnapshot)도 비웠다 —
  *     그 값은 발행 통로를 부를지 가르는 데에만 쓰였다.
+ *     ⚠️ 그때의 기록이다 — 🔴 **[견적서 받기]는 조각 3c-3 이**, 🔴 **[폴더 열기]는
+ *     조각 PO 3g 가**(2026-09-28) 각각 되돌려 놓았다. 머리 단추 자리는 이제 저쪽과
+ *     같은 넷이다 — [미리보기 · PDF] · [견적서 받기] · [폴더 열기] · [취소].
+ *     🔴 [폴더 열기]만 `hasUnsavedChanges` 를 **보지 않는다** — 파일을 만들지 않고
+ *     폴더만 열기 때문이다(그 단추 자리의 곁말).
  *  ③ **미리보기(`QuotePrintView`)** → **조각 3f**. `printHeaders` 프롭과
  *     `previewWorkSections` 가 그 화면에서만 쓰였다.
  *     ⚠️ 그때의 기록이다 — 🔴 **조각 3f 가 2026-09-28 에 셋을 다 되돌려 놓았다**:
  *     `printHeaders` 프롭 · `previewWorkSections` · `if (showPreview) { … }` 블록,
  *     그리고 머리의 [미리보기 · PDF] 단추. 🔴 **머리 단추로 아직 없는 것은
  *     [폴더 열기] 하나**다(별도 조각, 2026-09-28 사용자 결정).
+ *     ⚠️ 그것도 **그때의 기록이다** — 🔴 **조각 PO 3g 가 [폴더 열기]를 가져왔다**
+ *     (2026-09-28). 머리 단추에 비어 있는 자리는 이제 없다.
  *  ④ 🔴 **`workScopeDefaults` 가 비어 있다** — 바로 아래 항목.
  *
  * 그리고 이 조각이 **3b 전체가 아니라 그 첫 조각**이라 함께 비운 것 셋:
@@ -1108,6 +1118,8 @@ export default function QuoteEditForm({
    *    왔다. 곁의 `folderOpenOutcome`([폴더 열기])은 **오지 않았다** — [폴더 열기]는
    *    로드맵에 없는 별건이라 이 조각이 가져오지 않았다(A/S 의 QuoteFolderOpenButton ·
    *    quote-folder-helper · api/quote-folder-helper/*).
+   *    ⚠️ 위는 **그때의 기록**이다. 🔴 **조각 PO 3g 가 `folderOpenOutcome` 을 되돌려
+   *    놓았다**(2026-09-28). 단추 · 흐름 · 도우미 · 서버 통로 셋이 함께 왔다.
    *  · ⚠️ **수기 엑셀로 칸 채우기** — `excelAutofill` · `excelReader` ·
    *    `handoffSheetIndex`. 그때의 기록이다 — 🔴 **조각 3e-3 이 셋을 되돌려 놓았다**
    *    (2026-09-28, 바로 아래). 훅의 `onExcelPicked` 도 함께 이어졌다.
@@ -1118,6 +1130,12 @@ export default function QuoteEditForm({
    * 저장하지 않은 변경이 있어 통로를 부르지 않았을 때의 「먼저 [저장]」도 여기다.
    */
   const [issueNotice, setIssueNotice] = useState<QuoteIssueNoticeLine[]>([]);
+
+  /**
+   * [폴더 열기]의 결과 — 받기 결과와 **같은 자리**(머리 아래)에 보인다(견적서 ④b).
+   * 누르는 순간 null 이 되어 지난 줄이 사라지고, 끝나면 결과가 든다.
+   */
+  const [folderOpenOutcome, setFolderOpenOutcome] = useState<QuoteFolderOpenOutcome | null>(null);
 
   /**
    * 「수기 견적서 엑셀」로 칸 채우기의 상태(견적서 ①b — ExcelAutofillState). 없으면 null.
@@ -2405,6 +2423,11 @@ export default function QuoteEditForm({
               왔다**(조각 3f, 바로 아래 — 저쪽 단추와 바이트 동일). 🔴 **아직 없는 것은
               [폴더 열기] 하나**이고, 사용자가 가져오기로 정했지만 **별도 조각**이다
               (2026-09-28). */}
+          {/* ⚠️ 그것도 **그때의 기록이다.** 🔴 **[폴더 열기]가 같은 날 왔다**
+              (조각 PO 3g, 2026-09-28 — 아래 [견적서 받기] 다음). 이제 **머리 단추에
+              비어 있는 자리는 없다.** 🔴 다만 위 「둘 다 지금 화면의 값으로 판단한다」는
+              [폴더 열기]에 **해당하지 않는다** — 그것은 **저장된 장의 id 로** 서버에
+              폴더 위치를 묻는다(그래서 `savedQuote` 갈래 안에 있다). */}
           {/* 🔴 **지금 화면의 값으로** 그린다 — 저장 여부와 무관하다.
               새 견적서도 저장하기 전에 어떻게 나갈지 볼 수 있어야 하고(그게
               미리보기의 본래 쓸모다), 수정 중일 때도 DB 의 옛 값이 아니라
@@ -2439,6 +2462,17 @@ export default function QuoteEditForm({
               disabled={disabled}
               showNotice={false}
               onOutcome={handleIssueOutcome}
+            />
+          )}
+          {/* [폴더 열기](견적서 ④b) — 공유폴더의 이 견적서 폴더를 PC 의 도우미가 탐색기로 연다.
+              파일을 만들지 않으므로 저장하지 않은 변경이 있어도 막지 않는다. 저장 중 · 충돌이면 잠근다.
+              🔴 Windows 가 아니면 단추 자체가 없다 — 처음 렌더는 감춘 채 그린다. */}
+          {savedQuote && (
+            <QuoteFolderOpenButton
+              quoteId={savedQuote.id}
+              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-zinc-700"
+              disabled={disabled}
+              onOutcome={setFolderOpenOutcome}
             />
           )}
           {/* 취소도 왔던 곳으로 — 수리 건에서 들어왔으면 그 건의 「견적서」 탭,
@@ -2482,6 +2516,18 @@ export default function QuoteEditForm({
 
       {/* 🔴 **[폴더 열기] 결과는 없다** — 그 단추를 이 조각이 가져오지 않았다(위 머리
           단추 자리의 곁말). */}
+      {/* ⚠️ 위는 **그때의 기록**이다. 🔴 **조각 PO 3g 가 되돌려 놓았다**(2026-09-28) —
+          아래가 그 결과 줄이고, 저쪽과 글자까지 같다. */}
+      {/* [폴더 열기] 결과 — 받기 결과와 같은 자리(머리 아래, 견적서 ④b). 폴더를 찾았으면
+          「탐색기가 열리지 않았다면 [위치 복사] 또는 [설치 명령 복사]」가 함께 난다. */}
+      {folderOpenOutcome && (
+        <div className="flex justify-end">
+          <QuoteFolderOpenNotice
+            outcome={folderOpenOutcome}
+            className="max-w-xl rounded-md border border-zinc-200 bg-white p-3 text-right dark:border-zinc-800 dark:bg-zinc-900"
+          />
+        </div>
+      )}
 
       {submitError && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">

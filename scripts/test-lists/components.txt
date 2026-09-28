@@ -48,3 +48,26 @@ src/components/quotes/QuotePrintView.test.tsx
 src/components/quotes/quote-print-cable.test.tsx
 src/components/quotes/quote-print-excel-only.test.tsx
 src/components/quotes/quote-print-excel-preview-screen.test.tsx
+
+# ── 조각 PO 3g — 견적서 [폴더 열기] (2026-09-28) ────────────────────────
+# 🔴 **넷 가운데 셋이 `.test.ts` 인데 여기 있다.** 이 목록의 기준은 **확장자가 아니라
+#    `react-dom/server` 를 부르는가**다(이 파일 머리의 플래그 설명 — 목록 unit 은
+#    `--conditions=react-server` 라 그 꾸러미가 거기서 스스로 던진다). 저쪽
+#    (RF_Service_System)도 같은 까닭으로 이 넷을 components 목록에 두었다.
+#    ⚠️ 「.test.ts 인데 왜 여기?」로 unit 으로 옮기지 말 것 — import 에서 터진다.
+#
+#  · quote-folder-open-screens.test.ts(267) — 🔴 `react-dom/server` 로 결과 줄을
+#    **실제로 그려 본다.** 단추 둘이 나는 자리 · [설치 파일 다시 받기]가 정말
+#    사라졌는지 · 복사 구현이 늘지 않았는지를 **저장소 전체를 훑어** 본다.
+#    🔴 저쪽에서 고친 곳은 **한 자리**뿐이다(복사 구현 목록 — 그 시험 안에 까닭을 적었다).
+#  · QuoteFolderOpenButton.test.tsx(89) — 단추 · 결과 줄의 마크업. 저쪽과 바이트 동일.
+#  · quote-folder-open.test.ts(679) — 누른 뒤의 흐름 전부(폴더 묻기 · 주소 열기 ·
+#    도우미 감지 · 복사 두 갈래). fetch · 창 · 시계 · 저장소를 전부 바꿔 끼워
+#    **네트워크 · DOM 없이** 본다. 저쪽과 바이트 동일.
+#  · copy-text.test.ts(135) — 🔴 **여덟째 파일의 시험**이다. 지시서의 일곱 표에
+#    없었고(조사에서 빠졌다), `quote-folder-open.ts` 가 그 공용 모듈을 물어서 함께 왔다
+#    (2026-09-28 사용자 승인). 저쪽과 바이트 동일.
+src/components/quotes/quote-folder-open-screens.test.ts
+src/components/quotes/QuoteFolderOpenButton.test.tsx
+src/components/quotes/quote-folder-open.test.ts
+src/components/common/copy-text.test.ts

@@ -643,3 +643,35 @@ src/app/api/quotes/template-image-route-source.test.ts
 #    둘 다 **수리 건 보고서 양식 · 화면**을 무는데 이 사이트에 그것이 없다. 까닭과
 #    「바이트 동일이 깨지면 그 순간 아무도 안 지킨다」는 각 원본 파일 머리말에 크게
 #    적어 두었다(이 저장소가 excel-date.ts · xml-entities.ts 에서 두 번 쓴 방식).
+
+# ── 조각 PO 3g — 견적서 [폴더 열기] (2026-09-28) ────────────────────────
+# 🔴 **로드맵에 없던 일이다.** 2026-09-28 조사에서 찾았고(3c-3 의 「1,698줄」이 발행
+#    쪽 합계와 정확히 맞아 폴더 열기가 그 안에 없었다), 사용자가 가져오기로 정했다.
+#
+# 여기 적는 것은 **값 · 글자만 보는 넷**이다. 나머지 넷(화면을 그리거나 흐름을 돌리는
+# 것)은 components.txt 에 있다 — 그쪽 등록 줄에 왜 그리로 갔는지 적어 두었다.
+#
+# ① quote-folder-helper.test.ts — 🔴 **이 조각에서 가장 무거운 시험**(1,012줄).
+#    도우미 스크립트 · 설치 파일 · 붙여넣는 설치 명령의 본문을 글자로 보고, 그 가운데
+#    **payload 읽개 한 줄 · 명령 만드는 한 줄**과 **도우미 스크립트**만 실제
+#    PowerShell 로 돌린다. 🔴 **설치는 하지 않는다** — 레지스트리를 건드리지 않고,
+#    루트는 OS 임시 폴더(mkdtemp)거나 가짜 UNC(\TESTNAS\archive)다. 그 다짐이 그
+#    파일 머리말에 크게 적혀 있다.
+#    ⚠️ PowerShell 을 돌리는 묶음은 **Windows 에서만** 돈다(아니면 skip → tests 수가
+#    줄어든다. 「통과」로 읽지 말 것).
+src/lib/server/quote-folder-helper.test.ts
+# ② quote-folder-link.test.ts — 도우미 주소(dss-folder://open/?p=<base64url>)의 되읽기
+#    규칙. 🔴 **다른 웹사이트도 부를 수 있는 입구**라 거절 규칙이 이 조각의 핵심이다.
+src/lib/domain/quote-folder-link.test.ts
+# ③~⑤ 🔴 **라우트 소스 시험 셋.** 고친 것은 문지기 한 걸음(getSessionUser) 자리와
+#    그에 딸린 import 목록뿐이고 **단언을 약하게 한 곳은 없다**(각 파일 머리말).
+#    🔴 archive-folder 시험만 `[id]` **밖**에 둔다 — 라우트 본체는 `[id]` 안에 있고,
+#    이 파일이 거기서 원본을 읽는다(앞선 조각들과 같은 방식).
+src/app/api/quotes/archive-folder-route-source.test.ts
+src/app/api/quote-folder-helper/installer/route-source.test.ts
+src/app/api/quote-folder-helper/install-command/route-source.test.ts
+#
+# 🔴 **이 조각은 domain/quote-approval-rules.test.ts 의 ISSUE_PATH_SOURCES 를
+#    여덟 → 열하나로 늘렸다** — 폴더 열기 통로 셋도 결재 표를 한 글자도 읽으면 안
+#    된다(2026-09-18 사용자 결정). 그 목록의 뜻이 「파일을 내주는 길」에서 「견적서를
+#    내주는 서버 길 전부」로 넓어진 것도 그 자리에 적어 두었다.
