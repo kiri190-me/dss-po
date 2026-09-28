@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -187,11 +187,16 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     //    넘는다(함수 슬롯 넷과 갈리는 자리다). 바뀐 것은 그 안에 들어가는 것뿐이다:
     //    링크 하나 → **창을 여닫는 상태를 든 클라이언트 조각**(NewQuoteControl).
     //    🔴 주소(`/quotes/new`)를 아는 곳도 그대로 page.tsx 한 곳이다.
+    //
+    // ⚠️ 🔴 **2026-09-28 에 이 글자에 `key` 한 마디가 늘었다.** 슬롯도 주소도 그대로이고,
+    //    늘어난 까닭은 이 파일 맨 끝 묶음(「서버 컴포넌트가 프롭으로 건네는 요소 — key」)에
+    //    적었다 — 없으면 목록을 열 때마다 개발 오버레이에 콘솔 오류가 떴다. 단언의 세기는
+    //    그대로 두고(여전히 글자 하나까지 못 박는다) **지금 맞는 글자**로 옮겼다.
     const call = flat(sliceBetween(pageSource, "<QuoteListSlots", "/>\n  );"));
     assert.ok(call.includes("newQuoteControl="), "[새 견적서] 자리가 비어 있다");
     assert.ok(
-      call.includes('newQuoteControl={<NewQuoteControl baseHref="/quotes/new" />}'),
-      "[새 견적서] 자리가 팝업 조각이 아니거나 작성 화면을 가리키지 않는다"
+      call.includes('newQuoteControl={<NewQuoteControl key="new-quote" baseHref="/quotes/new" />}'),
+      "[새 견적서] 자리가 팝업 조각이 아니거나 작성 화면을 가리키지 않는다(key 가 빠졌을 수도 있다)"
     );
     assert.ok(
       flat(pageSource).includes('import QuoteListSlots, { NewQuoteControl } from "@/components/quotes/QuoteListSlots";'),
@@ -1006,5 +1011,147 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     for (const notYet of ["quote-workbook", "quote-issue"]) {
       assert.equal(imports.includes(notYet), false, `${notYet} — 아직 오지 않은 조각을 끌고 왔다`);
     }
+  });
+});
+
+/**
+ * ============================================================================
+ * 🔴 서버에서 건너가는 **요소 슬롯**에는 key 를 붙인다 (2026-09-28)
+ * ============================================================================
+ * 목록을 열 때마다 개발 오버레이에 이 콘솔 오류가 떴다:
+ *
+ *     Each child in a list should have a unique "key" prop.
+ *     Check the render method of `QuoteListScreen`. It was passed a child from
+ *     QuotesPage.
+ *
+ * 🔴 **화면 쪽에 key 없는 배열이 있어서가 아니다.** 그 자리는
+ * `{canEdit && newQuoteControl}` 한 줄이고(QuoteListScreen.tsx:310), 줄을 그리는
+ * `rows.map(` 세 곳은 전부 `key={row.id}` 를 갖고 있다. 코드를 읽어서는 안 나온다.
+ *
+ * ── 실제로 재어 본 것 (브라우저에서) ────────────────────────────────────
+ * 머리 줄 `<div>` 의 React fiber 에서 children 을 꺼내 보니 둘이었고, 둘째가
+ * 이랬다:
+ *
+ *     { $$typeof: "react.lazy", _store: { validated: 1 },
+ *       _payload: { status: "fulfilled",
+ *                   value: { owner: "QuotesPage", key: null,
+ *                            _store: { validated: 0 } } } }
+ *
+ * 🔴 **page.tsx 는 서버 컴포넌트다.** 거기서 만든 요소는 RSC 꾸러미에 실려 건너오고,
+ * 브라우저의 Flight 해독기는 그 요소가 기다릴 것이 있으면 **`react.lazy` 껍데기에
+ * 싸서** 내놓는다. React 의 dev 검사는 정적 형제(`jsxs`)를 훑을 때 **껍데기만**
+ * 「봤다」고 표시하는데(validated: 1), 화해 단계의 `warnOnInvalidKey` 는 `react.lazy`
+ * 를 만나면 **껍데기를 벗겨 속의 요소**를 본다. 속의 요소는 표시가 안 된 채(0) key 도
+ * 없어서 경고가 난다.
+ *
+ * 그래서 고칠 곳은 **요소를 만드는 자리**다 — 서브모듈(vendor/dss-core)은 손댈 것이
+ * 없다. key 는 RSC 꾸러미에 그대로 실려 건너간다.
+ *
+ * ── 🔴 왜 「전부 key 를 붙여라」로 적지 않는가 ──────────────────────────
+ * 이 경고는 받는 쪽이 그 요소를 **여럿 중 하나로** 놓을 때만 난다. 혼자 놓이는
+ * 자리(아래 다섯)는 지금 경고가 없다 — /quotes 와 /quotes/{id} 를 띄워 콘솔로
+ * 확인했다(2026-09-28). 그러니 여기서는 **키 없는 것의 목록을 못 박는다**: 새로
+ * 생기거나 [새 견적서] 것이 되돌아가면 이 시험이 터지고, 그때 「그 자리가 배열인가」를
+ * 사람이 한 번 보게 된다.
+ * ============================================================================
+ */
+describe("🔴 서버 컴포넌트가 프롭으로 건네는 요소 — key", () => {
+  /**
+   * `이름={<Tag …>}` 에서 **여는 태그만** 잘라 낸다.
+   *
+   * 여는 태그의 끝은 「중괄호·따옴표 밖의 첫 `>`」다 — `prop={a > b}` 나 문자열 속의
+   * `>` 에 걸리지 않게 손으로 훑는다. 닫는 태그까지 볼 까닭은 없다(key 는 여는
+   * 태그에만 적는다).
+   */
+  const elementPropOpenTags = (code: string) => {
+    const found: { prop: string; open: string }[] = [];
+    const opener = /\b([A-Za-z][\w]*)\s*=\s*\{\s*</g;
+    let match: RegExpExecArray | null;
+    while ((match = opener.exec(code)) !== null) {
+      const start = opener.lastIndex - 1;
+      let depth = 0;
+      let quote: string | null = null;
+      let end = -1;
+      for (let i = start + 1; i < code.length; i += 1) {
+        const ch = code[i];
+        if (quote !== null) {
+          if (ch === quote) quote = null;
+          continue;
+        }
+        if (ch === '"' || ch === "'" || ch === "`") {
+          quote = ch;
+          continue;
+        }
+        if (ch === "{") depth += 1;
+        else if (ch === "}") depth -= 1;
+        else if (ch === ">" && depth === 0) {
+          end = i;
+          break;
+        }
+      }
+      if (end >= 0) found.push({ prop: match[1], open: code.slice(start, end + 1) });
+    }
+    return found;
+  };
+
+  /** 주석을 벗긴 원본. 🔴 `"use client"` 판정도 이것으로 한다 — page.tsx 의 머리말이 그 낱말을 **설명으로** 적어 두었다. */
+  const withoutComments = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^[ \t]*\/\/.*$/gm, " ");
+
+  const hasKeyProp = (openTag: string) => /\bkey\s*=/.test(openTag);
+
+  test("🔴 [새 견적서] 슬롯에 key 가 붙어 있다", () => {
+    const slots = elementPropOpenTags(withoutComments(pageSource)).filter(
+      (found) => found.prop === "newQuoteControl"
+    );
+    assert.equal(slots.length, 1, "page.tsx 에서 newQuoteControl 슬롯을 찾지 못했다");
+    assert.ok(
+      hasKeyProp(slots[0].open),
+      "newQuoteControl 요소에 key 가 없다 — 목록을 열면 개발 오버레이에 " +
+        '\'Each child in a list should have a unique "key" prop\' 이 다시 뜬다 ' +
+        "(까닭은 이 묶음 머리말)"
+    );
+  });
+
+  test("🔴 서버 컴포넌트가 건네는 요소 가운데 key 없는 것은 **다섯**이다", () => {
+    const keyless: string[] = [];
+    let scanned = 0;
+    const walk = (relativeDir: string) => {
+      for (const entry of readdirSync(fileURLToPath(new URL(relativeDir, repoUrl)), {
+        withFileTypes: true,
+      })) {
+        const relativePath = `${relativeDir}/${entry.name}`;
+        if (entry.isDirectory()) {
+          walk(relativePath);
+          continue;
+        }
+        // 시험 파일은 화면이 아니다 — 앱이 그리지 않으므로 이 경고가 날 자리가 없다.
+        if (!/\.tsx$/.test(entry.name) || /\.test\.tsx$/.test(entry.name)) continue;
+        const code = withoutComments(read(relativePath));
+        // 🔴 `"use client"` 가 맨 앞에 선 파일은 **클라이언트**다 — 그 안에서 만든
+        //    요소는 꾸러미를 건너지 않아 lazy 껍데기가 씌워지지 않는다.
+        if (/^\s*["']use client["']/.test(code)) continue;
+        scanned += 1;
+        for (const found of elementPropOpenTags(code)) {
+          if (!hasKeyProp(found.open)) keyless.push(`${relativePath} · ${found.prop}`);
+        }
+      }
+    };
+    walk("src");
+
+    // 🔴 **아무것도 안 훑고 통과하는 길을 막는다**(quote-attachment-files.test.ts 와 같은 이유).
+    assert.ok(scanned > 15, `훑은 서버 파일이 ${scanned}개뿐이다 — 걷는 길이 끊겼는지 보라`);
+
+    keyless.sort();
+    assert.deepEqual(keyless, [
+      // 다섯 다 **혼자 놓이는 자리**다(메뉴바 · 화면 메뉴 · 알림 종 · 편집 폼 · 결재 칸).
+      // 지금은 경고가 나지 않는다 — 2026-09-28 에 두 화면을 띄워 콘솔로 확인했다.
+      // 🔴 여기에 하나가 늘면 **그 자리가 여럿 중 하나인지** 먼저 보라.
+      "src/app/(app)/layout.tsx · notificationBell",
+      "src/app/(app)/layout.tsx · screenNav",
+      "src/app/(app)/layout.tsx · serviceMenu",
+      "src/app/(app)/quotes/[id]/page.tsx · approvalPanel",
+      "src/app/(app)/quotes/[id]/page.tsx · editForm",
+    ]);
   });
 });

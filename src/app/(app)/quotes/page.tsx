@@ -131,8 +131,30 @@ export default async function QuotesPage() {
        * 그릴지 말지는 화면이 정한다(`{canEdit && newQuoteControl}`) — 여기서 다시
        * 검사하면 같은 판정이 두 곳에 놓이고, 어긋나는 날 어느 쪽이 맞는지 모른다.
        * 🔴 **그것은 관문이 아니다.** `/quotes/new` 가 제 관문을 따로 지난다.
+       *
+       * ── 🔴 `key` 가 왜 붙어 있나 (2026-09-28, 개발 오버레이의 콘솔 오류) ──────
+       * 이 한 줄이 없으면 목록을 열 때마다 개발 오버레이에 이 오류가 떴다:
+       *
+       *     Each child in a list should have a unique "key" prop.
+       *     Check the render method of `QuoteListScreen`. It was passed a child
+       *     from QuotesPage.
+       *
+       * 🔴 **화면 쪽에 배열이 있어서가 아니다.** 그 자리는 `{canEdit && newQuoteControl}`
+       * 한 줄이다(QuoteListScreen.tsx:310). 까닭은 **서버 경계**에 있다 — 이 파일은
+       * 서버 컴포넌트라 이 요소가 RSC 꾸러미에 실려 건너가고, 브라우저에서는 그것이
+       * **`react.lazy` 껍데기에 싸인 채** 도착한다(브라우저에서 실측했다: 머리 줄
+       * `<div>` 의 children 둘 가운데 둘째가 `$$typeof: "react.lazy"` 이고 그 속의
+       * 요소가 `owner: "QuotesPage"` · `key: null` 이었다).
+       *
+       * React 의 dev 검사는 **정적 형제**(`jsxs`)를 훑을 때 그 껍데기만 「봤다」고
+       * 표시하고, 정작 화해(reconcile) 단계는 껍데기를 벗겨 **속의 요소**의 key 를
+       * 본다. 그래서 속의 요소에 key 가 없으면 경고가 난다. 🔴 **서브모듈은 손댈
+       * 것이 없다** — key 를 만드는 자리, 즉 여기가 고칠 곳이다.
+       *
+       * 🔴 **화면이 달라지지 않는다.** 이 자리에 오는 요소는 언제나 하나뿐이라
+       * key 값이 무엇이든 배치도 상태도 그대로다 — 경고만 사라진다.
        */
-      newQuoteControl={<NewQuoteControl baseHref="/quotes/new" />}
+      newQuoteControl={<NewQuoteControl key="new-quote" baseHref="/quotes/new" />}
       trashActions={{
         deleteQuote: deleteQuoteAction,
         restoreQuote: restoreQuoteAction,
