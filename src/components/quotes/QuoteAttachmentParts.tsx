@@ -87,9 +87,13 @@ import { QuoteIssueNoticeLines } from "./QuoteIssueButton";
  *     🔴 곁딸린 `QuoteIssueNoticeLines`(결과 줄 그리기)도 함께 왔다 — 저쪽과 같은
  *     자리(QuoteIssueButton.tsx)에 **그 조각 하나만** 두었고, [견적서 받기] 단추
  *     자체는 여전히 없다(그 파일 머리말).
- *   · `QuoteAttachmentSlotsView` 의 `statusDetails` 는 그대로 비어 있다 — 저쪽은 결재 PDF 의
+ *   · ⚠️ `QuoteAttachmentSlotsView` 의 `statusDetails` 는 그대로 비어 있다 — 저쪽은 결재 PDF 의
  *     공유폴더 결과 줄을 여기 끼우는데, 공유폴더 복사는 **발행(조각 3c-3)** 의 몫이라
  *     이 사이트의 올리기 통로는 `archive` 에 언제나 null 을 싣는다.
+ *     🔴 **그때의 기록이다 — 조각 3c-3b 가 채웠다**(2026-09-28). 올리기 통로가 결재 PDF 를
+ *     사내 공유폴더에 복사하기 시작했고, `QuoteAttachmentsSection` 이 그 결과 줄
+ *     (`archiveNotice`)을 저쪽과 같은 자리에 넘긴다. 이 프롭은 그대로 두었다 — 받는 쪽은
+ *     처음부터 저쪽 글자였다.
  *
  * ── 확인창은 native `<dialog>` + `showModal()` ─────────────────────────
  * 이 앱의 관례다(common/NoticePopup.tsx 도 같은 방식). 열려 있는 동안만 그린다.

@@ -24,7 +24,9 @@ import {
   uploadQueuedQuoteAttachments,
   type QueuedQuoteAttachmentsOutcome,
 } from "./quote-attachment-upload";
+import { quoteUploadArchiveNoticeLines, type QuoteIssueNoticeLine } from "./quote-issue-messages";
 import { QuoteAttachmentDeleteDialog, QuoteAttachmentSlotsView } from "./QuoteAttachmentParts";
+import { QuoteIssueNoticeLines } from "./QuoteIssueButton";
 
 /**
  * ============================================================================
@@ -117,6 +119,17 @@ import { QuoteAttachmentDeleteDialog, QuoteAttachmentSlotsView } from "./QuoteAt
  *    `"function reloadAfterIssue("` 도 **저쪽 글자 그대로 되돌려 놓았다.**
  *    `archiveNotice` 는 첨부 올리기 통로가 공유폴더 사본을 만들기 시작하는 날
  *    (그 라우트의 울타리를 푸는 조각) 함께 온다.
+ *
+ * ⚠️ 위 문단도 **그때의 기록**이다. 🔴 **그날이 조각 3c-3b 다**(2026-09-28) —
+ *    올리기 통로가 결재 PDF 를 사내 공유폴더에 복사하기 시작했고
+ *    (api/quotes/[id]/attachments/route.ts 머리말의 「조각 3c-3b 가 그 이음을 붙였다」),
+ *    그 결과를 싣고 오는 `archive` 칸이 이제 실제로 찬다. 그래서 `archiveNotice` 가
+ *    **저쪽 글자 그대로** 왔다 — 문장은 [견적서 받기]와 **같은 함수**가 짓고
+ *    (quote-issue-messages.ts 의 `quoteUploadArchiveNoticeLines`), 방금 한 일의 한 줄
+ *    아래(`statusDetails`)에 붙는다.
+ *    🔴 **공유폴더가 실패해도 올리기는 성공**이라 오류가 아니라 이 줄로만 드러난다 —
+ *    이 줄이 없으면 그 실패가 화면에서 조용히 사라진다.
+ *    🔴 **안 가져온 것은 이제 하나**다 — `signedPdfForPreview`(조각 3f).
  * ============================================================================
  */
 
@@ -130,6 +143,8 @@ export type QuoteAttachmentsController = {
   errors: SlotMessages;
   busyCategory: QuoteAttachmentSlotCategory | null;
   statusText: string | null;
+  /** 방금 올린 결재 PDF 의 공유폴더 결과 줄. 없으면 빈 배열. */
+  archiveNotice: QuoteIssueNoticeLine[];
   deleteTarget: QuoteAttachmentSlotCategory | null;
   deleteError: string | null;
   isDeleting: boolean;
@@ -182,6 +197,7 @@ export function useQuoteAttachments({
   const [localChanges, setLocalChanges] = useState<QuoteSlotLocalChanges>({});
   const [busyCategory, setBusyCategory] = useState<QuoteAttachmentSlotCategory | null>(null);
   const [statusText, setStatusText] = useState<string | null>(null);
+  const [archiveNotice, setArchiveNotice] = useState<QuoteIssueNoticeLine[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<QuoteAttachmentSlotCategory | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -210,6 +226,7 @@ export function useQuoteAttachments({
   async function uploadNow(targetQuoteId: string, category: QuoteAttachmentSlotCategory, file: File) {
     setBusyCategory(category);
     setStatusText(null);
+    setArchiveNotice([]);
     setSlotError(category, null);
     try {
       const result = await uploadQuoteAttachment(targetQuoteId, category, file);
@@ -222,6 +239,8 @@ export function useQuoteAttachments({
       setPending((prev) => withPendingQuoteAttachment(prev, category, null));
       setLocalChanges((prev) => ({ ...prev, [category]: { kind: "uploaded", file: result.file } }));
       setStatusText(quoteAttachmentUploadedText(category, result.replaced));
+      // 결재 PDF 면 공유폴더 사본의 결과 줄(수기 엑셀 칸이면 빈 배열).
+      setArchiveNotice(quoteUploadArchiveNoticeLines(category, result.archive));
       refreshServerSlots();
     } finally {
       setBusyCategory(null);
@@ -291,6 +310,7 @@ export function useQuoteAttachments({
       setLocalChanges((prev) => ({ ...prev, [category]: { kind: "deleted", attachmentId: file.id } }));
       setDeleteTarget(null);
       setStatusText(quoteAttachmentDeletedText(category));
+      setArchiveNotice([]);
     } catch {
       setDeleteError(DELETE_FAILED_MESSAGE);
     } finally {
@@ -321,11 +341,16 @@ export function useQuoteAttachments({
       for (const failure of outcome.failures) next[failure.category] = failure.reason;
       return next;
     });
+    // 결재 PDF 가 올라갔으면 공유폴더 결과 줄 — 하나라도 못 올려 이 화면에 머물 때 보인다
+    // (다 올리면 폼이 곧바로 목록으로 넘어간다).
+    const signedPdf = outcome.uploaded.find((item) => item.category === "SIGNED_QUOTE_PDF");
+    setArchiveNotice(signedPdf ? quoteUploadArchiveNoticeLines(signedPdf.category, signedPdf.archive) : []);
     return outcome;
   }
 
   function reloadAfterIssue() {
     setStatusText(null);
+    setArchiveNotice([]);
     refreshServerSlots();
   }
 
@@ -336,6 +361,7 @@ export function useQuoteAttachments({
     errors,
     busyCategory,
     statusText,
+    archiveNotice,
     deleteTarget,
     deleteError,
     isDeleting,
@@ -386,6 +412,7 @@ export default function QuoteAttachmentsSection({
         errors={controller.errors}
         busyCategory={controller.busyCategory}
         statusText={controller.statusText}
+        statusDetails={<QuoteIssueNoticeLines lines={controller.archiveNotice} className="mt-1" />}
         notice={excelOnlyMissingExcelNotice({
           isExcelOnly,
           excelAttachedOrQueued: controller.excelAttachedOrQueued,

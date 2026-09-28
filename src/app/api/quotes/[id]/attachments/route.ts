@@ -22,7 +22,9 @@ import { ATTACHMENT_OWNER_PERMISSIONS } from "@/lib/domain/attachment-download-p
 import { buildQuoteAttachmentStoredPath } from "@/lib/domain/attachment-path";
 import { QuoteAttachmentRejectedError, createAttachmentRecord } from "@/lib/db/mutations/attachments";
 import { getQuoteAttachmentUploadTarget } from "@/lib/db/queries/attachments";
+import { archiveSignedQuotePdf } from "@/lib/server/services/quote-issue";
 import { getAttachmentStorage } from "@/lib/storage/local-fs-adapter";
+import { resolveQuoteArchiveRoot } from "@/lib/storage/quote-archive";
 import { AttachmentTooLargeError } from "@/lib/storage/storage-adapter";
 
 /**
@@ -45,12 +47,29 @@ import { AttachmentTooLargeError } from "@/lib/storage/storage-adapter";
  *     두 코드가 이 통로에 없다. 받기 통로 · 서버 액션들이 이미 그렇게 옮겨져 있다
  *     (api/quotes/[id]/xlsx/route.ts · server/actions/attachments.ts 머리말).
  *
- * ── 🔴 다른 것 ② 사내 공유폴더 복사는 **아직 오지 않았다** ───────────────
- * 저쪽은 결재 PDF 기록이 성공한 뒤 그 파일을 사내 공유폴더에 `… - 有印.pdf` 로
- * 복사하고(`server/services/quote-issue.ts` 의 archiveSignedQuotePdf) 그 결과를 201
- * 응답의 `archive` 칸에 싣는다. 이 사이트에는 그 두 파일이 없고 이번에 가져오지
- * 않았다 — 공유폴더는 **발행(조각 3c-3)** 의 몫이다. 이 통로의 `archive` 는 분류와
- * 무관하게 **언제나 `null`** 이다(아래 응답의 곁말).
+ * ── ⚠️ 다른 것 ② 사내 공유폴더 복사는 **아직 오지 않았다** ───────────────
+ * ⚠️ **조각 3d-3b 때의 기록이다.** 저쪽은 결재 PDF 기록이 성공한 뒤 그 파일을 사내
+ * 공유폴더에 `… - 有印.pdf` 로 복사하고(`server/services/quote-issue.ts` 의
+ * archiveSignedQuotePdf) 그 결과를 201 응답의 `archive` 칸에 싣는다. 이 사이트에는 그 두
+ * 파일이 없고 이번에 가져오지 않았다 — 공유폴더는 **발행(조각 3c-3)** 의 몫이다. 이
+ * 통로의 `archive` 는 분류와 무관하게 **언제나 `null`** 이다.
+ *
+ * ── 🔴 조각 3c-3b 가 그 이음을 붙였다 (2026-09-28) ───────────────────────
+ * 위 문단은 낡았다. 발행(3c-3)이 `server/services/quote-issue.ts` 와
+ * `storage/quote-archive.ts` 를 가져왔지만 **부르는 곳을 잇지 못했다** — 곁 시험이 이
+ * 파일의 import 목록을 `deepEqual` 로 못 박아 두어서다
+ * (api/quotes/attachments-route-source.test.ts). 그래서 사람이 결재 PDF 를 올리면 **아무
+ * 오류도 나지 않은 채** 칸에는 붙고 공유폴더에는 조용히 안 갔다. 3c-3b 가 그 울타리에서
+ * 금지 낱말 둘(`quote-archive` · `archiveSignedQuotePdf`)만 빼고 그 자리에 긍정 단언을
+ * 세운 뒤 아래 6번을 붙였다.
+ *
+ * 이제 **저쪽과 같다** — 결재 PDF 칸의 기록이 **성공한 뒤에만** 그 견적서의 공유폴더
+ * 폴더에 `… - 有印.pdf` 로 복사한다(archiveSignedQuotePdf — **던지지 않는다**). 결과는
+ * 201 응답의 `archive` 칸에만 싣는다(domain/quote-issue-result.ts 의 모양 — 저장 · 같은
+ * 내용 · 실패 · 꺼짐). 🔴 공유폴더가 실패해도 응답 코드와 기존 칸은 그대로다. 수기 엑셀
+ * 칸 올리기는 복사하지 않는다 — `archive: null`.
+ * 🔴 `QUOTE_ARCHIVE_DIR` 이 비어 있으면 결과가 `disabled` 다(.env.example) — 그 값은
+ * A/S 와 **같은 폴더**를 가리켜야 한다.
  *
  * ── 접수 건 통로와 다른 점(저쪽 머리말 그대로) ──────────────────────────
  *   권한      **quotes WRITE**(판정 파일의 표 ATTACHMENT_OWNER_PERMISSIONS.CHANGE.QUOTE) —
@@ -276,6 +295,19 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     return fail(500, "RECORD_FAILED", "파일 기록을 저장하는 중 문제가 발생했습니다.");
   }
 
+  // ── 6) 결재 PDF 면 사내 공유폴더에 사본 (파일 헤더의 「공유폴더에도 복사한다」) ────
+  // 기록이 성공한 뒤에만 — 칸에 붙지 않은 파일을 서류함에 꽂지 않는다. 던지지 않으므로
+  // 공유폴더가 실패해도 아래 201 과 기존 칸은 그대로다.
+  const archive =
+    category === "SIGNED_QUOTE_PDF"
+      ? await archiveSignedQuotePdf({
+          quoteId: target.id,
+          storedPath,
+          archiveRoot: resolveQuoteArchiveRoot(),
+          storage,
+        })
+      : null;
+
   return NextResponse.json(
     {
       id: created.id,
@@ -287,11 +319,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       uploadedAt: created.uploadedAt,
       // 같은 칸의 옛 파일 — 첨부 휴지통으로 갔다(없으면 빈 배열). 화면이 「바꿨다」고 알릴 근거.
       displacedAttachmentIds: created.displacedAttachmentIds,
-      // 🔴 공유폴더 복사는 아직 오지 않았다 — 발행(3c-3)의 몫이다. 응답 모양만 A/S 와
-      // 맞춰 둔다(모양은 domain/quote-issue-result.ts 의 QuoteIssueArchiveResult).
-      // 저쪽은 결재 PDF 칸에서만 값이 차고 수기 엑셀 칸은 null 인데, 여기서는 **분류와
-      // 무관하게 언제나 null** 이다.
-      archive: null,
+      // 공유폴더 사본의 결과 — 결재 PDF 만(수기 엑셀 칸은 null). 모양은 domain/quote-issue-result.ts.
+      archive,
     },
     { status: 201 }
   );

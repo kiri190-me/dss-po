@@ -27,6 +27,23 @@ import { ATTACHMENT_OWNER_PERMISSIONS } from "@/lib/domain/attachment-download-p
  * 않아 **그 시험이 조용히 안 돈다**(2026-09-22 실측 — scripts/run-test-list.mjs 머리말).
  * 이제 실행기가 그런 줄을 아예 거절한다. 그래서 시험만 대괄호 밖에 두고, 읽는 원본만
  * 아래 경로로 그 안을 가리킨다(본보기는 형제 파일 xlsx-route-source.test.ts).
+ *
+ * ── 🔴 울타리를 한 번 풀었다 — 조각 3c-3b (2026-09-28) ────────────────────
+ * 이 파일의 두 단언(import 목록 `deepEqual` · 금지 낱말 목록)이 **조용한 고장 하나를
+ * 지키고 있었다.** 발행 조각(3c-3)이 `server/services/quote-issue.ts` 의
+ * `archiveSignedQuotePdf`(결재 PDF 를 사내 공유폴더에 복사)를 가져왔는데, 그것을 부를
+ * 자리가 바로 이 라우트였다. 여기가 못 박혀 있어 잇지 못했고 — 사람이 결재 PDF 를
+ * 올리면 **아무 오류도 없이** 칸에는 붙고 공유폴더에는 조용히 안 갔다.
+ *
+ * 그래서 3c-3b 가 **이번에 실제로 들여온 것만** 풀었다:
+ *   · import 목록 `deepEqual` 에 **두 줄을 더했다**(지운 줄은 없다) —
+ *     `@/lib/server/services/quote-issue` · `@/lib/storage/quote-archive`.
+ *   · 금지 낱말에서 `quote-archive` · `archiveSignedQuotePdf` **둘만** 뺐다. 나머지
+ *     (A/S 인증 사슬 넷 · `node:fs` · `node:path` · `require(` · `sweepTemp`)는 그대로다.
+ *   · 🔴 **푼 자리를 긍정 단언으로 메웠다** — 아래 「공유폴더 사본」 묶음이 부르는
+ *     갈래가 결재 PDF 하나뿐인지 · **기록이 성공한 뒤인지** · **던지지 않는지**를
+ *     글자로 잰다. 옛 단언(「archive 는 언제나 null 이다」)이 재던 것은 **없다는 사실**
+ *     하나였고, 그 자리를 **있는 동작**으로 갈아 끼운 것이다.
  * ============================================================================
  */
 
@@ -87,7 +104,7 @@ describe("올리기 통로 — 소스로 지킨다", () => {
     assert.ok(route.includes('export const dynamic = "force-dynamic";'));
   });
 
-  test("🔴 순서: 같은 출처 → 세션 → 권한 → 견적서 → 분류 · 이름 · 확장자 → 크기 → 본문", () => {
+  test("🔴 순서: 같은 출처 → 세션 → 권한 → 견적서 → 분류 · 이름 · 확장자 → 크기 → 본문 → 파일 → DB → 공유폴더", () => {
     assertInOrder([
       "isTrustedOrigin(request)",
       "await getSessionUser()",
@@ -112,6 +129,9 @@ describe("올리기 통로 — 소스로 지킨다", () => {
       "buildQuoteAttachmentStoredPath({",
       "await storage.commit(written.tempPath, storedPath)",
       "await createAttachmentRecord({",
+      // 🔴 공유폴더 사본은 **기록 다음 · 응답 앞**이다 (조각 3c-3b — 파일 머리말).
+      'category === "SIGNED_QUOTE_PDF"',
+      "archiveSignedQuotePdf({",
       "return NextResponse.json(",
     ]);
   });
@@ -256,16 +276,72 @@ describe("올리기 통로 — 소스로 지킨다", () => {
     assert.ok(created.includes("{ status: 201 }"));
   });
 
-  test("🔴 공유폴더 사본은 아직 오지 않았다 — archive 는 언제나 null 이다", () => {
-    // 발행(3c-3)의 몫이다. 응답 모양만 A/S 와 맞춰 두고 값은 고정한다.
-    assert.ok(body.includes("archive: null,"), "archive 칸이 없다 — A/S 와 응답 모양이 갈린다");
-    assert.equal(body.includes("archiveSignedQuotePdf"), false);
-    assert.equal(body.includes("resolveQuoteArchiveRoot"), false);
+  /**
+   * ==========================================================================
+   * 🔴 공유폴더 사본 — 옛 단언(「archive 는 언제나 null 이다」)이 섰던 자리 (3c-3b)
+   * ==========================================================================
+   * 옛 단언이 재던 것은 **없다는 사실** 하나였다. 이제 있는 동작을 잰다 — 무엇을
+   * 빠뜨리면 **조용한 고장**이 되는지를 그대로 뒤집은 셋이다:
+   *   ㉮ 기록보다 앞에서 부르면 → 칸에 붙지도 않은 파일이 서류함에 꽂힌다
+   *   ㉯ 갈래가 없으면 → 수기 엑셀까지 `… - 有印.pdf` 로 복사된다
+   *   ㉰ 던지면 → 공유폴더가 막힌 날 **올리기 자체가 500 으로 실패한다**
+   * ==========================================================================
+   */
+  test("🔴 공유폴더 사본은 결재 PDF 칸 하나뿐 · 기록이 성공한 **뒤** · 응답은 201 그대로", () => {
+    const recordAt = body.indexOf("created = await createAttachmentRecord({");
+    const archiveAt = body.indexOf("archiveSignedQuotePdf({");
+    assert.ok(recordAt >= 0, "기록 자리가 없다");
+    // ㉮ 🔴 기록이 성공한 뒤다 — 순서를 글자로 잰다.
+    assert.ok(archiveAt > recordAt, "🔴 복사가 기록보다 앞이다 — 칸에 붙지 않은 파일을 서류함에 꽂는다");
+    // ㉯ 🔴 부르는 곳은 하나이고, 그 하나가 결재 PDF 갈래 안에 있다.
+    assert.equal(body.match(/archiveSignedQuotePdf\(/g)?.length, 1, "부르는 곳이 둘이거나 없다");
+    assert.ok(
+      body.slice(recordAt, archiveAt).includes('category === "SIGNED_QUOTE_PDF"'),
+      "결재 PDF 칸일 때만 부르지 않는다"
+    );
+    // 수기 엑셀 칸은 그 삼항의 반대쪽 — null 이다(응답 모양은 A/S 와 같다).
+    assert.ok(body.slice(archiveAt).includes(": null;"), "결재 PDF 가 아닐 때의 값이 null 이 아니다");
+    // 루트는 환경변수 한 곳에서 온다 — 손으로 적은 경로가 아니다(비어 있으면 disabled).
+    assert.ok(body.includes("archiveRoot: resolveQuoteArchiveRoot(),"), "공유폴더 루트를 규칙 함수로 고르지 않는다");
+    // ㉰ 🔴 실패해도 **올리기는 성공**이다 — 복사 뒤에 거절 갈래가 하나도 없다.
+    assert.equal(body.slice(archiveAt).includes("fail("), false, "공유폴더가 실패하면 응답 코드가 바뀐다");
+    const created = body.slice(body.indexOf("return NextResponse.json("));
+    assert.ok(created.includes("archive,"), "결과를 응답의 archive 칸에 싣지 않는다");
+    assert.ok(created.includes("{ status: 201 }"));
     // 🔴 그 자리에 까닭이 적혀 있다 — 곁말이 없으면 다음 사람이 빠뜨린 것으로 읽는다.
-    assert.match(route, /공유폴더 복사는 아직 오지 않았다/);
+    assert.match(route, /조각 3c-3b 가 그 이음을 붙였다/);
   });
 
-  test("🔴 가져오는 것은 문지기 · 판정 · 저장소 · 행 만들기뿐이다", () => {
+  test("🔴 **던지지 않는다** — 라우트가 감싸지 않는 것은 부르는 함수가 제 안에서 다 잡기 때문이다", () => {
+    // 🔴 라우트에 try/catch 가 없는 것만 보면 「안 잡는다」와 구별이 안 된다. 그래서
+    // 부르는 함수 쪽을 글자로 잰다 — 거기서 잡지 않게 되는 날 이 단언이 걸린다.
+    const archiveCall = body.slice(body.indexOf("archiveSignedQuotePdf({"));
+    assert.equal(archiveCall.slice(0, archiveCall.indexOf(";")).includes("catch"), false, "라우트가 따로 잡는다");
+
+    const service = flat(
+      codeOf(
+        readFileSync(new URL("../../../lib/server/services/quote-issue.ts", import.meta.url), "utf8").replace(
+          /\r\n/g,
+          "\n"
+        )
+      )
+    );
+    const start = service.indexOf("export async function archiveSignedQuotePdf(");
+    assert.ok(start >= 0, "부르는 함수가 없다");
+    const end = service.indexOf("type ArchiveTarget =", start);
+    assert.ok(end > start, "함수 끝 표지를 찾지 못했다");
+    const fn = service.slice(start, end);
+    // 루트가 없으면 던지지 않고 꺼짐으로 돌아온다.
+    assert.ok(fn.includes('if (input.archiveRoot === null) return { status: "disabled" };'));
+    // 나머지는 전부 try/catch 안이고, 실패도 값으로 돌아온다.
+    const tryAt = fn.indexOf("try {");
+    assert.ok(tryAt > 0, "try 가 없다 — 던질 수 있다");
+    assert.ok(fn.indexOf("} catch (error) {", tryAt) > tryAt, "catch 가 없다 — 던질 수 있다");
+    assert.equal(fn.slice(tryAt).match(/throw /g), null, "다시 던지는 자리가 있다");
+    assert.ok(fn.includes('return { status: "failed", reason:'), "실패를 값으로 돌려주지 않는다");
+  });
+
+  test("🔴 가져오는 것은 문지기 · 판정 · 저장소 · 행 만들기 · 공유폴더 사본뿐이다", () => {
     assert.deepEqual(importSpecifiers(route), [
       "@/lib/auth/permission-resolver",
       "@/lib/auth/request-guards",
@@ -276,7 +352,11 @@ describe("올리기 통로 — 소스로 지킨다", () => {
       "@/lib/domain/attachment-category",
       "@/lib/domain/attachment-download-policy",
       "@/lib/domain/attachment-path",
+      // 🔴 조각 3c-3b 가 **더한 두 줄** — 결재 PDF 의 공유폴더 사본(파일 머리말의
+      //    「울타리를 한 번 풀었다」). 지운 줄은 없다.
+      "@/lib/server/services/quote-issue",
       "@/lib/storage/local-fs-adapter",
+      "@/lib/storage/quote-archive",
       "@/lib/storage/storage-adapter",
       "next/server",
       "node:crypto",
@@ -288,9 +368,10 @@ describe("올리기 통로 — 소스로 지킨다", () => {
       "auth-source",
       "readSession",
       "mock-data",
-      // 🔴 공유폴더는 발행(3c-3)의 몫이다.
-      "quote-archive",
-      "archiveSignedQuotePdf",
+      // 🔴 결재 표는 여기서 한 글자도 읽지 않는다 — 결재는 발행 · 올리기를 막지 않는다
+      //    (2026-09-18 사용자 결정. domain/quote-approval-rules.test.ts 가 함께 잰다).
+      "quote-approval",
+      "approval-route",
       // 🔴 저장소에 닿는 것은 StorageAdapter 하나다 — 어디선가 fs 를 직접 부르면 그
       //    자리가 NAS 이식 때 빠뜨리는 자리가 된다(storage/storage-adapter.ts 머리말).
       "node:fs",

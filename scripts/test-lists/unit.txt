@@ -587,3 +587,16 @@ src/components/quotes/quote-issue-download.test.ts
 #    응답과 로그에 내부 경로가 없음. 🔴 시험 파일은 `[id]` **밖**에 둔다 —
 #    대괄호 경로는 실행기가 거절한다(그 파일 머리말).
 src/app/api/quotes/issue-route-source.test.ts
+
+# ── 조각 PO 3c-3b — 결재 PDF 를 공유폴더에 잇는다 (2026-09-28) ──────────
+# 🔴 **조각 3c-3 이 남긴 「조용한 고장」을 고친 조각**이다. `archiveSignedQuotePdf`
+#    가 와 있는데 부르는 곳이 없어, 사람이 결재 PDF 를 올리면 **아무 오류도 없이**
+#    칸에는 붙고 사내 공유폴더에는 조용히 안 갔다. 올리기 통로가 이제 부른다.
+# 🔴 이 조각이 새로 만든 시험 파일은 **아래 한 장뿐**이다. 나머지는 이미 있던 두
+#    파일을 고쳤다 — attachments-route-source.test.ts(울타리를 풀고 그 자리에 긍정
+#    단언을 세웠다. 그 파일 머리말의 「울타리를 한 번 풀었다」) ·
+#    server/services/quote-issue.integration.test.ts(3c-3 이 심어 둔 표지를 약속대로
+#    저쪽 것으로 되돌렸다 — db.txt 에 있다).
+# A/S 의 같은 이름 시험(200줄)에서 **두 묶음만** 가져왔다. 남은 셋은 이 사이트에
+# 없는 화면(QuoteListScreen · QuotePrintView)을 읽는다 — 조각 3f 가 되돌려 놓는다.
+src/components/quotes/quote-issue-screens.test.ts

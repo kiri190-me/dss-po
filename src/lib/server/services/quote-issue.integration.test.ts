@@ -896,13 +896,19 @@ describe("결재 PDF 복사 — archiveSignedQuotePdf", () => {
  *     (`hasPermission(actingUser, "quotes", "WRITE")`)와 「READ 로 들어오는 길이
  *     없다」는 그대로다** — 거기가 이 묶음의 핵심이다.
  *
- *  ㉯ **올리기 통로 묶음을 뒤집었다** — 저쪽은 올리기 통로가 결재 PDF 기록 뒤에
- *     `archiveSignedQuotePdf` 를 부르는지 본다. 🔴 **이 사이트의 올리기 통로는 그
- *     자리를 일부러 비워 두었다**(그 파일의 「다른 것 ②」 · `archive: null`) — 곁
- *     시험이 import 목록을 `deepEqual` 로 못 박아 이 조각이 손댈 수 없는 파일이다
+ *  ㉯ ⚠️ **올리기 통로 묶음을 뒤집었다** — **조각 3c-3 때의 기록이다.** 저쪽은 올리기
+ *     통로가 결재 PDF 기록 뒤에 `archiveSignedQuotePdf` 를 부르는지 보는데, 그때 이
+ *     사이트의 올리기 통로는 그 자리를 비워 두고 있었다(`archive: null`) — 곁 시험이
+ *     import 목록을 `deepEqual` 로 못 박아 3c-3 이 손댈 수 없는 파일이었다
  *     (app/api/quotes/attachments-route-source.test.ts). 그래서 재는 방향을 뒤집어
- *     **아직 안 불렀음이 그대로인지**를 본다. 그 이음이 오는 조각이 이 시험을
- *     저쪽 것으로 되돌린다. `archiveSignedQuotePdf` 자체는 위 묶음이 직접 부른다.
+ *     **아직 안 불렀음이 그대로인지**를 보며, 「그 이음이 오는 조각이 이 시험을 저쪽
+ *     것으로 되돌린다」고 적어 두었다.
+ *
+ *     🔴 **조각 3c-3b 가 그 조각이다**(2026-09-28). 울타리를 풀어 이음을 붙였고, 그
+ *     약속대로 이 묶음의 마지막 시험을 **저쪽 것으로 되돌렸다** — 이제 저쪽과 같은
+ *     말을 잰다: 복사는 기록이 성공한 뒤 · 결재 PDF 칸일 때만 · 응답은 201 그대로.
+ *     그래서 이 사이트에서 저쪽과 다른 것은 **㉮ 문지기 순서 하나뿐**이다.
+ *     `archiveSignedQuotePdf` 자체는 위 묶음이 직접 부른다.
  * ============================================================================
  */
 describe("라우트 — 문지기 순서 · 권한 · 이름 · 헤더를 소스로 지킨다", () => {
@@ -999,28 +1005,15 @@ describe("라우트 — 문지기 순서 · 권한 · 이름 · 헤더를 소스
     assert.deepEqual(exportedNames(route), ["GET", "dynamic", "runtime"]);
   });
 
-  test("🔴 올리기 통로는 **아직** 결재 PDF 를 공유폴더에 복사하지 않는다 — 응답 코드는 201 그대로", () => {
-    /**
-     * 🔴 방향이 저쪽과 뒤집혀 있다(이 묶음 머리말 ㉯). 저쪽은 「기록 뒤에 복사한다」를
-     * 재고, 여기는 「아직 안 부른다」를 잰다 — 그 통로는 곁 시험이 import 목록을
-     * `deepEqual` 로 못 박아 둔 파일이라 이 조각이 손대지 않았다
-     * (app/api/quotes/attachments-route-source.test.ts).
-     *
-     * 🔴 **그 이음이 오는 조각은 이 시험을 저쪽 것으로 되돌려야 한다** — 그러지
-     * 않으면 복사를 붙인 날 이 단언이 걸려 무엇을 해야 하는지 알려 준다.
-     */
+  test("올리기 통로 — 결재 PDF 복사는 기록이 성공한 뒤, 결재 PDF 칸일 때만 · 응답 코드는 201 그대로", () => {
+    // 🔴 저쪽 글자 그대로다 — 조각 3c-3b 가 되돌려 놓았다(이 묶음 머리말 ㉯).
     const route = readSource(UPLOAD_ROUTE);
     const recordAt = route.indexOf("created = await createAttachmentRecord({");
-    assert.ok(recordAt >= 0, "기록 자리가 사라졌다");
-    // 🔴 **코드만 본다** — 그 통로의 머리말이 저쪽의 복사를 설명한다(위 codeOf).
-    assert.equal(
-      codeOf(route).includes("archiveSignedQuotePdf"),
-      false,
-      "복사가 붙었다 — 이 시험을 저쪽 것으로 되돌릴 것"
-    );
-    assert.ok(route.slice(recordAt).includes("{ status: 201 }"));
+    const archiveAt = route.indexOf("archiveSignedQuotePdf({");
+    assert.ok(recordAt >= 0 && archiveAt > recordAt, "복사가 기록보다 앞이다");
+    const between = route.slice(recordAt, archiveAt);
+    assert.ok(between.includes('category === "SIGNED_QUOTE_PDF"'), "결재 PDF 칸일 때만 불러야 한다");
+    assert.ok(route.slice(archiveAt).includes("{ status: 201 }"));
     assert.ok(route.includes("displacedAttachmentIds: created.displacedAttachmentIds,"), "기존 칸은 그대로");
-    // 응답 모양만 A/S 와 맞춰 두었다 — 분류와 무관하게 언제나 null 이다.
-    assert.ok(route.includes("archive: null,"), "archive 칸이 사라졌다 — A/S 와 응답 모양이 갈린다");
   });
 });
