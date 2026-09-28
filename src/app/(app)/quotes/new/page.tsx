@@ -7,6 +7,7 @@ import { hasPermission } from "@/lib/auth/permission-resolver";
 import { getPartPickerList, getPartPickerUnitPrices } from "@/lib/db/queries/inventory";
 import { listRepairLabor } from "@/lib/db/queries/repair-labor";
 import { toKstDateOnly } from "@/lib/domain/date-only";
+import { parseNewQuoteStart, type SearchParamsInput } from "@/lib/domain/quote-new-link";
 import { readAllQuoteWorkSectionDefaults } from "@/lib/storage/quote-template";
 import { CABLE_QUOTE_MAX_LINES } from "@/lib/xlsx/cable-quote-template";
 
@@ -18,10 +19,12 @@ export const dynamic = "force-dynamic";
 
 /**
  * ============================================================================
- * 견적서 한 장 — 새로 만들기 (조각 3b-2)
+ * 견적서 한 장 — 새로 만들기 (조각 3b-2 · 3e-3)
  * ============================================================================
- * 목록 머리의 [새 견적서] 를 누르면 여기로 온다(`/quotes` 의 newQuoteControl).
- * 빈 폼이 열리고, 채워서 저장하면 새 견적서가 생긴다.
+ * 목록 머리의 [새 견적서] 를 누르면 **팝업**이 뜨고, 거기서 [만들기]를 누르면 여기로
+ * 온다(`/quotes` 의 newQuoteControl → QuoteListSlots 의 `NewQuoteControl`).
+ * 팝업에서 고른 **견적서 종류 · 엑셀 전용 여부**가 주소에 덧붙어 오고, 폼은 그 값으로
+ * 채워진 채 열린다. 아무것도 실려 오지 않으면 지금까지의 빈 폼 그대로다.
  *
  * 🔴 **폼도 저장도 이미 있던 것이다.** 만들기와 고치기는 **같은 컴포넌트**이고
  * (`QuoteEditForm` — `quote={null}` 이면 만들기다), 저장은 `createQuoteAction` 이
@@ -37,16 +40,21 @@ export const dynamic = "force-dynamic";
  * ── 🔴 A/S 의 같은 라우트에서 잘라 온 것 ────────────────────────────────
  * 저쪽은 123줄이고 Promise.all 에 조회 다섯이 걸려 있다. 여기서 뺀 것:
  *
- *   · **[새 견적서] 팝업**(`NewQuoteDialog` · `parseNewQuoteStart` 로 실려 오는
- *     `initialKind` · `initialExcelOnly`) — 🔴 **이번에 만들지 않는다**
- *     (2026-09-22 사용자 결정). 그 팝업은 「견적서 종류 · 엑셀 전용」을 먼저
- *     고르게 하는데, 엑셀 전용 스위치가 **엑셀 읽기(3c)와 첨부(3d)** 사슬을
- *     통째로 끌고 온다. 팝업이 없으므로 폼은 지금까지의 기본값(내자 · 엑셀 전용
- *     아님)으로 열리고, 종류는 폼 안에서 고른다.
+ *   · ⚠️ **[새 견적서] 팝업**(`NewQuoteDialog` · `parseNewQuoteStart` 로 실려 오는
+ *     `initialKind` · `initialExcelOnly`) — 그때(2026-09-22)의 기록이다. 미룬
+ *     까닭은 엑셀 전용 스위치가 **엑셀 읽기(3c)와 첨부(3d)** 사슬을 통째로 끌고
+ *     오기 때문이었고, 🔴 **그 사슬이 조각 3e-1·3e-2 로 다 왔다.** 그래서
+ *     **조각 3e-3 이 팝업을 들여왔다** — 이제 목록의 [새 견적서]는 팝업을 띄우고,
+ *     이 화면은 그 두 값을 `parseNewQuoteStart` 로 읽어 폼에 넘긴다(아래).
  *   · **수리 건에서 건너오는 길**(`parseNewQuoteLink` · `returnHrefForNewQuote` —
  *     인수번호와 돌아갈 곳) → **조각 4·5**. 건너올 A/S 의 수리 건 상세가 그때
- *     정해진다. 그래서 `searchParams` 를 아예 받지 않는다 — 읽지 않을 값을
- *     받아 두면 「실려 오는 줄 알았는데 안 쓰던」 자리가 된다.
+ *     정해진다. 🔴 **그 함수들은 이 저장소에 아예 없다**(quote-new-link.ts 머리말의
+ *     「안 가져온 것」) — 그것들이 짓는 주소 `/repair-cases/{id}/quotes` 가 이
+ *     사이트에 없는 화면이기 때문이다.
+ *     🔴 그래서 `searchParams` 로 읽는 것은 **팝업의 두 값뿐**이고, 저장 뒤에
+ *     나가는 곳도 늘 **이 사이트의 견적서 목록**이다(`returnHref` 를 넘기지
+ *     않는다 → 폼의 `returnHref ?? "/quotes"`). 2026-09-28 사용자 원칙 —
+ *     「PO 에서 저장을 누르면 PO 시스템의 견적서 탭으로 나온다」.
  *   · **양식 머리말**(`readAllQuoteTemplateHeaders`) → **조각 3f(미리보기)**.
  *     🔴 저쪽에서 그 값을 쓰는 곳은 **미리보기 한 줄**(`printHeaders`)뿐이고 이
  *     사이트의 폼에는 그 프롭이 아예 없다. 그래서 읽지 않는다 — 양식 다섯을 더
@@ -59,7 +67,12 @@ export const dynamic = "force-dynamic";
  *     `requireAreaAccessForCurrentUser` 가 한 걸음으로 한다(조각 1·2 의 판단).
  * ============================================================================
  */
-export default async function NewQuotePage() {
+export default async function NewQuotePage({
+  searchParams,
+}: {
+  /** 팝업이 덧붙인 두 값만 읽는다(parseNewQuoteStart). 없으면 지금까지의 빈 폼이다. */
+  searchParams?: Promise<SearchParamsInput>;
+}) {
   // 🔴 이 한 줄이 셋을 한다: 통합로그인(가려던 주소를 실어서) · 살아 있는 계정
   // 다시 읽기 · quotes 읽기 권한. 돌려받은 사람으로 곧이어 쓰기 권한을 묻는다 —
   // 세션을 여러 번 읽으면 그 사이에 값이 갈릴 자리가 생긴다.
@@ -84,6 +97,13 @@ export default async function NewQuotePage() {
     getPartPickerUnitPrices(),
   ]);
 
+  /*
+   * [새 견적서] 팝업이 고른 두 값(조각 3e-3). 🔴 **정해진 글자만 받는다** — 그 밖은
+   * 없는 것으로 치고 폼은 지금까지처럼 내자 · 엑셀 전용 아님으로 연다(오류가 아니다).
+   * 🔴 조회 뒤에 읽는다 — 관문이 먼저이고, 이 값은 아무 문도 열지 않는다.
+   */
+  const start = parseNewQuoteStart(searchParams ? await searchParams : undefined);
+
   return (
     <QuoteEditForm
       /* 🔴 null 이 「새로 만들기」다 — 폼이 저장 때 createQuoteAction 으로 간다. */
@@ -107,6 +127,11 @@ export default async function NewQuotePage() {
          그 양식 몫을 꺼내 조사 · 통전 칸을 채운다(quote-new-start.ts 의
          scopeLinesFilledFromTemplate — 손댄 묶음은 건드리지 않는다). */
       workScopeDefaults={workScopeDefaults}
+      /* 🔴 팝업에서 고른 두 값(조각 3e-3). **처음 값만 바꾸지 않는다** — 폼은 빈 폼에서
+         사람이 ① 종류 select 를 고르고 ② 엑셀 전용 스위치를 켠 것과 **같은 상태**로 연다
+         (quote-new-start.ts 의 startNewQuoteLines). 폼에서 그대로 바꿀 수 있다. */
+      initialKind={start.kind}
+      initialExcelOnly={start.excelOnly}
     />
   );
 }

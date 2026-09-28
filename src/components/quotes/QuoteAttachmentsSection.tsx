@@ -86,9 +86,9 @@ import { QuoteAttachmentDeleteDialog, QuoteAttachmentSlotsView } from "./QuoteAt
  *    (quote-attachment-upload.ts 머리말).
  *  · `signedPdfForPreview` — **조각 3f(미리보기)** 의 것이다. 그 함수 자체가 아직
  *    이 사이트에 없다(quote-attachment-files.test.ts 머리말의 「뺀 것 셋」).
- *  · `onExcelPicked`(수기 엑셀로 칸 채우기, 견적서 ①b) — 그 묶음
- *    (quote-excel-parse · quote-excel-autofill)이 아직 없다. 그래서 `excelSlotDetails`
- *    프롭도 받기만 하고 아무도 넘기지 않는다.
+ *  · ⚠️ `onExcelPicked`(수기 엑셀로 칸 채우기, 견적서 ①b) — 그때의 기록이다.
+ *    🔴 **조각 3e-3 에 왔다**(2026-09-28). 아래 `pickFile` 이 「수기 견적서 엑셀」
+ *    칸일 때만 폼에 알리고, `excelSlotDetails` 도 이제 폼이 그린 알림을 받는다.
  *  · `reloadAfterIssue` — 폼의 [견적서 받기]가 「수기 견적서 엑셀」 칸을 바꿨을 때
  *    서버 칸을 다시 그려 오는 자리다. 그 머리 단추는 **조각 3c-3** 의 것이라 이
  *    사이트의 폼에 없다.
@@ -100,6 +100,14 @@ import { QuoteAttachmentDeleteDialog, QuoteAttachmentSlotsView } from "./QuoteAt
  *    🔴 **그래도 여기서 안 가져온 것 넷은 그대로 넷이다** — 이 파일에는 여전히
  *    `onExcelPicked` 도 `archiveNotice` 도 없고, `excelSlotDetails` 는 받기만 하고
  *    아무도 넘기지 않는다. 배선은 다음 조각([새 견적서] 팝업)의 몫이다.
+ *
+ * ⚠️ 위 한 문단도 **그때의 기록**이다. 🔴 **조각 3e-3 이 그 「다음 조각」이다**
+ *    (2026-09-28). `onExcelPicked` 가 왔고 `excelSlotDetails` 에도 값이 들어온다.
+ *    🔴 **안 가져온 것은 이제 셋**이다 — `archiveNotice` · `signedPdfForPreview` ·
+ *    `reloadAfterIssue`. 셋 다 발행(3c-3) · 미리보기(3f)의 것이고, 그래서 이 파일에는
+ *    `function reloadAfterIssue(` 라는 자리가 아예 없다(저쪽 시험이 그 이름을 글 자르는
+ *    표지로 쓰는 자리가 하나 있어, 이 사이트의 시험은 다음 함수 이름으로 자른다 —
+ *    quote-excel-autofill-screens.test.tsx 머리말).
  * ============================================================================
  */
 
@@ -141,10 +149,18 @@ const DELETE_FAILED_MESSAGE = "지우기 요청이 끝나지 못했습니다. �
 export function useQuoteAttachments({
   quoteId,
   serverSlots,
+  onExcelPicked,
 }: {
   quoteId: string | null;
   /** 수정 화면이 서버에서 읽은 칸(listQuoteAttachmentSlots). 새 견적서는 null. */
   serverSlots: QuoteAttachmentSlots | null;
+  /**
+   * 「수기 견적서 엑셀」 칸에 파일을 고른 순간(형식 · 크기 검사를 지난 파일만) — 폼이 엑셀 전용
+   * 장이면 그 엑셀을 읽어 칸을 채운다(견적서 ①b). 결재 PDF 칸에서는 부르지 않는다.
+   * 🔴 붙이기와 따로 간다: 붙이기(들고 있기 · 곧바로 올리기)를 시작한 **뒤에** 부르고, 읽기가
+   * 어떻게 되든 붙이기는 그대로다.
+   */
+  onExcelPicked?: (file: File) => void;
 }): QuoteAttachmentsController {
   const router = useRouter();
   const [pending, setPending] = useState<PendingQuoteAttachments<File>>({});
@@ -213,11 +229,9 @@ export function useQuoteAttachments({
     } else {
       void uploadNow(quoteId, category, file);
     }
-    /*
-     * 🔴 저쪽은 여기서 폼에 알린다(`onExcelPicked`) — 엑셀 전용 장이면 방금 고른 엑셀을
-     * 읽어 빈 칸을 채우는 길의 **유일한 입구**다(견적서 ①b). 이 사이트에는 그 묶음이
-     * 아직 없어 부를 자리가 없다(파일 머리말의 「안 가져온 것 넷」).
-     */
+    // 🔴 붙이기를 시작한 **뒤에** 폼에 알린다(견적서 ①b) — 엑셀 읽기는 붙이기와 따로 간다.
+    // 읽을지(엑셀 전용 장인가)는 폼이 정한다. 결재 PDF 칸은 알리지 않는다.
+    if (category === "QUOTE_EXCEL") onExcelPicked?.(file);
   }
 
   function retry(category: QuoteAttachmentSlotCategory) {

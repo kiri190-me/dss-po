@@ -438,15 +438,37 @@ describe("🔴 뒤쪽 절반이 들어왔다 · 조각 4·5 의 것은 아직 �
   /**
    * 🔴 **남은 울타리 하나.** 뒤집지 않는 까닭: `initialIntakeNumber` prop 이 있어야
    * 뜻이 있고, 건너올 A/S 의 수리 건 상세가 **조각 4·5** 에서 정해진다.
+   *
+   * ── ⚠️ 2026-09-28(조각 3e-3) — `useEffect` · `useRef` 금지는 풀었다 ──────
+   * 이 울타리는 원래 **두 가지를 한꺼번에** 막고 있었다: 자동 불러오기(조각 4·5)와,
+   * 그때 아직 오지 않았던 [새 견적서] 엑셀 건네받기. 🔴 **뒤엣것이 왔다** — 팝업이
+   * 건넨 엑셀을 꺼내는 효과와, 엑셀 읽기가 견주는 「마지막으로 그린 폼 값」이
+   * 그 둘을 쓴다(QuoteEditForm 의 `didTakeExcelHandoff` · `latestExcelFormValues`).
+   *
+   * 🔴 **막으려던 것은 그대로 막는다** — 아래 셋(`didAutoLookup` ·
+   * `initialIntakeNumber` 두 꼴)은 **금지 그대로**이고, 훅을 푼 자리는 **그 훅이
+   * 쓰이는 곳(효과 둘 · ref 셋)을 이름과 수로** 메운다. 하나라도 늘면 여기가 걸린다.
    */
   test("🔴 자동 불러오기 effect 가 없다 — initialIntakeNumber prop 은 조각 4·5 의 것이다", () => {
-    assert.ok(
-      formSource.includes('import { useMemo, useState, type FormEvent } from "react";'),
-      "react import 가 늘었다 — useEffect · useRef 는 조각 4·5 · 3d 의 것이다"
-    );
-    for (const marker of ["useEffect(", "useRef(", "didAutoLookup", "initialIntakeNumber =", "initialIntakeNumber?:"]) {
+    for (const marker of ["didAutoLookup", "initialIntakeNumber =", "initialIntakeNumber?:"]) {
       assert.equal(form.includes(marker), false, `${marker} — 자동 불러오기는 조각 4·5 의 것이다`);
     }
+
+    // 🔴 푼 자리 — 훅 둘이 **무엇에 쓰이는지**를 이름과 수로 못 박는다(조각 3e-3).
+    assert.ok(
+      formSource.includes('import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";'),
+      "react import 모양이 달라졌다 — 무엇이 더 늘었는지 보라"
+    );
+    assert.equal(form.split("useEffect(").length - 1, 2, "useEffect 가 둘이 아니다 — 새로 생긴 효과를 보라");
+    assert.equal(form.split("= useRef").length - 1, 3, "useRef 가 셋이 아니다 — 새로 생긴 ref 를 보라");
+    // ① 팝업이 건넨 엑셀을 **한 번만** 꺼낸다(새 견적서에서만).
+    assert.ok(form.includes("const didTakeExcelHandoff = useRef(false);"), form);
+    assert.ok(form.includes("const handoff = takeNewQuoteExcelHandoff();"), form);
+    // ② 엑셀 읽기가 견줄 **마지막으로 그린** 폼 값.
+    assert.ok(form.includes("const latestExcelFormValues = useRef(excelFormValues);"), form);
+    assert.ok(form.includes("useEffect(() => { latestExcelFormValues.current = excelFormValues; });"), form);
+    // 🔴 그 ref 는 팝업이 고른 시트 차례를 한 번만 나르는 자리다 — 셋째 ref 가 아니다.
+    assert.ok(form.includes("const handoffSheetIndex = useRef<number | undefined>(undefined);"), form);
   });
 
   /**

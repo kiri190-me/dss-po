@@ -9,6 +9,7 @@ import {
   canRenderQuoteDocument,
 } from "@/lib/domain/quote-document-support";
 import { NoticePopup } from "@/components/common/NoticePopup";
+import NewQuoteDialog from "./NewQuoteDialog";
 import { QuoteFileBadges } from "./QuoteAttachmentParts";
 import { QUOTE_EXCEL_MISSING_NOTICE } from "./quote-attachment-files";
 
@@ -49,6 +50,10 @@ import { QUOTE_EXCEL_MISSING_NOTICE } from "./quote-attachment-files";
  * 🔴 **남은 하나(`intakeHref`)도 `page.tsx` 가 아니라 여기에 건다.** 저기서 넘기면
  * 화면이 똑같이 죽는다. 남은 셋(`newQuoteControl` · `notice` 는 ReactNode,
  * `emptyMessage` 는 글자)은 서버에서 넘겨도 된다 — 지금처럼 `page.tsx` 에 둔다.
+ *
+ * 🔴 **`newQuoteControl` 은 그대로 `page.tsx` 가 넘기지만, 그 안의 조각은 여기 있다**
+ * (조각 3e-3 의 `NewQuoteControl` — 아래). 슬롯이 ReactNode 라 서버 경계를 넘는 것은
+ * 그대로이고, **창을 여닫는 상태**를 서버 컴포넌트가 들 수 없어서 조각만 이쪽으로 왔다.
  *
  * ── 🔴 이 조각은 자료를 모른다 ──────────────────────────────────────────
  * 받은 프롭을 그대로 흘려보내고 **함수 슬롯만 얹는다.** 조회도 권한 판정도
@@ -234,6 +239,51 @@ function QuoteDownloadLink({ row }: { row: QuoteListItem }) {
     >
       견적서 받기
     </a>
+  );
+}
+
+/**
+ * ============================================================================
+ * 🔴 목록 머리의 [새 견적서] — 누르면 **팝업**이 뜬다 (조각 3e-3)
+ * ============================================================================
+ * 2026-09-22 에는 여기가 `/quotes/new` 로 곧바로 가는 링크 하나였다. 팝업을 미룬 까닭은
+ * 「견적서 종류 · 엑셀 전용」을 고르는 그 창이 **엑셀 읽기와 첨부 사슬**을 통째로 끌고
+ * 오기 때문이었고, 🔴 **그 사슬이 조각 3e-1·3e-2 로 다 왔다.** 그래서 이 조각이 팝업을
+ * 세운다 — 누르면 창이 뜨고, [만들기]가 고른 두 값을 주소에 실어 작성 화면을 연다.
+ *
+ * 🔴 **`page.tsx`(서버)가 아니라 여기(클라이언트)에 둔다.** 창을 여닫는 것은 상태이고,
+ * 서버 컴포넌트는 상태를 들 수 없다. `newQuoteControl` 슬롯 자체는 ReactNode 라 서버에서
+ * 넘어가도 되므로 **page.tsx 가 이 조각을 그려 넘긴다** — 주소(`/quotes/new`)를 아는
+ * 곳은 그대로 page.tsx 한 곳이다.
+ *
+ * 🔴 **서브모듈(vendor/dss-core)은 손대지 않는다.** A/S 는 같은 일을 그 화면 **안**에서
+ * 하지만(저쪽 QuoteListScreen.tsx 의 `isNewQuoteDialogOpen`), 이 사이트의 그 화면은 두
+ * 사이트가 함께 쓰는 한 벌이라 팝업을 그 안에 박을 수 없다. 그 화면이 `newQuoteControl`
+ * 을 ReactNode 슬롯으로 열어 둔 것이 바로 이 자리다(그 파일의 그 프롭 머리말 — 「단추와
+ * 그것이 여는 팝업의 상태는 **넣는 쪽이 소유한다**」).
+ *
+ * 🔴 **사이트를 건너가는 주소를 짓지 않는다**(2026-09-28 사용자 원칙). `baseHref` 는 늘
+ * 이 사이트의 `/quotes/new` 이고, 저장 뒤에도 이 사이트의 견적서 목록으로 나간다.
+ * ============================================================================
+ */
+export function NewQuoteControl({ baseHref }: { baseHref: string }) {
+  const [isNewQuoteDialogOpen, setIsNewQuoteDialogOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsNewQuoteDialogOpen(true)}
+        aria-haspopup="dialog"
+        className="rounded-md bg-primary-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 dark:bg-primary-100 dark:text-zinc-900 dark:hover:bg-primary-300"
+      >
+        새 견적서
+      </button>
+      {/* 열려 있는 동안만 그린다 — 열 때마다 기본 선택(내자 · 엑셀 전용 아님)으로 돌아온다.
+          모달 창은 화면 맨 위 층에 뜨므로 이 자리의 배치에 끼어들지 않는다. */}
+      {isNewQuoteDialogOpen && (
+        <NewQuoteDialog baseHref={baseHref} onCancel={() => setIsNewQuoteDialogOpen(false)} />
+      )}
+    </>
   );
 }
 

@@ -177,12 +177,42 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     );
   });
 
-  test("🔴 조각 3b-2 — [새 견적서] 는 작성 화면으로 간다. 팝업을 거치지 않는다", () => {
-    // 🔴 **page.tsx 에서** 넘긴다 — 이 슬롯은 ReactNode 라 서버 경계를 넘는다.
-    // 함수 슬롯 넷(위 묶음)과 갈리는 자리라, 어느 파일에서 왔는지까지 본다.
+  test("🔴 조각 3e-3 — [새 견적서] 를 누르면 **팝업**이 뜨고, [만들기]가 작성 화면으로 간다", () => {
+    // ⚠️ 이 시험의 이름은 2026-09-22 까지 「**팝업을 거치지 않는다**」였다(조각 3b-2).
+    //    그것은 **그때의 기록**이다 — 팝업을 미룬 까닭이 그 창의 엑셀 전용 스위치가
+    //    엑셀 읽기 · 첨부 사슬을 통째로 끌고 오는 것이었고, 🔴 **그 사슬이 조각
+    //    3e-1·3e-2 로 다 왔다.** 그래서 3e-3 이 팝업을 세웠고, 금지가 **긍정**이 되었다.
+    //
+    // 🔴 **슬롯을 넘기는 곳은 그대로 page.tsx 다** — 이 슬롯은 ReactNode 라 서버 경계를
+    //    넘는다(함수 슬롯 넷과 갈리는 자리다). 바뀐 것은 그 안에 들어가는 것뿐이다:
+    //    링크 하나 → **창을 여닫는 상태를 든 클라이언트 조각**(NewQuoteControl).
+    //    🔴 주소(`/quotes/new`)를 아는 곳도 그대로 page.tsx 한 곳이다.
     const call = flat(sliceBetween(pageSource, "<QuoteListSlots", "/>\n  );"));
     assert.ok(call.includes("newQuoteControl="), "[새 견적서] 자리가 비어 있다");
-    assert.ok(call.includes('href="/quotes/new"'), "[새 견적서] 가 작성 화면을 가리키지 않는다");
+    assert.ok(
+      call.includes('newQuoteControl={<NewQuoteControl baseHref="/quotes/new" />}'),
+      "[새 견적서] 자리가 팝업 조각이 아니거나 작성 화면을 가리키지 않는다"
+    );
+    assert.ok(
+      flat(pageSource).includes('import QuoteListSlots, { NewQuoteControl } from "@/components/quotes/QuoteListSlots";'),
+      "팝업 조각을 클라이언트 쪽(QuoteListSlots)에서 가져오지 않는다"
+    );
+
+    // 🔴 그 조각이 **정말로 창을 띄운다** — 단추 하나만 두고 끝내지 않는다.
+    const slots = flat(slotsSource);
+    assert.ok(slots.includes('import NewQuoteDialog from "./NewQuoteDialog";'), "팝업을 들여오지 않는다");
+    assert.ok(slots.includes("const [isNewQuoteDialogOpen, setIsNewQuoteDialogOpen] = useState(false);"), slots);
+    assert.ok(
+      slots.includes('<button type="button" onClick={() => setIsNewQuoteDialogOpen(true)} aria-haspopup="dialog"'),
+      "[새 견적서] 단추가 창을 열지 않는다"
+    );
+    assert.ok(
+      slots.includes("{isNewQuoteDialogOpen && ( <NewQuoteDialog baseHref={baseHref} onCancel={() => setIsNewQuoteDialogOpen(false)} /> )}"),
+      "창이 열려 있는 동안만 그려지지 않거나 닫는 길이 없다"
+    );
+    // 🔴 그리는 곳은 한 곳이다 — 두 곳이면 창이 겹쳐 뜨거나 한쪽만 닫힌다.
+    assert.equal(slots.split("<NewQuoteDialog ").length - 1, 1, "팝업을 그리는 곳이 하나가 아니다");
+
     // 🔴 그 주소에 실제로 화면이 있어야 한다 — 없는 곳으로 보내는 링크는 3a 가 막던 그것이다.
     assert.equal(
       existsSync(fileURLToPath(new URL("src/app/(app)/quotes/new/page.tsx", repoUrl))),
@@ -817,15 +847,123 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     //    쓰는 순수 규칙이다 — 누가 그것을 이 페이지에 들여오는 날 엉뚱하게
     //    터졌을 것이다. 남은 넷은 그런 위험이 없음을 확인했다(2026-09-22):
     //    `quote-new-start` 만 실재 파일과 겹치고 그 파일이 **바로 막으려는 그것**이다.
+    //
+    // ── 🔴 2026-09-28(조각 3e-3) — **한 칸을 풀었다**: `quote-new-link` ────
+    // 이 화면이 이제 **정말로 그것을 들여온다.** 목록의 [새 견적서]가 팝업을 띄우고,
+    // 팝업이 고른 두 값(견적서 종류 · 엑셀 전용)을 주소에 실어 이 화면을 연다 —
+    // 이 화면은 `parseNewQuoteStart` 로 그 둘을 되읽는다. 그 사슬(엑셀 읽개 · 통로 ·
+    // 칸 채우기)은 조각 3e-1·3e-2 가 이미 다 깔았다.
+    //
+    // 🔴 **남은 셋은 그대로 금지다**:
+    //   · `NewQuoteDialog`    — 팝업을 그리는 곳은 **목록 쪽**이다(QuoteListSlots 의
+    //     `NewQuoteControl`). 작성 화면이 창을 또 띄울 까닭이 없다.
+    //   · `quote-new-start`   — 처음 상태를 셈하는 것은 **폼**이다(QuoteEditForm 의
+    //     `newQuoteStart`). 이 화면은 두 값을 읽어 넘기기만 한다 — 여기서 셈하면
+    //     폼을 채우는 길이 둘이 된다.
+    //   · `queries/attachments` — **새 견적서 화면에 첨부 칸을 세우는 것은 아직 아니다.**
+    //     「만든 직후 올리기」(폼 handleSubmit 의 그 자리)가 없어, 칸만 세우면 고른
+    //     파일이 [저장] 때 말없이 사라진다(3d-4 가 일부러 안 세웠다).
+    //
+    // 🔴 푼 자리는 아래 이웃 시험이 **긍정 단언**으로 메운다 — 무엇을 들여오는지,
+    //    그리고 🔴 **수리 건 몫(Ⓐ)의 이름이 저장소 어디에도 없는지**까지.
     const imports = flat(sliceBetween(newPageSource, 'import type { Metadata }', "export const metadata"));
     for (const chain of [
       "NewQuoteDialog",
-      "quote-new-link",
       "quote-new-start",
       "queries/attachments",
     ]) {
       assert.equal(imports.includes(chain), false, `${chain} — 아직 오지 않은 조각을 끌고 왔다`);
     }
+  });
+
+  /**
+   * ==========================================================================
+   * 🔴 조각 3e-3 — 푼 한 칸(`quote-new-link`)을 **긍정 단언**으로 메운다
+   * ==========================================================================
+   * 금지 목록으로는 더 이상 잴 수 없으니 **무엇을 들여오는지를 이름으로 못 박는다**
+   * (3c-1 이 이 화면에서, 3d-3d 가 첨부 칸에서 한 방식과 같다).
+   *
+   * 🔴 **둘째 단언이 더 중요하다.** 그 파일에서 안 가져온 몫(Ⓐ — 수리 건 ↔ 견적서
+   * 오가기)이 짓는 주소는 `/repair-cases/{id}/quotes` 인데 **이 사이트에 그 경로가
+   * 없다.** 그 이름이 어디선가 살아나는 날, 목록이나 폼이 **눌러도 아무 데도 없는
+   * 링크**를 내밀게 된다. 2026-09-28 사용자 원칙 — 「돌아가기는 시스템을 건너가지
+   * 않는다: A/S 에서 만들면 A/S 의 그 건 견적서 탭으로, **PO 에서 만들면 PO 의
+   * 견적서 목록으로**」.
+   * ==========================================================================
+   */
+  test("🔴 조각 3e-3 — 팝업의 두 값만 읽는다. 저장 뒤 나가는 곳은 **이 사이트의 목록**이다", () => {
+    const imports = flat(sliceBetween(newPageSource, 'import type { Metadata }', "export const metadata"));
+
+    // ㉠ 들여오는 것은 되읽개 하나와 그 모양뿐이다 — 주소를 **짓는** 함수는 없다.
+    assert.ok(
+      imports.includes(
+        'import { parseNewQuoteStart, type SearchParamsInput } from "@/lib/domain/quote-new-link";'
+      ),
+      "팝업의 두 값을 되읽는 줄이 사라졌거나 모양이 다르다"
+    );
+    assert.equal(
+      flat(newPageSource).split('from "@/lib/domain/quote-new-link"').length - 1,
+      1,
+      "quote-new-link 를 들여오는 줄이 둘 이상이다"
+    );
+
+    // ㉡ 읽은 두 값은 폼의 처음 값으로만 간다.
+    const call = flat(sliceBetween(newPageSource, "<QuoteEditForm", "/>\n  );"));
+    assert.ok(call.includes("initialKind={start.kind}"), call);
+    assert.ok(call.includes("initialExcelOnly={start.excelOnly}"), call);
+
+    // ㉢ 🔴 **돌아갈 곳을 지어 넘기지 않는다** — 폼의 `returnHref ?? "/quotes"` 가 곧
+    //    이 사이트의 견적서 목록이다. 넘기기 시작하면 그 값이 어디서 왔는지가 문제가 된다.
+    assert.equal(call.includes("returnHref="), false, "새 견적서 화면이 돌아갈 곳을 지어 넘긴다");
+    assert.equal(
+      flat(editFormSource).includes('showSavePopup({ message: "견적서를 등록했습니다.", redirectTo: returnHref ?? "/quotes" });'),
+      true,
+      "저장 뒤 나가는 곳이 이 사이트의 견적서 목록이 아니다"
+    );
+  });
+
+  test("🔴 조각 3e-3 — 수리 건 몫(Ⓐ)의 이름이 **이 저장소 어디에도** 없다", () => {
+    // 🔴 `quote-new-link.ts` 에서 **일부러 안 가져온** 이름들이다(그 파일 머리말).
+    //    그것들이 짓는 주소는 `/repair-cases/{id}/quotes` 이고, 이 사이트에는 그 경로가
+    //    없다(app/(app) 아래는 domestic-orders · quotes · repair-labor · no-access 넷).
+    //    🔴 **머리말이 「안 가져왔다」고 이름을 적어 두므로 주석을 뺀 코드만 본다.**
+    const sources = [
+      ["quote-new-link", read("src/lib/domain/quote-new-link.ts")],
+      ["NewQuoteDialog", read("src/components/quotes/NewQuoteDialog.tsx")],
+      ["QuoteListSlots", slotsSource],
+      ["quotes/page.tsx", pageSource],
+      ["quotes/new/page.tsx", newPageSource],
+      ["QuoteEditForm", editFormSource],
+      ["quotes/[id]/page.tsx", detailPageSource],
+    ] as const;
+    for (const [name, source] of sources) {
+      const code = codeOf(source);
+      for (const forbidden of [
+        "newQuoteHrefForRepairCase",
+        "parseNewQuoteLink",
+        "returnHrefForNewQuote",
+        "trustedLinkedRepairCaseId",
+        "returnHrefForEditQuote",
+        "returnHrefForQuotePrint",
+        "repairCaseDetailHrefs",
+      ]) {
+        assert.equal(code.includes(forbidden), false, `${name} 이 없는 수리 건 화면의 이름을 쓴다: ${forbidden}`);
+      }
+      // 🔴 **주소로서의** `/repair-cases` — 따옴표 · 역따옴표로 열리는 글자만 본다.
+      //    이 저장소에는 `@/components/repair-cases/…`(A/S 에서 함께 옮겨 온 편집 칸
+      //    조각들)가 있고 그것은 **모듈 경로**다 — 사람이 눌러 가는 주소가 아니다.
+      assert.equal(
+        /["'`]\/repair-cases/.test(code),
+        false,
+        `${name} 이 없는 수리 건 화면으로 가는 주소를 짓는다`
+      );
+    }
+    // 🔴 그 경로가 정말 없다 — 위 금지가 「아직 안 만들었을 뿐」이 아님을 함께 잰다.
+    assert.equal(
+      existsSync(fileURLToPath(new URL("src/app/(app)/repair-cases", repoUrl))),
+      false,
+      "수리 건 경로가 생겼다 — 위 금지를 다시 재야 한다"
+    );
   });
 
   test("🔴 엑셀 사슬에서 들여오는 것은 **둘뿐**이다 — 발행 · 미리보기는 아직 아니다", () => {

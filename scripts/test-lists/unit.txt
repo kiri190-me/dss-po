@@ -506,3 +506,20 @@ src/components/quotes/quote-issue-messages.test.ts
 src/components/quotes/quote-excel-parse.test.ts
 src/components/quotes/quote-excel-autofill.test.ts
 src/components/quotes/new-quote-excel-sheets.test.ts
+
+# ── 조각 3e-3 — [새 견적서] 팝업이 뜬다(팝업 · 배선) ────────────────────
+# 3e-1·3e-2 가 깐 사슬 위에 **화면**이 선다. 목록의 [새 견적서]가 팝업을 띄우고,
+# 거기서 고른 두 값이 주소로 실려 작성 화면이 그 값으로 채워진 채 열린다.
+#
+# ⚠️ 바로 위 ⑤ 의 「못 가져왔다」는 **그때의 기록**이다 — 이 조각이 그 셋
+#    (`QuoteExcelAutofillNotice` · 폼의 엑셀 배선 · 훅의 `onExcelPicked`)을 만들면서
+#    `quote-excel-autofill-screens.test.tsx` 를 **components.txt 에** 가져왔다.
+#    🔴 그 시험은 `react-dom/server` 로 알림 조각을 실제로 그려 보므로 unit 이 아니라
+#    components 다(그 목록 머리말의 `--conditions=react-server` 항목).
+#
+# 🔴 여기 적는 것은 **값만 보는 한 벌**이다 — `lib/domain/quote-new-link.test.ts`.
+#    A/S 의 같은 이름 시험(358줄)에서 **뒤 절반만** 가져왔다: 팝업이 고른 두 값을
+#    주소에 덧붙이고 되읽는 규칙. 앞 절반(수리 건 ↔ 견적서 오가기)은 그 함수들이
+#    짓는 주소 `/repair-cases/{id}/quotes` 가 이 사이트에 없는 화면이라 오지 않았다.
+#    맨 아래 한 묶음이 **그 이름들이 이 파일에 하나도 없음**을 글자로 못 박는다.
+src/lib/domain/quote-new-link.test.ts

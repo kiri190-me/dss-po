@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
-import QuoteListSlots from "@/components/quotes/QuoteListSlots";
+import QuoteListSlots, { NewQuoteControl } from "@/components/quotes/QuoteListSlots";
 import { requireAreaAccessForCurrentUser } from "@/lib/auth/area-guard";
 import { hasPermission } from "@/lib/auth/permission-resolver";
 import { listDeletedQuotes, listQuotes } from "@/lib/db/queries/quotes";
@@ -64,8 +63,11 @@ export const dynamic = "force-dynamic";
  *                                이 사이트가 지어내지 않는다. 그 주소를 어디서
  *                                얻을지는 배포 설정의 일이고 조각 4·5 에서 정한다.
  *                                지금은 인수번호가 글자로 보인다.
- *   ✅ newQuoteControl          → 조각 3b-2 에서 채웠다. 🔴 **여기서** — ReactNode 라
- *                                서버에서 넘어간다(함수 슬롯과 갈리는 자리다).
+ *   ✅ newQuoteControl          → 조각 3b-2 에서 채웠고 **조각 3e-3 에서 팝업이
+ *                                되었다**. 🔴 **여기서** — ReactNode 라 서버에서
+ *                                넘어간다(함수 슬롯과 갈리는 자리다). 창을 여닫는
+ *                                상태만 클라이언트 조각이 든다
+ *                                (QuoteListSlots 의 `NewQuoteControl`).
  *   notice                     → 조각 3c-3 (발행 결과 알림). 이것도 ReactNode 다.
  *                                🔴 3c-2 의 받기는 **평범한 링크**라 알릴 것이
  *                                없다 — 브라우저가 내려받고, 실패하면 통로가
@@ -105,27 +107,28 @@ export default async function QuotesPage() {
       canEdit={canEdit}
       canDelete={canDelete}
       /**
-       * 🔴 조각 3b-2 — **[새 견적서] 를 누르면 빈 작성 폼이 열린다.**
+       * 🔴 조각 3e-3 — **[새 견적서] 를 누르면 팝업이 뜬다.**
        *
-       * 🔴 **팝업을 거치지 않는다**(2026-09-22 사용자 결정). A/S 는 여기서 「견적서
-       * 종류 · 엑셀 전용」을 먼저 고르는 창을 띄우는데, 그 엑셀 전용 스위치가 엑셀
-       * 읽기(3c)와 첨부(3d) 사슬을 통째로 끌고 온다. 종류는 폼 안에서 고른다.
+       * ⚠️ 여기 적혀 있던 「🔴 **팝업을 거치지 않는다**(2026-09-22 사용자 결정)」는
+       * **그때의 기록**이다. 미룬 까닭은 그 창의 엑셀 전용 스위치가 엑셀 읽기와
+       * 첨부 사슬을 통째로 끌고 오기 때문이었고, 🔴 **그 사슬이 조각 3e-1·3e-2 로
+       * 다 왔다.** 이제 창에서 「견적서 종류 · 엑셀 전용」을 먼저 고르고, [만들기]가
+       * 그 두 값을 주소에 실어 `/quotes/new` 를 연다.
        *
-       * 🔴 **이 슬롯은 ReactNode 라 서버에서 넘어간다.** 함수 슬롯 넷과 갈리는
-       * 자리다 — 저쪽은 QuoteListSlots 에 걸어야 한다(그 파일 머리말).
+       * 🔴 **이 슬롯은 ReactNode 라 서버에서 넘어간다** — 그 점은 그대로다. 함수
+       * 슬롯 넷과 갈리는 자리다. 다만 **창을 여닫는 상태**는 서버 컴포넌트가 들 수
+       * 없어, 단추와 창을 한 조각으로 묶어 클라이언트 쪽에 두었다
+       * (QuoteListSlots.tsx 의 `NewQuoteControl`). 🔴 **주소를 아는 곳은 여전히
+       * 여기 한 곳**이다 — `baseHref` 로 내려보낸다.
+       *
+       * 🔴 **사이트를 건너가는 주소가 아니다**(2026-09-28 사용자 원칙). 이 사이트의
+       * `/quotes/new` 이고, 저장하면 이 사이트의 견적서 목록으로 돌아온다.
        *
        * 그릴지 말지는 화면이 정한다(`{canEdit && newQuoteControl}`) — 여기서 다시
        * 검사하면 같은 판정이 두 곳에 놓이고, 어긋나는 날 어느 쪽이 맞는지 모른다.
        * 🔴 **그것은 관문이 아니다.** `/quotes/new` 가 제 관문을 따로 지난다.
        */
-      newQuoteControl={
-        <Link
-          href="/quotes/new"
-          className="rounded-md bg-primary-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 dark:bg-primary-100 dark:text-zinc-900 dark:hover:bg-primary-300"
-        >
-          새 견적서
-        </Link>
-      }
+      newQuoteControl={<NewQuoteControl baseHref="/quotes/new" />}
       trashActions={{
         deleteQuote: deleteQuoteAction,
         restoreQuote: restoreQuoteAction,

@@ -21,6 +21,14 @@ import {
   type QuoteListFileBadge,
   type ResolvedQuoteSlots,
 } from "./quote-attachment-files";
+import {
+  QUOTE_EXCEL_CONFLICTS_TITLE,
+  QUOTE_EXCEL_READING_TEXT,
+  quoteExcelConflictText,
+  type QuoteExcelFieldChange,
+} from "./quote-excel-autofill";
+import type { QuoteIssueNoticeLine } from "./quote-issue-messages";
+import { QuoteIssueNoticeLines } from "./QuoteIssueButton";
 
 /**
  * ============================================================================
@@ -47,6 +55,7 @@ import {
  *   · `QuoteAttachmentDeleteDialog` — 한 칸의 파일 지우기 확인 창 (3d-3f)
  *   · `ExcelOnlySwitch`             — 「엑셀 전용 견적서」 체크 상자 (3b-1)
  *   · `ExcelOnlyClearLinesDialog`   — 줄이 있는 채로 켜려 할 때 묻는 창 (3b-1)
+ *   · `QuoteExcelAutofillNotice`    — 수기 엑셀로 칸 채우기 알림 (3e-3)
  *   · `QuoteFileBadges`             — 목록 한 줄의 딱지 셋 (3c-2 · 3d-0)
  *
  * 🔴 **이제 화면에 선다 (조각 3d-4, 2026-09-28).** 견적서 **수정 화면**
@@ -69,10 +78,16 @@ import {
  * (quote-attachment-files.test.ts).
  *
  * ── 🔴 안 가져온 것 ─────────────────────────────────────────────────────
- *   · `QuoteExcelAutofillNotice`(저쪽 `:544-629`) — 수기 엑셀로 칸 채우기. 별 조각이다.
+ *   · ⚠️ `QuoteExcelAutofillNotice`(저쪽 `:544-613`) — 수기 엑셀로 칸 채우기. 그때의
+ *     기록이다. 🔴 **조각 3e-3 에 왔다**(2026-09-28, 아래 「수기 엑셀로 칸 채우기」).
  *     그래서 `QuoteAttachmentSlotCard` 의 `details` · `QuoteAttachmentSlotsView` 의
- *     `slotDetails` 는 **받기만 하고 아무도 넘기지 않는다**(저쪽과 모양을 맞춰 둔다).
- *   · `QuoteAttachmentSlotsView` 의 `statusDetails` 도 같다 — 저쪽은 결재 PDF 의
+ *     `slotDetails` 도 이제 **실제로 채워진다** — 편집 폼이 이 알림을 그려
+ *     `excelSlotDetails` 로 넘기고, 그 값이 「수기 견적서 엑셀」 칸 하나에만 붙는다
+ *     (QuoteEditForm 의 `excelAutofillPanel` · QuoteAttachmentsSection 의 그 프롭).
+ *     🔴 곁딸린 `QuoteIssueNoticeLines`(결과 줄 그리기)도 함께 왔다 — 저쪽과 같은
+ *     자리(QuoteIssueButton.tsx)에 **그 조각 하나만** 두었고, [견적서 받기] 단추
+ *     자체는 여전히 없다(그 파일 머리말).
+ *   · `QuoteAttachmentSlotsView` 의 `statusDetails` 는 그대로 비어 있다 — 저쪽은 결재 PDF 의
  *     공유폴더 결과 줄을 여기 끼우는데, 공유폴더 복사는 **발행(조각 3c-3)** 의 몫이라
  *     이 사이트의 올리기 통로는 `archive` 에 언제나 null 을 싣는다.
  *
@@ -576,6 +591,87 @@ export function ExcelOnlyClearLinesDialog({
         </button>
       </div>
     </dialog>
+  );
+}
+
+// ────────────────────────────────────────────────── 수기 엑셀로 칸 채우기 (조각 3e-3)
+
+/**
+ * 「수기 견적서 엑셀」 칸 곁의 엑셀 읽기 알림 — 읽는 중 · 결과 줄 · 「엑셀과 다른 칸」 목록과
+ * [엑셀 값으로 바꾸기]. 문장은 quote-excel-autofill.ts 가 짓고, 바꾸는 일은 부르는 쪽(편집 폼)이
+ * 넘긴 콜백이 한다 — 종류도 select 와 같은 함수를 탄다(QuoteEditForm 의 applyExcelValue).
+ *
+ * 칸마다 [엑셀 값으로 바꾸기]를 두고, 다른 칸이 둘 이상이면 [모두 엑셀 값으로 바꾸기]도 둔다. 바꾼
+ * 칸은 부르는 쪽이 목록을 지금 값으로 다시 뽑아 빠진다. 폭 400px 에서도 넘치지 않게 줄바꿈한다.
+ */
+export function QuoteExcelAutofillNotice({
+  reading,
+  lines,
+  conflicts,
+  disabled,
+  onReplace,
+  onReplaceAll,
+  onDismiss,
+}: {
+  /** 읽는 중이면 「엑셀을 읽는 중…」 한 줄만. */
+  reading: boolean;
+  /** 채운 칸 · 다른 칸 · 경고 · 실패 줄(quoteExcelAutofillNoticeLines). */
+  lines: readonly QuoteIssueNoticeLine[];
+  /** **지금** 엑셀과 다른 칸 — 부르는 쪽이 그릴 때마다 다시 뽑는다. */
+  conflicts: readonly QuoteExcelFieldChange[];
+  disabled: boolean;
+  onReplace: (change: QuoteExcelFieldChange) => void;
+  onReplaceAll: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="엑셀에서 칸 채우기"
+      className="flex min-w-0 flex-col gap-2 rounded-md border border-sky-200 bg-sky-50 p-2 text-xs dark:border-sky-900 dark:bg-sky-950/40"
+    >
+      {reading ? (
+        <p role="status" className="text-zinc-700 dark:text-zinc-300">
+          {QUOTE_EXCEL_READING_TEXT}
+        </p>
+      ) : (
+        <div className="flex items-start justify-between gap-2">
+          <QuoteIssueNoticeLines lines={lines} className="min-w-0" />
+          <button type="button" onClick={onDismiss} aria-label="엑셀 읽기 알림 닫기" className={SMALL_BUTTON_CLASS}>
+            닫기
+          </button>
+        </div>
+      )}
+
+      {!reading && conflicts.length > 0 ? (
+        <div className="flex flex-col gap-1.5 border-t border-sky-200 pt-2 dark:border-sky-900">
+          <p className="font-medium text-zinc-900 dark:text-zinc-50">{QUOTE_EXCEL_CONFLICTS_TITLE}</p>
+          <ul className="flex flex-col gap-1.5">
+            {conflicts.map((change) => (
+              <li key={change.field} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="min-w-0 break-all text-zinc-800 dark:text-zinc-200">{quoteExcelConflictText(change)}</span>
+                <button
+                  type="button"
+                  onClick={() => onReplace(change)}
+                  disabled={disabled}
+                  aria-label={`${change.label} 엑셀 값으로 바꾸기`}
+                  className={SMALL_BUTTON_CLASS}
+                >
+                  엑셀 값으로 바꾸기
+                </button>
+              </li>
+            ))}
+          </ul>
+          {conflicts.length > 1 ? (
+            <div>
+              <button type="button" onClick={onReplaceAll} disabled={disabled} className={SMALL_BUTTON_CLASS}>
+                {`모두 엑셀 값으로 바꾸기 (${conflicts.length}칸)`}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

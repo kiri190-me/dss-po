@@ -1,11 +1,12 @@
 "use client";
 
-/* 🔴 `useEffect` · `useRef` 는 조각 4·5 와 3d 가 되돌려 놓는다 — **자동 불러오기**
-   (수리 건에서 건너왔을 때 [불러오기]를 한 번 대신 눌러 주는 것)와 [새 견적서]
-   엑셀 건네받기가 그 둘을 쓴다. 자동 불러오기가 3b-3 의 것이 아닌 까닭은 그것이
-   `initialIntakeNumber` prop 이 있어야 뜻이 있고, 그 prop 과 수리 건에서 건너오는
-   길이 **조각 4·5** 의 것이기 때문이다(app/(app)/quotes/new/page.tsx 머리말). */
-import { useMemo, useState, type FormEvent } from "react";
+/* 🔴 `useEffect` · `useRef` 는 **조각 3e-3 에서 돌아왔다**(2026-09-28). [새 견적서]
+   팝업이 건네준 엑셀을 꺼내는 효과와, 엑셀 읽기가 견주는 「마지막으로 그린 폼 값」이
+   그 둘을 쓴다. 🔴 **자동 불러오기**(수리 건에서 건너왔을 때 [불러오기]를 한 번 대신
+   눌러 주는 것)는 여전히 없다 — 그것은 `initialIntakeNumber` prop 이 있어야 뜻이 있고,
+   그 prop 과 수리 건에서 건너오는 길이 **조각 4·5** 의 것이다
+   (app/(app)/quotes/new/page.tsx 머리말). */
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { showSavePopup } from "@/components/common/SavePopup";
 import AmountInput from "@/components/common/AmountInput";
@@ -84,9 +85,21 @@ import QuoteAttachmentsSection, { useQuoteAttachments } from "@/components/quote
 import {
   ExcelOnlyClearLinesDialog,
   ExcelOnlySwitch,
+  QuoteExcelAutofillNotice,
 } from "@/components/quotes/QuoteAttachmentParts";
+import { takeNewQuoteExcelHandoff } from "@/components/quotes/new-quote-excel-handoff";
+import { createLatestQuoteExcelReader, type QuoteExcelReadFields } from "@/components/quotes/quote-excel-parse";
+import {
+  planQuoteExcelAutofill,
+  quoteExcelAutofillNoticeLines,
+  quoteExcelPlanFormValues,
+  type QuoteExcelAutofillField,
+  type QuoteExcelFieldChange,
+  type QuoteExcelFormValues,
+} from "@/components/quotes/quote-excel-autofill";
 import {
   scopeLinesFilledFromTemplate,
+  startNewQuoteLines,
   type QuoteTemplateScopeDefaults,
 } from "@/components/quotes/quote-new-start";
 import {
@@ -504,11 +517,25 @@ type ExcelOnlyLines = {
   taskQuantities: RepairTaskQuantities;
 };
 
-/*
- * 🔴 **조각 3d 가 여기에 `ExcelAutofillState` 를 되돌려 놓는다** — 「수기 견적서
- * 엑셀」 칸에 파일을 고른 순간 그 엑셀을 읽어 빈 칸을 채우는 일의 상태다(A/S 견적서
- * ①b). 그 길의 입구가 **첨부 칸의 파일 고르기** 하나뿐이라 첨부와 함께 온다.
+/**
+ * 「수기 견적서 엑셀」로 칸 채우기의 지금 상태(견적서 ①b — 🔴 **조각 3e-3 에 왔다**).
+ * 마지막에 고른 파일 하나의 것이다.
+ *  · reading — 읽는 중(칸 곁에 「엑셀을 읽는 중…」).
+ *  · failed — 읽지 못했다. 파일은 그대로 붙어 있다(읽기는 붙이기와 따로 간다).
+ *  · read — 읽었다. `fields` 는 엑셀 값 그대로 들고 있다가, 그릴 때마다 지금 폼 값과 견줘
+ *    「엑셀과 다른 칸」을 뽑는다 — 바꾼 칸은 저절로 목록에서 빠진다. `filled` 는 결과가 온 순간
+ *    채운 칸, `readCount` 는 엑셀에 값이 있던 칸의 수(알림 문장이 쓴다).
  */
+type ExcelAutofillState =
+  | { status: "reading" }
+  | { status: "failed"; reason: string; code: string | null }
+  | {
+      status: "read";
+      fields: QuoteExcelReadFields;
+      filled: QuoteExcelAutofillField[];
+      readCount: number;
+      warnings: string[];
+    };
 
 /**
  * 비운 묶음. 작업 내역은 **손댄 것으로** 둔다 — 아니면 양식 기본값이 빈 칸을 몰래 다시
@@ -519,6 +546,20 @@ function clearedExcelOnlyLines(): ExcelOnlyLines {
     items: [emptyItem()],
     scopeLines: { INVESTIGATION: [], REPAIR: [], POWER_TEST: [] },
     scopeTouched: { INVESTIGATION: true, REPAIR: true, POWER_TEST: true },
+    taskQuantities: restoreRepairTaskQuantities([]),
+  };
+}
+
+/**
+ * 두 값 없이 연 새 견적서의 줄 묶음 — 지금까지 새 견적서가 들고 시작한 그대로다(부품 빈 줄
+ * 하나 · 작업 내역 없음 · 손대지 않음 · 고른 작업 없음). [새 견적서] 팝업의 처음 값은 이 위에서
+ * 사람이 고른 것처럼 돈다(quote-new-start.ts 의 startNewQuoteLines).
+ */
+function blankNewQuoteLines(): ExcelOnlyLines {
+  return {
+    items: [emptyItem()],
+    scopeLines: { INVESTIGATION: [], REPAIR: [], POWER_TEST: [] },
+    scopeTouched: { INVESTIGATION: false, REPAIR: false, POWER_TEST: false },
     taskQuantities: restoreRepairTaskQuantities([]),
   };
 }
@@ -546,6 +587,8 @@ export default function QuoteEditForm({
   partPrices,
   cableMaxLines,
   workScopeDefaults,
+  initialKind = null,
+  initialExcelOnly = false,
   returnHref = null,
   attachmentSlots = null,
 }: {
@@ -621,9 +664,24 @@ export default function QuoteEditForm({
    * 거기에 맞췄다). 그래서 3b-3 은 그 prop 도 자동 불러오기 effect 도 만들지 않는다 —
    * 지금은 사람이 인수번호를 적고 [불러오기]를 누르는 길 하나다.
    *
-   * 🔴 **`initialKind` · `initialExcelOnly` 는 만들지 않기로 했다**(2026-09-22 사용자
-   * 결정 — 같은 page.tsx 머리말). [새 견적서] 팝업이 없으므로 종류는 폼 안에서 고른다.
+   * ⚠️ 여기 적혀 있던 「🔴 **`initialKind` · `initialExcelOnly` 는 만들지 않기로
+   * 했다**(2026-09-22 사용자 결정)」는 **그때의 기록**이다. 미룬 까닭은 팝업이 엑셀
+   * 사슬을 통째로 끌고 오기 때문이었고, 🔴 **그 사슬이 조각 3e-1·3e-2 로 다 왔다.**
+   * 그래서 **조각 3e-3 이 팝업과 이 두 프롭을 들여왔다** — 바로 아래다.
    */
+  /**
+   * 목록의 [새 견적서] 팝업에서 고른 견적서 종류(조각 3e-3 — domain/quote-new-link.ts 의
+   * parseNewQuoteStart). null 이면 지금까지처럼 내자로 연다. 새 견적서에만 쓴다.
+   *
+   * 🔴 처음 값만 바꾸지 않는다 — 빈 폼에서 사람이 종류 select 를 고른 것과 **같은 상태**로
+   * 연다(아래 newQuoteStart · quote-new-start.ts). 폼에서는 여전히 바꿀 수 있다.
+   */
+  initialKind?: QuoteKind | null;
+  /**
+   * 팝업에서 엑셀 전용을 골랐는가(조각 3e-3). 참이면 사람이 엑셀 전용 스위치를 켠 것과 같은
+   * 상태로 연다 — 저장 전에 끄면 그 종류의 폼이 돌아온다. 새 견적서에만 쓴다.
+   */
+  initialExcelOnly?: boolean;
   /**
    * 저장·취소 뒤에 돌아갈 곳. 수리 건에서 들어왔으면 그 건의 「견적서」 탭이다.
    * null 이면 지금까지와 같이 `/quotes` 로 간다.
@@ -656,17 +714,38 @@ export default function QuoteEditForm({
 }) {
   const router = useRouter();
 
-  /*
-   * 🔴 **조각 3b-2 가 여기에 `newQuoteStart` 를 되돌려 놓는다** — [새 견적서]
-   * 팝업에서 고른 처음 값(종류 · 엑셀 전용)으로 빈 폼을 여는 자리다
-   * (quote-new-start.ts 의 startNewQuoteLines). 아래 상태들의 `?? newQuoteStart…`
-   * 갈래가 전부 그 하나에 걸려 있었고, 지금은 **저장된 값 아니면 지금까지의 기본값**
-   * 둘뿐이다.
+  /**
+   * [새 견적서] 팝업에서 고른 처음 값(initialKind · initialExcelOnly)으로 연 새 견적서의 처음
+   * 상태 — 한 번만 셈한다(조각 3e-3).
+   *
+   * 🔴 **처음 값만 바꾸지 않는다.** 빈 폼을 연 뒤 사람이 ① 견적서 종류 select 를 고르고 ② 엑셀
+   * 전용 스위치를 켠 것과 **같은 상태**다 — 종류를 고르면 조사 · 통전 칸에 그 양식의 기본 목록이
+   * 따라오고, 엑셀 전용을 켜면 줄을 넣어 두고 비운다. 그 따라오는 일을 아래 onChange 들이 쓰는
+   * 그 함수들로 돌린다(quote-new-start.ts 머리말). 두 값이 없으면 지금까지의 빈 폼 그대로다.
+   *
+   * 고치기(quote 가 있다)에는 null 이다 — 저장된 값이 곧 처음 값이다.
    */
+  const [newQuoteStart] = useState(() =>
+    quote === null
+      ? startNewQuoteLines({
+          start: { kind: initialKind, excelOnly: initialExcelOnly },
+          blank: blankNewQuoteLines(),
+          cleared: clearedExcelOnlyLines(),
+          workScopeDefaults,
+          toRows: toScopeRows,
+        })
+      : null
+  );
 
   const [quoteNumber, setQuoteNumber] = useState(quote?.quoteNumber ?? "");
-  const [kind, setKind] = useState<QuoteKind>(quote?.kind ?? "DOMESTIC");
+  const [kind, setKind] = useState<QuoteKind>(quote?.kind ?? newQuoteStart?.kind ?? "DOMESTIC");
   const [quoteDate, setQuoteDate] = useState(quote?.quoteDate ?? defaultQuoteDate ?? todayInSeoul());
+  /**
+   * 발행일자를 처음 값에서 한 번이라도 바꿨는가(견적서 ①b). 값이 아니라 표시로 가른다 — 고쳤다가
+   * 오늘로 되돌려도 고친 것이다. 새 견적서에서 이것이 거짓이면 엑셀 자동 채우기가 날짜를 빈 칸처럼
+   * 채운다(quoteExcelPlanFormValues). 바꾸는 길은 editQuoteDate 하나다.
+   */
+  const [quoteDateTouched, setQuoteDateTouched] = useState(false);
   const [intakeNumberText, setIntakeNumberText] = useState(quote?.intakeNumberText ?? "");
   /**
    * 이 견적서가 걸려 있는 수리 건.
@@ -727,7 +806,7 @@ export default function QuoteEditForm({
           // 이미 담긴 것으로 세지 않는다 — 사람이 지웠다가 다시 담을 수 있어야 한다.
           sourceKey: null,
         }))
-      : [emptyItem()]
+      : (newQuoteStart?.lines.items ?? [emptyItem()])
   );
 
   /**
@@ -799,8 +878,8 @@ export default function QuoteEditForm({
    * 지워진 작업은 id 가 없거나 목록에 없어 체크가 살아나지 않는데, **그 줄의
    * 금액은 이미 work_cost 에 들어 있다** — 화면이 그 사실을 아래에서 알린다.
    */
-  const [taskQuantities, setTaskQuantities] = useState<RepairTaskQuantities>(() =>
-    restoreRepairTaskQuantities(quote?.repairTasks ?? [])
+  const [taskQuantities, setTaskQuantities] = useState<RepairTaskQuantities>(
+    () => newQuoteStart?.lines.taskQuantities ?? restoreRepairTaskQuantities(quote?.repairTasks ?? [])
   );
   /**
    * 「통전작업 제외」. **사람의 결정**이고, 켜면 기본 작업비에서 통전작업 몫
@@ -874,8 +953,11 @@ export default function QuoteEditForm({
    * 저장된 견적서는 그때 적힌 글자를 그대로 편다. 새 견적서는 빈 채로 시작하고,
    * 장비 종류를 고르는 순간 양식의 기본 목록이 들어온다(아래 fillScopeFrom...
    * — 🔴 조각 3c 까지는 그 기본 목록이 비어 있다, 파일 머리말 ④).
+   * [새 견적서] 팝업에서 OH 를 골랐으면 종류를 고른 순간처럼 그 양식의 목록으로 시작한다
+   * (newQuoteStart — 조각 3e-3).
    */
   const [scopeLines, setScopeLines] = useState<Record<QuoteWorkScopeSection, ScopeRow[]>>(() => {
+    if (newQuoteStart) return newQuoteStart.lines.scopeLines;
     const initial: Record<QuoteWorkScopeSection, ScopeRow[]> = {
       INVESTIGATION: [],
       REPAIR: [],
@@ -895,16 +977,21 @@ export default function QuoteEditForm({
    * 처음 열었을 때 이미 적혀 있던 견적서도 손댄 것으로 본다 — 그 글자가 곧
    * 사람이 정한 내용이다.
    */
-  const [scopeTouched, setScopeTouched] = useState<Record<QuoteWorkScopeSection, boolean>>(() => ({
-    // 「조사작업 제외」로 저장한 장(investigationExcluded)도 손댄 것으로 본다 — 아니면 종류를
-    // 바꿀 때 감춰 둔 조사 칸에 양식 기본값이 사람 모르게 들어와 함께 저장된다. 비어 있는 채
-    // 체크를 풀면 그때 다시 채운다(toggleInvestigationExcluded).
-    INVESTIGATION:
-      (quote?.workScopeLines ?? []).some((l) => l.section === "INVESTIGATION") ||
-      quote?.investigationExcluded === true,
-    REPAIR: (quote?.workScopeLines ?? []).some((l) => l.section === "REPAIR"),
-    POWER_TEST: (quote?.workScopeLines ?? []).some((l) => l.section === "POWER_TEST"),
-  }));
+  const [scopeTouched, setScopeTouched] = useState<Record<QuoteWorkScopeSection, boolean>>(
+    () =>
+      // 새 견적서는 처음 상태가 정한다(newQuoteStart) — 엑셀 전용으로 열었으면 비운 칸이 「손댄
+      // 것」이다(스위치를 켤 때와 같다).
+      newQuoteStart?.lines.scopeTouched ?? {
+        // 「조사작업 제외」로 저장한 장(investigationExcluded)도 손댄 것으로 본다 — 아니면 종류를
+        // 바꿀 때 감춰 둔 조사 칸에 양식 기본값이 사람 모르게 들어와 함께 저장된다. 비어 있는 채
+        // 체크를 풀면 그때 다시 채운다(toggleInvestigationExcluded).
+        INVESTIGATION:
+          (quote?.workScopeLines ?? []).some((l) => l.section === "INVESTIGATION") ||
+          quote?.investigationExcluded === true,
+        REPAIR: (quote?.workScopeLines ?? []).some((l) => l.section === "REPAIR"),
+        POWER_TEST: (quote?.workScopeLines ?? []).some((l) => l.section === "POWER_TEST"),
+      }
+  );
   const [isConflict, setIsConflict] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -913,10 +1000,13 @@ export default function QuoteEditForm({
    * 공급가액 칸의 글자는 **꺼도 지우지 않는다** — 다시 켜면 그대로다. 보내는 것은 켜져 있을
    * 때뿐이다(collectFields).
    */
-  const [isExcelOnly, setIsExcelOnly] = useState<boolean>(quote?.isExcelOnly ?? false);
+  const [isExcelOnly, setIsExcelOnly] = useState<boolean>(quote?.isExcelOnly ?? newQuoteStart?.isExcelOnly ?? false);
   const [manualSupplyAmount, setManualSupplyAmount] = useState(quote?.manualSupplyAmount ?? "");
-  /** 엑셀 전용을 켤 때 비운 줄 — 저장 전에 끄면 그대로 돌려놓는다. */
-  const [excelOnlyStash, setExcelOnlyStash] = useState<ExcelOnlyLines | null>(null);
+  /**
+   * 엑셀 전용을 켤 때 비운 줄 — 저장 전에 끄면 그대로 돌려놓는다. 팝업에서 엑셀 전용을 골라 연
+   * 새 견적서는 스위치를 켤 때처럼 그 종류의 줄을 넣어 둔 채 시작한다(newQuoteStart).
+   */
+  const [excelOnlyStash, setExcelOnlyStash] = useState<ExcelOnlyLines | null>(newQuoteStart?.excelOnlyStash ?? null);
   /** 줄이 있는 채로 켜려 할 때 여는 확인 창의 줄 수. null 이면 닫혀 있다. */
   const [clearLinesAsk, setClearLinesAsk] = useState<QuoteLineCounts | null>(null);
   /*
@@ -932,10 +1022,24 @@ export default function QuoteEditForm({
    *    🔴 **조각 3c-2 는 이 둘을 되돌려 놓지 않았다** — 그 조각이 만든 것은 받기
    *    통로와 **목록의 받기 링크**뿐이고, 이 화면의 단추는 발행(공유폴더 · 첨부 칸)과
    *    한 벌이라 함께 미뤘다(아래 머리 단추 자리의 주석).
-   *  · **수기 엑셀로 칸 채우기** — `excelAutofill` · `excelReader` ·
-   *    `handoffSheetIndex`. 🔴 3d-4 도 이것을 잇지 않았다(훅의 `onExcelPicked` 가
-   *    입구인데, 그 묶음의 파일들이 이 사이트에 아직 없다).
+   *  · ⚠️ **수기 엑셀로 칸 채우기** — `excelAutofill` · `excelReader` ·
+   *    `handoffSheetIndex`. 그때의 기록이다 — 🔴 **조각 3e-3 이 셋을 되돌려 놓았다**
+   *    (2026-09-28, 바로 아래). 훅의 `onExcelPicked` 도 함께 이어졌다.
    */
+
+  /**
+   * 「수기 견적서 엑셀」로 칸 채우기의 상태(견적서 ①b — ExcelAutofillState). 없으면 null.
+   * 읽개는 한 번 만들어 들고 있는다 — 마지막에 고른 파일의 결과만 돌려주는 차례표가 그 안에 있다.
+   */
+  const [excelAutofill, setExcelAutofill] = useState<ExcelAutofillState | null>(null);
+  const [excelReader] = useState(() => createLatestQuoteExcelReader());
+  /**
+   * [새 견적서] 팝업이 건네준 **시트 차례**(조각 3e-3 — new-quote-excel-handoff.ts). 팝업에서
+   * 고른 종류에 짝지어지는 탭이고, 첫 읽기 한 번에만 쓰고 비운다 — 그다음에 사람이 다른 엑셀을
+   * 고르면 그 파일은 지금까지처럼 통로가 혼자 고른 시트로 읽는다. 상자가 비어 있었으면 undefined
+   * 라, 지금까지와 한 글자도 다르지 않은 요청이다.
+   */
+  const handoffSheetIndex = useRef<number | undefined>(undefined);
 
   /**
    * 저장된 견적서 — 수정 화면의 그 장. 🔴 새 견적서(quote === null)에서는 null 이고,
@@ -977,8 +1081,8 @@ export default function QuoteEditForm({
    * 🔴 **조각 3d-4 가 `attachments`(useQuoteAttachments)를 되돌려 놓았다** — 바로
    * 아래다. 🔴 **구역 안이 아니라 폼이 들고 있는 것**이 요점이다: 미리보기(3f)는 폼을
    * 통째로 갈아 그리므로, 구역 안에 두면 미리보기를 여는 순간 골라 둔 파일이 사라진다.
-   * 🔴 그 훅의 `onExcelPicked`(「수기 엑셀로 칸 채우기」의 유일한 입구)는 **아직 오지
-   * 않았다** — `quote-excel-parse` · `quote-excel-autofill` 묶음이 이 사이트에 없다.
+   * ⚠️ 그 훅의 `onExcelPicked`(「수기 엑셀로 칸 채우기」의 유일한 입구)가 「아직 오지
+   * 않았다」던 것은 **그때의 기록**이다 — 🔴 **조각 3e-3 에서 이어졌다**(아래).
    */
 
   /**
@@ -986,10 +1090,43 @@ export default function QuoteEditForm({
    *
    * 🔴 **훅은 늘 부르고, 그리는 것만 가른다.** 아래 구역은 `attachmentSlots` 가 온
    * 경우(= 견적서 수정 화면)에만 선다. 훅을 조건부로 부르면 React 의 규칙을 깬다.
+   *
+   * 「수기 견적서 엑셀」을 고른 순간 훅이 onExcelPicked 를 부른다 — 엑셀 전용 장이면 그 엑셀을 읽어
+   * 칸을 채운다(견적서 ①b, handleExcelPicked). 붙이기는 훅이 먼저 시작해 두었다.
    */
   const attachments = useQuoteAttachments({
     quoteId: quote?.id ?? null,
     serverSlots: attachmentSlots,
+    onExcelPicked: (file) => handleExcelPicked(file),
+  });
+
+  /**
+   * 엑셀로 채울 수 있는 칸의 **지금** 값(견적서 ①b). 이름은 폼 상태 이름 그대로다.
+   * 읽기는 기다리는 동안 사람이 칸을 고칠 수 있어서, 결과가 온 순간에는 고른 때의 값이 아니라
+   * 마지막으로 그린 값과 견준다(latestExcelFormValues) — 그 사이 적은 값을 빈 칸으로 읽고 덮지 않게.
+   */
+  const excelFormValues: QuoteExcelFormValues = quoteExcelPlanFormValues(
+    {
+      kind,
+      quoteNumber,
+      quoteDate,
+      customerNameText,
+      subject,
+      modelNameText,
+      lotNumberText,
+      serialNumberText,
+      validity,
+      delivery,
+      payment,
+      manualSupplyAmount,
+    },
+    // 🔴 새 견적서(아직 저장 전)에서 손대지 않은 기본 발행일자(오늘)는 빈 칸으로 본다 — 엑셀 날짜로
+    // 곧바로 채운다(2026-09-16 사용자 결정). 저장된 장 · 손댄 날짜는 그대로 「적힌 값」이다.
+    { isNewQuote: savedQuote === null, touched: quoteDateTouched }
+  );
+  const latestExcelFormValues = useRef(excelFormValues);
+  useEffect(() => {
+    latestExcelFormValues.current = excelFormValues;
   });
 
   /**
@@ -1258,12 +1395,16 @@ export default function QuoteEditForm({
     setCustomerId(null);
   }
 
-  /*
-   * 🔴 **조각 3d 가 여기에 `editQuoteDate` · `quoteDateTouched` 를 되돌려 놓는다** —
-   * 발행일자를 한 번이라도 바꿨는지 표시로 가르는 값이고, 그 표시를 보는 것은
-   * 「수기 엑셀로 칸 채우기」 하나다(손대지 않은 오늘 날짜만 엑셀 날짜로 채운다).
-   * 지금은 날짜 칸이 `setQuoteDate` 를 곧바로 부른다.
+  /**
+   * 발행일자를 바꾼다 — 날짜 칸에 친 것 · [엑셀 값으로 바꾸기] · 엑셀 자동 채우기가 모두 이 길이고,
+   * 셋 다 「손댐」을 켠다(견적서 ①b, 2026-09-16 사용자 결정 — 🔴 조각 3e-3 에 왔다). 빈 칸처럼
+   * 채우는 것은 새 견적서의 손대지 않은 처음 기본값 하나뿐이라, 한 번 채운 뒤 다시 고른 엑셀의
+   * 날짜는 제안만 한다.
    */
+  function editQuoteDate(value: string) {
+    setQuoteDate(value);
+    setQuoteDateTouched(true);
+  }
 
   /**
    * 고른 작업의 건명들. 목록 차례를 그대로 따른다 — 문서에 적히는 순서다.
@@ -1421,6 +1562,46 @@ export default function QuoteEditForm({
   }
 
   /**
+   * ============================================================================
+   * [새 견적서] 팝업이 건네준 수기 견적서 엑셀 (조각 3e-3)
+   * ============================================================================
+   * 팝업에서 엑셀 전용을 켜고 엑셀을 올린 뒤 [만들기]를 누르면, 파일은 주소에 실리지 못하므로
+   * 작은 상자로 건너온다(new-quote-excel-handoff.ts). 여기서 꺼내 **사람이 「수기 견적서
+   * 엑셀」 칸에 파일을 고른 것과 똑같은 길**(attachments.pickFile)에 태운다 — 붙이기도 읽기도
+   * 그 한 길이 한다. 팝업이 골라 둔 시트 차례는 위 handoffSheetIndex 가 첫 읽기에 실어 준다.
+   *
+   * 🔴 **비어 있는 것이 보통이다.** 새로고침 · 주소 직접 입력 · 뒤로가기로 들어오면 상자는
+   * 비어 있고, 그때 이 폼은 지금까지와 완전히 같다 — 사람이 칸에 직접 붙이면 된다.
+   * 🔴 상자는 꺼내는 순간 비워지므로(take), 그 주소를 다시 열어도 엉뚱한 파일이 붙지 않는다.
+   *
+   * 🔴 **이 사이트에서 지금 일어나는 일은 「읽어서 칸을 채우기」까지다.** 새 견적서 화면에는
+   * 첨부 칸이 서지 않으므로(attachmentSlots 프롭 항목), pickFile 이 들고 있게 된 파일은
+   * 화면에 보이지도 [저장] 때 올라가지도 않는다 — 「만든 직후 올리기」가 아직 없기 때문이다
+   * (handleSubmit 의 그 자리). 🔴 **그 자리가 오는 날 이 파일이 그대로 붙는다** — 여기를
+   * 고칠 필요가 없다.
+   *
+   * 효과 본문에서 곧바로 부르지 않고 한 틱 미루는 까닭 · 깃발을 타이머 안에서 세우는 까닭은
+   * A/S 의 자동 불러오기와 같다(조각 4·5). 고치기(quote !== null)에는 상자를 건드리지 않는다.
+   * ============================================================================
+   */
+  const didTakeExcelHandoff = useRef(false);
+  useEffect(() => {
+    if (quote !== null) return;
+    const timer = setTimeout(() => {
+      if (didTakeExcelHandoff.current) return;
+      didTakeExcelHandoff.current = true;
+      const handoff = takeNewQuoteExcelHandoff();
+      if (handoff === null) return;
+      handoffSheetIndex.current = handoff.sheetIndex ?? undefined;
+      attachments.pickFile("QUOTE_EXCEL", handoff.file);
+    }, 0);
+    return () => clearTimeout(timer);
+    // attachments 는 매 렌더 새로 만들어진다 — 넣으면 매번 다시 돈다(위 깃발이 한 번을 보장하지만
+    // 타이머를 세웠다 지우기를 되풀이한다). 첫 그림의 것으로 충분하다 — 그때가 상자를 꺼낼 때다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quote]);
+
+  /**
    * 출고 부품을 부품 줄에 담는다. 하나든 여럿이든 이 함수 하나를 쓴다 —
    * 🔴 일괄 담기가 하나씩 담기를 여러 번 부르면 `setItems` 가 여러 번 돌아 "빈 첫 줄"
    * 처리가 중간 상태에 걸린다.
@@ -1553,25 +1734,80 @@ export default function QuoteEditForm({
     if (plan.lines) applyExcelOnlyLines(plan.lines);
     setExcelOnlyStash(plan.stash);
     setIsExcelOnly(plan.isExcelOnly);
+    // 엑셀 전용을 끄면 엑셀 읽기는 할 일이 없다 — 읽는 중이면 그 결과를 버리고 알림을 걷는다(견적서 ①b).
+    if (!plan.isExcelOnly) {
+      excelReader.cancel();
+      setExcelAutofill(null);
+    }
   }
 
-  /*
-   * ============================================================================
-   * 🔴 조각 3d 가 여기에 **수기 엑셀로 칸 채우기** 한 덩이를 되돌려 놓는다
-   * ============================================================================
-   * 걷어낸 것: `handleExcelPicked`(칸에 파일을 고른 순간 — 훅의 onExcelPicked) ·
-   * `readPickedExcel`(엑셀을 읽어 빈 칸을 채운다) · `applyExcelValue`(엑셀 값 하나를
-   * 폼 칸에 넣는다). 그리고 바로 위 `toggleExcelOnly` 끝에 있던 두 줄 —
-   * 엑셀 전용을 끄면 `excelReader.cancel()` 로 읽던 것을 버리고 알림을 걷는 자리.
-   *
-   * 🔴 **3d 가 올 때 지킬 것 셋**(A/S 그 함수들의 머리말):
-   *  · 엑셀 값은 **빈 칸만 채우고** 이미 적힌 칸은 덮지 않는다.
-   *  · 견주는 값은 고른 때가 아니라 **마지막으로 그린 폼 값**이다(읽는 사이 사람이
-   *    적은 값을 빈 칸으로 보고 덮지 않게).
-   *  · 종류는 `changeKind`, 공급처는 `editCustomerName` — **칸을 직접 set 하지
-   *    않는다.** 그 둘에는 따라 일어나는 일이 있다(오버홀 규칙 · 고객사 연결 끊기).
-   * ============================================================================
+  /**
+   * 「수기 견적서 엑셀」 칸에 파일을 고른 순간(견적서 ①b — 훅의 onExcelPicked). 붙이기는 훅이 이미
+   * 시작했다. 🔴 엑셀 전용 장만 읽는다 — 일반 견적서의 엑셀 칸은 앱이 만든 파일이 들어가는 칸이라
+   * 읽을 까닭이 없다(B1b).
    */
+  function handleExcelPicked(file: File) {
+    if (!isExcelOnly) return;
+    void readPickedExcel(file);
+  }
+
+  /**
+   * 고른 엑셀을 읽어 칸을 채운다. 규칙은 quote-excel-autofill.ts 의 planQuoteExcelAutofill 한 곳이다 —
+   * **빈 칸만 채우고**, 이미 적힌 칸이 다르면 덮지 않는다(그 목록은 그릴 때 excelConflicts 가 뽑는다).
+   *
+   * 🔴 두 번 고르면 마지막 파일의 결과만 쓴다 — 늦게 온 옛 결과는 읽개가 null 로 돌려주고, 칸을
+   * 건드리기 전에 버린다. 🔴 견주는 값은 고른 때가 아니라 **마지막으로 그린** 폼 값이다
+   * (latestExcelFormValues) — 읽는 사이 사람이 적은 값을 빈 칸으로 보고 덮지 않게.
+   * 읽기가 실패해도 파일은 그대로 붙어 있다(붙이기는 훅이 따로 한다).
+   */
+  async function readPickedExcel(file: File) {
+    setExcelAutofill({ status: "reading" });
+    // [새 견적서] 팝업이 골라 둔 시트 — **한 번 쓰고 비운다**(위 handoffSheetIndex).
+    const sheetIndex = handoffSheetIndex.current;
+    handoffSheetIndex.current = undefined;
+    const result = await excelReader.read(file, { sheetIndex });
+    if (result === null) return;
+    if (!result.ok) {
+      setExcelAutofill({ status: "failed", reason: result.reason, code: result.code });
+      return;
+    }
+    const plan = planQuoteExcelAutofill(latestExcelFormValues.current, result.fields);
+    for (const change of plan.fills) applyExcelValue(change);
+    setExcelAutofill({
+      status: "read",
+      fields: result.fields,
+      filled: plan.fills.map((change) => change.field),
+      readCount: plan.fills.length + plan.conflicts.length + plan.unchanged.length,
+      warnings: result.warnings,
+    });
+  }
+
+  /**
+   * 엑셀 값 하나를 폼 칸에 넣는다 — 빈 칸 채우기와 [엑셀 값으로 바꾸기]가 이 함수 하나를 부른다
+   * (견적서 ①b). 🔴 종류는 select 와 같은 changeKind, 공급처는 칸에 치는 것과 같은 editCustomerName
+   * 을 탄다. `Record` 라 채울 칸이 하나 늘면 컴파일러가 여기를 짚는다.
+   */
+  function applyExcelValue(change: QuoteExcelFieldChange) {
+    const setters: Record<QuoteExcelAutofillField, (value: string) => void> = {
+      kind: (value) => {
+        const next = QUOTE_KINDS.find((candidate) => candidate === value);
+        if (next) changeKind(next);
+      },
+      quoteNumber: setQuoteNumber,
+      // 채운 날짜 · 바꾼 날짜도 손댐이다 — 다시 고른 엑셀의 날짜는 제안만 한다(2026-09-16 사용자 결정).
+      quoteDate: editQuoteDate,
+      customerNameText: editCustomerName,
+      subject: setSubject,
+      modelNameText: setModelNameText,
+      lotNumberText: setLotNumberText,
+      serialNumberText: setSerialNumberText,
+      validity: setValidity,
+      delivery: setDelivery,
+      payment: setPayment,
+      manualSupplyAmount: setManualSupplyAmount,
+    };
+    setters[change.field](change.excelValue);
+  }
 
   function collectFields() {
     return {
@@ -1857,11 +2093,44 @@ export default function QuoteEditForm({
    *  · 거르는 규칙은 **저장과 같게** 한다(빈 줄 · 설명 줄) — 다르면 미리보기의
    *    줄 수와 실제 문서의 줄 수가 갈린다.
    *
-   * ── 3d: `excelConflicts` · `excelAutofillLines` · `excelAutofillPanel` ───
-   * 「수기 견적서 엑셀」 칸 곁의 읽기 알림. 첨부 칸이 없으면 붙일 자리가 없다.
+   * ── ⚠️ 3d: `excelConflicts` · `excelAutofillLines` · `excelAutofillPanel` ──
+   * 그때의 기록이다 — 🔴 **조각 3e-3 에 왔다**(2026-09-28, 바로 아래).
    * ============================================================================
    */
 
+  /**
+   * 「수기 견적서 엑셀」 칸 곁의 엑셀 읽기 알림(견적서 ①b). 🔴 엑셀 전용일 때만 그린다 — 끄면
+   * 아무것도 없다. 「엑셀과 다른 칸」은 그릴 때마다 **지금 폼 값**으로 다시 뽑는다 — 바꾼 칸
+   * (또는 사람이 같게 고친 칸)은 저절로 목록에서 빠진다. 단추는 모두 applyExcelValue 를 탄다.
+   */
+  const excelConflicts =
+    isExcelOnly && excelAutofill?.status === "read"
+      ? planQuoteExcelAutofill(excelFormValues, excelAutofill.fields).conflicts
+      : [];
+  const excelAutofillLines =
+    excelAutofill?.status === "failed"
+      ? quoteExcelAutofillNoticeLines({ kind: "failed", reason: excelAutofill.reason, code: excelAutofill.code })
+      : excelAutofill?.status === "read"
+        ? quoteExcelAutofillNoticeLines({
+            kind: "read",
+            filled: excelAutofill.filled,
+            readCount: excelAutofill.readCount,
+            conflictCount: excelConflicts.length,
+            warnings: excelAutofill.warnings,
+          })
+        : [];
+  const excelAutofillPanel =
+    isExcelOnly && excelAutofill !== null ? (
+      <QuoteExcelAutofillNotice
+        reading={excelAutofill.status === "reading"}
+        lines={excelAutofillLines}
+        conflicts={excelConflicts}
+        disabled={disabled}
+        onReplace={(change) => applyExcelValue(change)}
+        onReplaceAll={() => excelConflicts.forEach((change) => applyExcelValue(change))}
+        onDismiss={() => setExcelAutofill(null)}
+      />
+    ) : null;
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6">
@@ -2019,9 +2288,8 @@ export default function QuoteEditForm({
           <input
             type="date"
             value={quoteDate}
-            // 🔴 조각 3d 가 오면 `editQuoteDate` 로 바꾼다 — 「손댐」을 켜야 엑셀 자동
-            // 채우기가 사람이 고른 날짜를 덮지 않는다(위 그 항목).
-            onChange={(e) => setQuoteDate(e.target.value)}
+            // 사람이 고치면 「손댐」이 켜진다 — 엑셀 자동 채우기가 그 날짜를 덮지 않는다(editQuoteDate).
+            onChange={(e) => editQuoteDate(e.target.value)}
             className={editInputClass}
             disabled={disabled}
           />
@@ -2180,7 +2448,7 @@ export default function QuoteEditForm({
           칸만 세우면 고른 파일이 [저장] 때 말없이 사라진다
           (QuoteAttachmentsSection.tsx 머리말의 「배선이 어디까지 왔나」). */}
       {attachmentSlots !== null ? (
-        <QuoteAttachmentsSection controller={attachments} isExcelOnly={isExcelOnly} disabled={disabled} />
+        <QuoteAttachmentsSection controller={attachments} isExcelOnly={isExcelOnly} disabled={disabled} excelSlotDetails={excelAutofillPanel} />
       ) : null}
 
       {/* ── 엑셀 전용이면 부품 · 작업 구역을 접는다 (2026-09-15 Q3) ──────
