@@ -87,3 +87,15 @@ src/lib/db/mutations/attachment-trash.integration.test.ts
 # 🔴 **디스크는 임시 폴더에 쓴다** — `UPLOADS_DIR`(A/S 의 실제 업로드 폴더)을 건드리지
 #    않으려고 저장 어댑터를 임시 루트로 직접 만든다. after() 가 폴더째 지운다.
 src/lib/db/mutations/attachments.integration.test.ts
+
+# ── 조각 PO 결재-A — 결재선 읽기 (2026-09-28) ────────────────────────────
+# A/S 의 같은 이름 시험(468줄)에서 가져왔다. 뺀 것은 `listSelectableApproverCandidates`
+# 묶음 하나(설정 화면 전용이라 그 조회를 안 가져왔다), 더한 것은 **이 사이트가 실제로
+# 쓸 셋**(Chain · Steps · StepList) 묶음이다 — 저쪽에서는 mutation 시험에 얹혀
+# 덮이는데 이 사이트에는 그 mutation 이 아직 없다(조각 B).
+#
+# 🔴 계정 접두사는 `shiproute-test-` 다 — 다른 DB 시험들의 접두사와 겹치지 않는다.
+#    이 파일만 **users 행을 만든다**(before 에서 여덟, after 에서 접두사로 되걷는다).
+#    🔴 before 가 `shipment_approval_routes` 가 비어 있음을 전제로 단언한다 — 「현재
+#    판은 version 이 가장 큰 판」을 재려면 남은 판이 없어야 하기 때문이다.
+src/lib/db/queries/shipment-approval-routes.integration.test.ts
