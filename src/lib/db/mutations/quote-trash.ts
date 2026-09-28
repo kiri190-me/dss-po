@@ -30,9 +30,10 @@ import { formatQuoteSupplyAmount, quoteSupplyAmountOf } from "@/lib/domain/quote
  * 고칠 것. 조각 4 에서 A/S 쪽이 정리될 때 한 벌로 합친다.
  *
  * ⚠️ 아래 주석이 가리키는 파일 중 일부는 **A/S 에만 있다**(`customers-trash.ts` ·
- * `master-data-purge.ts` 의 15일 정리 CLI · `attachments.ts` 의
- * `guardQuoteAttachmentChange`). 그 자리를 찾아 읽을 때는 A/S 저장소를 볼 것 —
- * 글자를 바꾸지 않는다는 규칙이 주석에도 걸린다.
+ * `master-data-purge.ts` 의 15일 정리 CLI). 그 자리를 찾아 읽을 때는 A/S 저장소를
+ * 볼 것 — 글자를 바꾸지 않는다는 규칙이 주석에도 걸린다.
+ * (🔴 `attachments.ts` 의 `guardQuoteAttachmentChange` 는 조각 3d-3b 로 **이 저장소에도
+ * 왔다** — 같은 이름 · 같은 자리다. 3d-3c 때 잠시 `attachment-trash.ts` 에 있었다.)
  *
  * ⚠️ **15일 정리 스크립트는 이 사이트에 없다.** A/S 가 계속 소유하고, 같은 DB 를
  * 보므로 여기서 휴지통에 넣은 견적서도 그 스크립트가 기한이 지나면 지운다 —

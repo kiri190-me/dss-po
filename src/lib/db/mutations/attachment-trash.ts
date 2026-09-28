@@ -4,6 +4,7 @@ import { and, asc, count, eq, inArray, ne } from "drizzle-orm";
 
 import { attachments, productModels, quotes, repairCases } from "@dss/core/schema";
 import { db } from "@/lib/db";
+import { guardQuoteAttachmentChange } from "./attachments";
 import { insertAuditLog } from "./audit-logs";
 
 /**
@@ -20,8 +21,8 @@ import { insertAuditLog } from "./audit-logs";
  *     되살리고 · 영구 삭제할 때 딸려 가는 첨부.
  *
  * 🔴 **가져오지 않은 것**: 저쪽의 `recordAttachmentDownload`(내려받기 감사)는 별건이라
- * 두고 왔고, **올리기**(저쪽 `mutations/attachments.ts` 의 createAttachmentRecord ·
- * 칸 교체)는 조각 3d-3b 의 몫이다.
+ * 두고 왔다. **올리기**(createAttachmentRecord · 칸 교체)는 조각 3d-3b 가 이웃 파일
+ * `./attachments` 로 가져왔다 — 저쪽과 같은 자리다.
  *
  * 🔴 **왜 조각 3d 를 기다리지 않는가** — 두 사이트가 **같은 `dss_as`** 를 본다.
  * 견적서를 휴지통에 넣으면 붙어 있던 결재 PDF · 수기 엑셀도 **같은 트랜잭션에서**
@@ -59,11 +60,19 @@ import { insertAuditLog } from "./audit-logs";
  * 쓴다. 특히 `QUOTE_DELETED_ATTACHMENT_REASON` 은 **DB 에 실제로 적히는 글자**라,
  * 두 벌이 되어 한쪽만 바뀌면 되살리기가 「함께 간 파일」을 못 가른다.
  *
- * 🔴 **다음에 올 조각(3d-3b, 올리기)에게** — 저쪽 `mutations/attachments.ts` 에
- * `guardQuoteAttachmentChange`(견적서 행 `FOR UPDATE` 잠금)가 들어 있다. 이 사이트에는
- * 아직 그 파일이 없어 **같은 이름 · 같은 본문으로 이 파일에 두었다.** 그 파일이 오는
- * 날 **이 파일에서 그쪽으로 옮기고 여기서는 import 할 것** — A/S 의 자리가 거기다.
- * 두 벌로 두면 견적서 잠금이 두 곳에서 갈리고, 그러면 「칸마다 한 파일」이 깨진다.
+ * 🔴 **끝났다 — 조각 3d-3b (2026-09-28).** 이 자리에 적혀 있던 숙제는
+ * 「저쪽 `mutations/attachments.ts` 의 `guardQuoteAttachmentChange`(견적서 행
+ * `FOR UPDATE` 잠금)를 이 사이트에 그 파일이 없는 동안 여기 두었으니, 그 파일이 오는
+ * 날 그쪽으로 옮기고 여기서는 import 하라」였다. 3d-3b 가 그 파일을 가져오면서
+ * **다섯을 그쪽으로 옮겼고**(아래 「견적서 잠금 다섯은 여기 없다」) 이 파일은
+ * `./attachments` 에서 들여다 쓴다. 🔴 되돌리지 마라 — 두 벌이 되면 견적서 잠금이
+ * 두 곳에서 갈리고 「칸마다 한 파일」이 깨진다.
+ *
+ * ── 🔴 올리기도 왔다 (조각 3d-3b) ───────────────────────────────────────
+ * 위 「가져오지 않은 것」이 「올리기는 조각 3d-3b 의 몫이다」라고 적어 둔 그것이다.
+ * `createAttachmentRecord` 와 칸 교체는 이웃 파일 `./attachments` 에 있고, 이 파일은
+ * 그대로다 — 여기 있는 함수는 여전히 **DB 의 표시만** 바꾼다.
+ * (저쪽의 `recordAttachmentDownload` 는 여전히 오지 않았다.)
  * ============================================================================
  */
 
@@ -139,51 +148,21 @@ function ownerAuditFields(owner: {
 
 // ───────────────────────────────── 파일 하나를 지우고 되살린다 (조각 3d-3c)
 
-/** 견적서에 대한 판정이 막았을 때의 이유. */
-export type QuoteAttachmentRejectionCode =
-  /** 견적서가 없다 — 그 사이 영구 삭제됐다. */
-  | "NOT_FOUND"
-  /** 견적서가 휴지통에 있다. */
-  | "QUOTE_IN_TRASH";
-
-export const QUOTE_ATTACHMENT_NOT_FOUND_MESSAGE = "해당 견적서를 찾을 수 없습니다.";
-export const QUOTE_ATTACHMENT_IN_TRASH_MESSAGE =
-  "휴지통에 있는 견적서의 파일은 붙이거나 지우거나 되살릴 수 없습니다. 견적서를 먼저 되살려 주세요.";
-
-export type QuoteAttachmentGuardResult =
-  | { ok: true; quote: { id: string; quoteNumber: string } }
-  | { ok: false; code: QuoteAttachmentRejectionCode; message: string };
-
 /**
- * 견적서의 첨부를 바꿔도 되는가 — **부르는 쪽의 트랜잭션 안에서** 견적서 행을
- * `FOR UPDATE` 로 잠그고 판정한다. 지우기 · 되살리기(이 파일)가 이것 하나를 부르고,
- * 올리기(조각 3d-3b 의 createAttachmentRecord)도 같은 것을 부르게 된다.
+ * ── 🔴 견적서 잠금 다섯은 **여기 없다** — `./attachments` 로 이사했다 (3d-3b) ──
+ * 3d-3c 때 이 자리에 `guardQuoteAttachmentChange` · `QuoteAttachmentGuardResult` ·
+ * `QuoteAttachmentRejectionCode` · `QUOTE_ATTACHMENT_NOT_FOUND_MESSAGE` ·
+ * `QUOTE_ATTACHMENT_IN_TRASH_MESSAGE` 를 **임시로** 두었다. A/S 의 자리는
+ * `mutations/attachments.ts` 인데 이 사이트에 그 파일이 아직 없었기 때문이다.
+ * 3d-3b 가 그 파일을 가져오면서 다섯을 그쪽으로 옮겼고, 여기서는 위 import 로
+ * 들여다 쓴다.
  *
- * 이 잠금이 두 가지를 줄 세운다:
- *  - **칸 교체** — 같은 견적서에 동시에 올린 파일들은 여기서 기다리고, 뒤에 온 쪽은
- *    앞의 것이 넣은 행을 보고 밀어낸다(READ COMMITTED — 문장마다 새 스냅숏). 그래서
- *    칸마다 살아 있는 파일은 늘 하나다.
- *  - **견적서 휴지통** — softDeleteQuote · restoreQuote · permanentlyDeleteQuote 도 같은
- *    행을 먼저 잠근다(quote-trash.ts). 휴지통으로 가는 견적서에 한 장이 끼어들거나,
- *    휴지통의 견적서에 파일이 되살아나는 틈이 없다.
- *
- * ⚠️ 잠금은 `id` 로만 좁힌다. is_deleted 로 좁히면 휴지통의 견적서를 「없음」으로
- * 오판하고, 그 행은 잠그지도 못한다.
- *
- * 🔴 **A/S 에서는 이 함수가 `mutations/attachments.ts` 에 있다.** 이 사이트에는 그
- * 파일이 아직 없어 여기 두었을 뿐이다 — 옮길 때를 파일 머리말에 적어 두었다.
+ * 🔴 **다시 이쪽으로 가져오지 마라.** 두 벌이 되면 견적서 잠금이 두 곳에서 갈리고,
+ * 그러면 「칸마다 한 파일」이 깨진다 — 올리기(칸 교체) · 지우기 · 되살리기가 같은
+ * 행을 같은 방법으로 잠가야 서로 줄을 선다.
+ * 🔴 **여기서 다시 export 하지도 않는다.** 두 경로로 같은 것이 보이면 다음 사람이
+ * 어느 쪽을 쓸지 갈린다 — 부르는 쪽은 `@/lib/db/mutations/attachments` 를 본다.
  */
-export async function guardQuoteAttachmentChange(tx: Tx, quoteId: string): Promise<QuoteAttachmentGuardResult> {
-  const [quote] = await tx
-    .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, isDeleted: quotes.isDeleted })
-    .from(quotes)
-    .where(eq(quotes.id, quoteId))
-    .for("update");
-
-  if (!quote) return { ok: false, code: "NOT_FOUND", message: QUOTE_ATTACHMENT_NOT_FOUND_MESSAGE };
-  if (quote.isDeleted) return { ok: false, code: "QUOTE_IN_TRASH", message: QUOTE_ATTACHMENT_IN_TRASH_MESSAGE };
-  return { ok: true, quote: { id: quote.id, quoteNumber: quote.quoteNumber } };
-}
 
 /** 첨부와 그것이 붙은 접수 건의 잠금 상태를 한 번에 잡는다. */
 async function loadForTrash(tx: Tx, attachmentId: string) {

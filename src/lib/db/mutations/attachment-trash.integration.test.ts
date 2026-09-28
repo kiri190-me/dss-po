@@ -6,11 +6,14 @@ import { and, eq, inArray, like } from "drizzle-orm";
 import { attachments, auditLogs, quotes, users } from "@dss/core/schema";
 import { db, pgClient } from "@/lib/db";
 import {
-  QUOTE_ATTACHMENT_IN_TRASH_MESSAGE,
   QUOTE_ATTACHMENT_SLOT_OCCUPIED_MESSAGE,
   restoreAttachment,
   softDeleteAttachment,
 } from "./attachment-trash";
+// 🔴 조각 3d-3b 가 견적서 잠금 다섯을 `attachment-trash.ts` 에서 이 파일로 옮겼다
+// (A/S 의 자리다). 그 파일은 re-export 하지 않으므로 여기서 직접 들여온다 — 두 경로로
+// 같은 것이 보이면 다음 사람이 어느 쪽을 쓸지 갈린다.
+import { QUOTE_ATTACHMENT_IN_TRASH_MESSAGE } from "./attachments";
 import { createQuote } from "./quotes";
 import { softDeleteQuote } from "./quote-trash";
 import { getAttachmentForDownload } from "../queries/attachment-download";
@@ -47,12 +50,15 @@ import type { QuoteFields } from "@/lib/validation/quote-input";
  *     서브모듈(`@dss/core/schema`)이다. 그래서 저쪽 첫 줄
  *     `import "../../../../scripts/load-env"` 이 없다.
  *  ② 🔴 **첨부 행을 `createAttachmentRecord` 대신 직접 넣는다**(아래 addFile).
- *     올리기 통로는 조각 3d-3b 의 몫이라 이 저장소에 아직 없다. 이 시험이 보는
- *     것은 **지우기 · 되살리기가 무엇을 판정하는가**이지 올리기가 아니므로, 표에
- *     직접 넣으면 충분하다. 올리기 규칙(칸 교체 · 경로 · 확장자)은 A/S 쪽 시험이
- *     그대로 지킨다. 🔴 그래서 **「같은 칸에 다시 올리면 옛 파일이 밀려난다」는
- *     여기서 흉내 내지 않는다** — 칸이 찬 상태는 살아 있는 파일을 한 장 더 넣어
- *     만든다.
+ *     이 시험이 보는 것은 **지우기 · 되살리기가 무엇을 판정하는가**이지 올리기가
+ *     아니므로, 표에 직접 넣으면 충분하다. 🔴 그래서 **「같은 칸에 다시 올리면 옛
+ *     파일이 밀려난다」는 여기서 흉내 내지 않는다** — 칸이 찬 상태는 살아 있는
+ *     파일을 한 장 더 넣어 만든다.
+ *     (🔴 올리기 통로는 그 뒤 조각 3d-3b 가 가져왔다 — `./attachments` 의
+ *     `createAttachmentRecord`. 칸 교체 · 경로 · 감사는 그 곁의 새 시험
+ *     `attachments.integration.test.ts` 가 본다. 이 파일은 그대로 두었다 — 이
+ *     시험의 물음이 달라지지 않았고, 올리기를 끼워 넣으면 두 조각의 실패가 한
+ *     파일에서 섞인다.)
  *  ③ 🔴 **격리 이름을 저쪽과 다르게 두었다**(아래 상수). 두 저장소가 **같은
  *     `dss_as_test`** 를 쓰므로(docs/DB_TESTS.md), 같으면 한쪽 after() 가 다른
  *     쪽이 만든 줄을 치운다.

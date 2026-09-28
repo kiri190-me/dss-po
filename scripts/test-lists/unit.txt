@@ -328,3 +328,21 @@ src/lib/auth/request-guards.test.ts
 #    들여오지 않는다). db.txt 에 아무것도 더하지 않았다.
 src/lib/domain/image-shrink.test.ts
 src/lib/domain/quote-issue-result.test.ts
+
+# ── 조각 3d-3b — 「붙이기」: 견적서에 파일을 올리는 서버 통로 ──────────────
+# POST /api/quotes/{id}/attachments — A/S 에서 가져온 올리기 라우트의 **검사 순서**를
+# 글자로 지킨다(3d-3a 가 들여온 `isTrustedOrigin` 의 첫 사용처다).
+#
+# 🔴 재는 것은 순서다: 같은 출처 → 세션 → 권한(quotes WRITE) → 견적서 조회 → 분류 ·
+#    이름 · 확장자 → 크기(헤더) → **그 다음에야 본문**. 그리고 파일 먼저 · DB 나중
+#    (commit 이 createAttachmentRecord 보다 앞), 크기 상한 두 겹, 응답에 내부 경로 없음,
+#    `archive` 는 언제나 null(공유폴더는 발행 3c-3 의 몫).
+#
+# 🔴 **그 시험은 라우트 곁이 아니라 한 칸 위에 있다** — `node --test` 가 경로를 글롭으로
+#    읽어 `[id]` 를 「i 또는 d 한 글자」로 본다. 이 목록에 대괄호 줄을 적으면 실행기가
+#    돌기 전에 멈춘다(scripts/run-test-list.mjs). 본보기는 형제 파일
+#    src/app/api/quotes/xlsx-route-source.test.ts (조각 3c-2).
+#
+# 🔴 **DB 쪽은 db.txt 에 있다** — src/lib/db/mutations/attachments.integration.test.ts
+#    (칸 교체 · 감사 · 견적서 잠금 · 조회 둘). 격리 이름은 그 줄의 주석 참조.
+src/app/api/quotes/attachments-route-source.test.ts

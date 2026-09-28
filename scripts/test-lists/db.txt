@@ -74,3 +74,16 @@ src/lib/db/queries/part-picker.integration.test.ts
 #    같은 dss_as_test 를 쓰므로 겹치면 한쪽 after() 가 다른 쪽 자료를 치운다.
 #    고객사 · 제품 · 수리 건은 만들지 않는다 — 견적서와 첨부 둘뿐이다.
 src/lib/db/mutations/attachment-trash.integration.test.ts
+
+# ── 조각 3d-3b — 첨부를 올리는 서버 쪽(A/S 에서 옮겨 옴) ─────────────────
+# `createAttachmentRecord`(행 + FILE_UPLOAD 감사가 한 트랜잭션 · 견적서 행을 잠그고
+# 칸 교체)와 조회 둘(`getQuoteAttachmentUploadTarget` · `listQuoteAttachmentSlots`)을
+# 진짜 DB 에 대고 본다. 저쪽 `mutations/attachments.integration.test.ts` 의 접수 건 ·
+# 제품 모델 갈래는 이 사이트에 오지 않는다(그 파일 머리말).
+# 🔴 **격리 이름을 다른 스위트와 같게 바꾸지 마라** — 발행번호 접두사
+#    `PO-ATTACH-TEST-{실행토큰}-`(이웃은 `PO-ATTRASH-TEST-`, 저쪽은
+#    `QUOTE-ATTACH-TEST-` · `ATTRASH-TEST-`). 같은 dss_as_test 를 쓰므로 겹치면 한쪽
+#    after() 가 다른 쪽 자료를 치운다. 고객사 · 제품 · 수리 건은 만들지 않는다.
+# 🔴 **디스크는 임시 폴더에 쓴다** — `UPLOADS_DIR`(A/S 의 실제 업로드 폴더)을 건드리지
+#    않으려고 저장 어댑터를 임시 루트로 직접 만든다. after() 가 폴더째 지운다.
+src/lib/db/mutations/attachments.integration.test.ts
