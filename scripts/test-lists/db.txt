@@ -99,3 +99,18 @@ src/lib/db/mutations/attachments.integration.test.ts
 #    🔴 before 가 `shipment_approval_routes` 가 비어 있음을 전제로 단언한다 — 「현재
 #    판은 version 이 가장 큰 판」을 재려면 남은 판이 없어야 하기 때문이다.
 src/lib/db/queries/shipment-approval-routes.integration.test.ts
+
+# ── 조각 PO 결재-B — 견적서 결재 요청 · 승인 · 반려 (2026-09-28) ─────────
+# A/S 의 같은 이름 시험(721줄)에서 가져왔다. **단언은 한 줄도 빼지 않았다.**
+# 고친 곳 넷은 그 파일 머리말에 있다: 환경 불러오기 · import 경로 · 🔴 판을
+# **표에 바로 넣는 것**(결재선 저장 경로는 이 사이트에 없다 — 설정은 A/S 에서만
+# 한다. 이웃한 결재선 읽기 시험이 이미 그렇게 한다) · 격리 이름을 가른 것.
+#
+# 🔴 **격리 이름을 저쪽과 같게 바꾸지 마라** — 계정 접두사 `po-qapproval-test-`
+#    (저쪽 `quoteapproval-test-`) · 발행번호 `PO-QAPPR-TEST-{실행토큰}-`
+#    (저쪽 `QA-TEST-`) · 견적일 2095-09(저쪽 2096-03 · 이웃 9503 · 9506 · 9602).
+#    같은 dss_as_test 를 쓰므로 겹치면 한쪽 after() 가 다른 쪽 자료를 치운다.
+# ⚠️ **판·단계는 afterEach 로 반드시 걷는다** — 판이 남으면 이웃한
+#    queries/shipment-approval-routes.integration.test.ts 의 before() 가 깨진다
+#    (그 파일은 판이 하나도 없는 것을 전제로 단언한다).
+src/lib/db/mutations/quote-approvals.integration.test.ts
