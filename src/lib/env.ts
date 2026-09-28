@@ -23,6 +23,9 @@ import { isAutoValue, primaryLanAddress, resolveAutoUrl } from "./lan-address";
 /** 포털(dss-auth)의 포트. */
 const PORTAL_PORT = 3100;
 
+/** A/S 관리 시스템의 포트. */
+const AS_APP_PORT = 3000;
+
 /**
  * 이 사이트의 포트.
  *
@@ -102,6 +105,41 @@ export const env = {
     const n = raw ? Number(raw) : 12;
     if (!Number.isFinite(n) || n <= 0 || n > 12) return 12;
     return n;
+  },
+
+  /* ---------------------------------------------------------------- */
+  /* A/S 관리 시스템 (RF_Service_System, 3000)                          */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * A/S 관리 시스템의 기준 주소. 내자 화면의 인수번호 링크가 이 주소로 간다.
+   *
+   * 🔴 **없어도 된다.** 비어 있으면 null 이고, 그때 화면은 링크 대신 글자만
+   * 그린다(components/domestic-orders/DomesticOrderListScreen.tsx 의
+   * IntakeNumberLink · components/quotes/QuoteListSlots.tsx 의 intakeHref).
+   * 설정이 빠진 서버에서 404 로 가는 링크가 서는 것보다 낫다 — 그 화면의
+   * 「연결 없는 줄을 링크로 만들지 않는다」와 같은 판단이다.
+   *
+   * auto 를 받는다 — SSO_ISSUER · SSO_REDIRECT_URI 와 같은 방식이다.
+   * "auto" 면 이 기계의 사내망 주소와 3000 번으로 풀리므로 Wi-Fi 가 바뀌어도
+   * 따라온다. "auto:3000" 처럼 포트를 적어도 된다.
+   *
+   * 🔴 primaryLanAddress() 는 사내망을 못 찾으면 **던진다.** 링크 하나 때문에
+   * 내자 화면 전체가 500 이 되면 안 되므로 여기서 잡아 null 로 돌린다.
+   *
+   * 끝의 슬래시를 뗀다 — 뒤에 "/repair-cases/…" 를 이을 때 "//" 가 되지 않게.
+   */
+  get asAppBaseUrl(): string | null {
+    const raw = process.env.AS_APP_BASE_URL?.trim();
+    if (!raw) return null;
+    try {
+      const resolved = isAutoValue(raw)
+        ? resolveAutoUrl(raw, AS_APP_PORT, primaryLanAddress())
+        : raw;
+      return resolved.replace(/\/+$/, "");
+    } catch {
+      return null;
+    }
   },
 
   /* ---------------------------------------------------------------- */

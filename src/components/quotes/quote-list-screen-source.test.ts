@@ -253,9 +253,61 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     for (const slot of ["notice="]) {
       assert.equal(both.includes(slot), false, `${slot} — 아직 그 조각이 오지 않았는데 슬롯이 채워져 있다`);
     }
-    // 🔴 인수번호가 가는 곳(수리 건 상세)은 **A/S 의 화면**이다. 사이트를 건너가는
-    // 주소를 이 사이트가 지어내지 않는다 — 조각 4·5 에서 정한다.
-    assert.equal(both.includes("intakeHref="), false, "수리 건 상세 주소를 이 사이트가 지어내고 있다");
+    // ⚠️ 여기 있던 금지 한 줄은 **그때의 기록**이라 지우지 않고 옮겨 적는다:
+    //
+    //     🔴 인수번호가 가는 곳(수리 건 상세)은 **A/S 의 화면**이다. 사이트를 건너가는
+    //     주소를 이 사이트가 지어내지 않는다 — 조각 4·5 에서 정한다.
+    //     assert.equal(both.includes("intakeHref="), false, …);
+    //
+    // 🔴 **풀었다**(2026-09-28 · 조각 PO 3i). 그 금지의 전제는 「저쪽 주소를 알 길이
+    //    없다」였고, 이제 설정으로 받는다(`AS_APP_BASE_URL` — lib/env.ts 의
+    //    asAppBaseUrl). 🔴 **지우지 않고 긍정 단언으로 갈았다** — 아래 이웃 시험이
+    //    「무엇이 어디에 걸렸는지」를 이름으로 못 박는다(3c-2 가 `renderRowActions=`
+    //    에서 한 방식과 같다). 지금도 **금지인 것은 `notice=` 하나**다(위 루프).
+  });
+
+  test("🔴 조각 PO 3i — 인수번호는 A/S 의 수리 건 상세로 간다. 주소를 못 지으면 링크가 없다", () => {
+    const slots = flat(slotsSource);
+
+    // 🔴 함수 슬롯이라 **QuoteListSlots 에서** 건다 — page.tsx 에서 넘기면 화면이 죽는다
+    //    (그쪽에 없다는 것은 위 「함수 슬롯 넷을 하나도 넘기지 않는다」가 잰다).
+    assert.ok(
+      slots.includes("intakeHref={(row) => buildRepairCaseUrl(asAppBaseUrl, row.repairCaseId ?? \"\")}"),
+      "인수번호 슬롯이 채워지지 않았거나 모양이 다르다"
+    );
+
+    // 🔴 주소를 **짓는 규칙은 한 벌**이다 — 내자 정리 화면이 같은 함수를 쓴다.
+    //    여기서 문자열을 이어 붙이기 시작하면 두 화면의 주소가 갈라지는 날이 온다.
+    assert.ok(
+      slots.includes('import { buildRepairCaseUrl } from "@/lib/domain/as-app-link";'),
+      "주소 짓는 규칙을 공용 함수에서 가져오지 않는다"
+    );
+    assert.equal(
+      slots.includes("/repair-cases"),
+      false,
+      "QuoteListSlots 가 수리 건 주소를 직접 짓고 있다 — 규칙은 as-app-link.ts 한 곳이다"
+    );
+
+    // 🔴 그 기준 주소는 **설정값**이라 서버가 내려보낸다(글자라 경계를 넘는다).
+    const call = flat(sliceBetween(pageSource, "<QuoteListSlots", "/>\n  );"));
+    assert.ok(call.includes("asAppBaseUrl={env.asAppBaseUrl}"), "A/S 기준 주소를 서버가 내려보내지 않는다");
+    assert.ok(
+      flat(pageSource).includes('import { env } from "@/lib/env";'),
+      "page.tsx 가 설정을 읽지 않는다"
+    );
+
+    // 🔴 **없어도 돌아야 한다** — 설정이 빠진 서버에서 404 로 가는 링크가 서는 것보다
+    //    글자만 보이는 쪽이 낫다는 판단이다. 그 판정은 순수 함수가 지키고
+    //    (domain/as-app-link.test.ts), 여기서는 **그 길이 열려 있는지**만 본다:
+    //    프롭의 타입이 null 을 받고, 화면이 짓는 값도 null 일 수 있다.
+    assert.ok(
+      slots.includes("type QuoteListSlotsProps = PassThroughProps & { asAppBaseUrl: string | null };"),
+      "기준 주소가 없는 경우(null)를 받지 않는다"
+    );
+    assert.ok(
+      flat(read("src/lib/env.ts")).includes("get asAppBaseUrl(): string | null {"),
+      "설정 getter 가 없거나 없을 때 null 을 돌려주지 않는다"
+    );
   });
 
   test("🔴 조각 3c-2 · 3d-2 — 줄마다 [견적서 받기] 링크가 선다. 엑셀이 붙은 엑셀 전용 줄도 같은 링크다", () => {

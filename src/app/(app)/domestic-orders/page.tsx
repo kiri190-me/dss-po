@@ -12,6 +12,7 @@ import {
 import { getDomesticOrderSheetHeading } from "@/lib/db/queries/domestic-order-sheet-settings";
 import { listQuoteOptions } from "@/lib/db/queries/quotes";
 import { toKstDateOnly } from "@/lib/domain/date-only";
+import { env } from "@/lib/env";
 
 export const metadata: Metadata = {
   title: "내자 정리 | DSS PO / 내자",
@@ -112,6 +113,22 @@ export default async function DomesticOrdersPage() {
       canDelete={canDelete}
       trashRows={trashRows}
       sheetHeading={sheetHeading}
+      /**
+       * 🔴 조각 PO 3i — **인수번호를 누르면 A/S 의 수리 건 상세로 간다.**
+       *
+       * 그 화면은 이 사이트에 없다(여기는 domestic-orders · quotes · repair-labor ·
+       * no-access 넷뿐). 그래서 저쪽(RF_Service_System, 3000)의 기준 주소를 서버가
+       * 읽어 내려보낸다 — 설정값이라 서버만 알 수 있다.
+       *
+       * 🔴 **없으면 null 이고 그때 링크를 만들지 않는다**(env.ts 의 asAppBaseUrl ·
+       * domain/as-app-link.ts). 설정이 빠진 서버에서 404 로 가는 링크가 서는 것보다
+       * 낫다 — 화면의 「연결 없는 줄을 링크로 만들지 않는다」와 같은 판단이다.
+       *
+       * 🔴 이것은 **글자**라 서버 경계를 그대로 넘는다. 주소를 **짓는 일**은 화면
+       * 쪽에서 한다 — 함수는 이 경계를 못 넘는다(견적서 목록이 같은 까닭으로
+       * QuoteListSlots 를 거친다).
+       */
+      asAppBaseUrl={env.asAppBaseUrl}
     />
   );
 }

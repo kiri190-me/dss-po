@@ -675,3 +675,22 @@ src/app/api/quote-folder-helper/install-command/route-source.test.ts
 #    여덟 → 열하나로 늘렸다** — 폴더 열기 통로 셋도 결재 표를 한 글자도 읽으면 안
 #    된다(2026-09-18 사용자 결정). 그 목록의 뜻이 「파일을 내주는 길」에서 「견적서를
 #    내주는 서버 길 전부」로 넓어진 것도 그 자리에 적어 두었다.
+
+# ── 조각 PO 3i — 두 사이트를 잇는 링크 주소 (2026-09-28) ─────────────────
+# 내자 정리의 **인수번호**와 견적서 목록의 **인수번호 칸**을 누르면 A/S 의 수리 건
+# 상세(`/repair-cases/{id}`)로 간다. 그 화면은 이 사이트에 없어서 지금까지 내자 쪽은
+# **PO 의 404** 로 갔고(next/link 로 `/repair-cases/…` 를 지었다), 견적서 목록 쪽은
+# 슬롯(`intakeHref`)을 **비워 둔 채** 글자로만 보였다.
+#
+# 🔴 여기 적는 것은 **주소를 짓는 순수 함수 한 벌**이다 — `env.asAppBaseUrl` 은
+#    process.env 에 매달려 있어 이 목록(환경변수도 DB 도 없다)에서 잴 것이 아니라,
+#    판정만 떼어 `domain/as-app-link.ts` 로 꺼냈다. 재는 것은 **못 만들 때 null 인가**다:
+#    설정 없음 · http(s) 아님 · 수리 건 연결 없음. 그리고 id 를 감싸(encodeURIComponent)
+#    언제나 `/repair-cases/` 아래로만 가는가.
+#
+# 🔴 **화면 두 곳은 글자로 읽는 시험이 본다** — 내자 쪽은 이미 이 목록에 있는
+#    components/domestic-orders/domestic-order-intake-link.test.ts, 견적서 목록 쪽은
+#    components/quotes/quote-list-screen-source.test.ts(그 파일이 비워 두라고 치던
+#    울타리를 이 조각이 **긍정 단언으로 바꿨다**).
+src/lib/domain/as-app-link.test.ts
+src/components/domestic-orders/domestic-order-intake-link.test.ts

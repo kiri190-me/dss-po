@@ -259,6 +259,65 @@ describe("내려받기 통로 — 소스로 지킨다", () => {
       "미리보기 고르기가 달라졌다"
     );
   });
+
+  /**
+   * ==========================================================================
+   * 🔴 전역 보안 헤더와 이 통로 (2026-09-28 · 조각 PO 3i)
+   * ==========================================================================
+   * 조각 PO 3h 가 `next.config.ts` 에 전역 보안 헤더 **여섯**을 놓았다. 전역
+   * `headers()` 가 **먼저** 붙고, 라우트가 내는 헤더는 그 이름이 이미 있으면 Next 가
+   * **조용히 버린다**(node_modules/next/dist/server/send-response.js — 여럿 허용은
+   * set-cookie · www-authenticate · proxy-authenticate · vary 넷뿐).
+   *
+   * 🔴 **형제 시험(api/quotes/archive-folder-route-source.test.ts)을 그대로 베끼지
+   * 않는다.** 저쪽은 「그 이름을 라우트가 **붙이지 않는다**」를 재지만, 이 통로는
+   * `X-Content-Type-Options` 를 **일부러 겹쳐서 낸다** — 전역 목록이 바뀌거나 이
+   * 통로가 다른 앞단 뒤로 옮겨지는 날을 위한 선언이다(A/S 도 같은 두 자리에서 지우지
+   * 않는다). 그래서 여기서 재는 것은 셋이다:
+   *   ① 전역 목록에 여섯이 **여전히 있다**(위 사실의 전제).
+   *   ② 이 통로가 겹쳐 내는 이름은 **그 하나뿐**이다 — 하나 더 늘면 그 헤더는
+   *      코드에는 있고 응답에는 없는 상태가 된다(오류도 경고도 나지 않는다).
+   *   ③ 겹치는 그 하나의 **값이 전역과 같다.** 갈라지면 나가는 값이 조용히
+   *      전역 쪽으로 바뀐다 — 이 파일만 읽어서는 알 수 없는 고장이다.
+   * ==========================================================================
+   */
+  test("🔴 전역 보안 헤더 — 겹치는 이름은 nosniff 하나이고, 값이 전역과 같다", () => {
+    const nextConfig = readFileSync(new URL("../../../../next.config.ts", import.meta.url), "utf8");
+    const GLOBAL_HEADERS = [
+      "X-Frame-Options",
+      "Content-Security-Policy",
+      "X-Content-Type-Options",
+      "Referrer-Policy",
+      "Permissions-Policy",
+      "Strict-Transport-Security",
+    ] as const;
+    /** 응답이 붙이는 헤더 묶음만 — 주석을 뺀 코드에서 잘라 본다. */
+    const headers = flat(
+      codeOnly.slice(
+        codeOnly.indexOf("return new NextResponse(stream,"),
+        codeOnly.indexOf('"Cache-Control": "private, no-store"')
+      )
+    );
+    assert.ok(headers.length > 0, "전송 자리를 찾지 못했다");
+
+    for (const name of GLOBAL_HEADERS) {
+      // ① 전제 — 전역 목록이 바뀌면 여기서 소리가 난다.
+      assert.ok(nextConfig.includes(`"${name}"`), `next.config.ts 의 전역 헤더 목록이 바뀌었다: ${name}`);
+      // ② 겹치는 것은 nosniff 하나뿐이다.
+      if (name === "X-Content-Type-Options") continue;
+      assert.equal(
+        headers.includes(`"${name}"`),
+        false,
+        `전역과 이름이 겹치는 헤더를 새로 낸다 — 조용히 버려진다: ${name}`
+      );
+    }
+    // ③ 그 하나의 값이 전역과 같다(위 「응답에 내부 경로를 싣지 않는다」가 이 줄의 존재를 잰다).
+    assert.ok(headers.includes('"X-Content-Type-Options": "nosniff"'), "겹쳐 내는 값이 nosniff 가 아니다");
+    assert.ok(
+      flat(nextConfig).includes('{ key: "X-Content-Type-Options", value: "nosniff" }'),
+      "전역의 값이 nosniff 가 아니다 — 나가는 값이 이 라우트의 것과 달라진다"
+    );
+  });
 });
 
 /**
@@ -278,6 +337,13 @@ describe("내려받기 통로 — 소스로 지킨다", () => {
  * 헤더(sandbox) 시험이 없는 것은 빠뜨린 것이 아니다 — 그 함수는 저쪽에서 **지웠고**
  * (붙여도 전역 CSP 와 이름이 겹쳐 브라우저까지 가지 못했다), 이 사이트에는 애초에
  * 전역 헤더가 없다. 사연은 inline-view.ts 의 🚨 절에 있다.
+ *
+ * ⚠️ 🔴 **마지막 한 마디가 바뀌었다**(2026-09-28 · 조각 PO 3i). 위 문단은 **그때의
+ * 기록이라 그대로 둔다** — 다만 「이 사이트에는 애초에 전역 헤더가 없다」는 이제
+ * 거짓이다. 조각 PO 3h 가 `next.config.ts` 에 전역 보안 헤더 **여섯**을 놓았고
+ * (A/S 와 같은 목록), 그래서 **저쪽과 같은 까닭으로** 격리 헤더를 붙일 자리가 없다 —
+ * 붙여도 이름이 겹치면 Next 가 조용히 버린다. 결론(시험이 없는 것이 맞다)은 그대로다.
+ * 🔴 아래 「전역 보안 헤더」 묶음이 그 여섯이 실제로 있는지를 이제 함께 잰다.
  * ============================================================================
  */
 describe("inline 판정 — 실제로 불러서 잰다", () => {

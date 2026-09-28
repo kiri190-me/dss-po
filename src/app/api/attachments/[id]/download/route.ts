@@ -335,6 +335,28 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   // 저쪽이 모든 주소에 걸고 있는 `frame-ancestors 'none'` 같은 것이 여기에는
   // 없다. 그것을 더하는 일은 이 통로가 아니라 next.config.ts 에서 **따로 승인을
   // 받아** 할 일이고, 그날 여기 이 주석도 함께 고쳐야 한다.
+  //
+  // ── 🔴 **바뀌었다** (2026-09-28 · 조각 PO 3i) ─────────────────────────────
+  // 위 두 문단은 **그때의 기록이라 지우지 않고 그대로 둔다.** 그날이 왔다 — 조각
+  // PO 3h 가 `next.config.ts` 에 **전역 보안 헤더 여섯**을 놓았다(A/S 의 값도
+  // 곁말도 그대로). 그래서 위 문단의 결론 둘이 **반대**가 되었다:
+  //
+  //  · 전역 `headers()` 가 **먼저** 붙고, 라우트가 내는 헤더는 그 이름이 이미
+  //    있으면 Next 가 **조용히 버린다**(node_modules/next/dist/server/
+  //    send-response.js — 여럿 허용은 set-cookie · www-authenticate ·
+  //    proxy-authenticate · vary 넷뿐). 오류도 경고도 없다.
+  //  · **전역 보안 헤더의 보호가 이제 있다** — `frame-ancestors 'none'` 을 비롯한
+  //    여섯이 이 응답에도 붙는다.
+  //
+  // 🔴 **그래도 나가는 응답은 달라지지 않았다.** 이 통로가 스스로 내는 것 중
+  // 겹치는 이름은 `X-Content-Type-Options` **하나**이고, 값이 `nosniff` 로 전역과
+  // **똑같다**(2026-09-28 실측 — 로그인 상태의 200 응답을 직접 열어 확인했다).
+  // 이름이 안 겹치는 `Content-Type` · `Content-Length` · `Content-Disposition` ·
+  // `Cache-Control` 은 **그대로 살아남는다.**
+  //
+  // 🔴 **겹치는 `nosniff` 를 지우지 않는 까닭**: A/S 도 같은 두 자리에서 같은 값을
+  // 겹쳐 둔 채 지우지 않는다 — 전역 목록이 바뀌거나 이 통로가 다른 앞단 뒤로
+  // 옮겨지는 날을 위한 선언이다(next.config.ts 의 같은 곁말).
   // ==========================================================================
   return new NextResponse(stream, {
     status: 200,
@@ -346,7 +368,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       "Content-Disposition": contentDispositionFor(attachment.originalFileName, inline),
       // 브라우저가 내용을 보고 형식을 다시 추측하지 않게 한다. 추측을 허용하면
       // mime_type 검증을 통과한 파일이 다른 형식으로 실행될 수 있다.
-      // 🔴 저쪽과 달리 **이 줄이 실제로 나가는 값이다**(바로 위 항목).
+      // ⚠️ 여기에는 「🔴 저쪽과 달리 **이 줄이 실제로 나가는 값이다**」가 적혀
+      // 있었다 — **2026-09-28(조각 PO 3h) 전의 기록이다.** 이제 저쪽과 같다: 이 줄은
+      // 전역 목록과 이름이 겹쳐 **버려지고**, 같은 값(`nosniff`)이 전역에서 나간다.
+      // 지우지 않는 까닭은 바로 위 ⑧ 의 마지막 문단에 있다.
       "X-Content-Type-Options": "nosniff",
       // 첨부는 사내 자료다. 중간 캐시나 브라우저 디스크에 남기지 않는다.
       "Cache-Control": "private, no-store",

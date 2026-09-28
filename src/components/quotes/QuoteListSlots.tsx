@@ -4,6 +4,7 @@ import { useState, type ComponentProps } from "react";
 
 import QuoteListScreen from "@dss/core/ui/quotes/QuoteListScreen";
 import type { QuoteListItem } from "@dss/core/ui/quotes/quote-list-rows";
+import { buildRepairCaseUrl } from "@/lib/domain/as-app-link";
 import {
   QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE,
   canRenderQuoteDocument,
@@ -35,7 +36,12 @@ import { QUOTE_EXCEL_MISSING_NOTICE } from "./quote-attachment-files";
  * 화면의 슬롯 일곱 중 **함수 넷**이 전부 이 경계에 걸린다:
  *
  *     rowHref           줄을 눌러 여는 곳            ← 조각 3b-1 (아래, 채웠다)
- *     intakeHref        인수번호를 눌러 가는 곳       ← 조각 4·5
+ *     intakeHref        인수번호를 눌러 가는 곳       ← 🔴 **조각 PO 3i** (아래, 채웠다)
+ *                                                     2026-09-28. 「← 조각 4·5」라고
+ *                                                     적혀 있던 자리다 — 저쪽(A/S)의
+ *                                                     기준 주소를 **설정으로** 받게
+ *                                                     되면서 그때가 앞당겨졌다
+ *                                                     (env.ts 의 asAppBaseUrl)
  *     renderFileBadges  줄의 파일 딱지               ← 조각 3c-2 (아래, 채웠다)
  *                                                     딱지 셋이 다 붙는다(3d-0) —
  *                                                     엑셀 전용 · 결재 PDF · 엑셀 없음.
@@ -54,6 +60,13 @@ import { QUOTE_EXCEL_MISSING_NOTICE } from "./quote-attachment-files";
  * 🔴 **남은 하나(`intakeHref`)도 `page.tsx` 가 아니라 여기에 건다.** 저기서 넘기면
  * 화면이 똑같이 죽는다. 남은 셋(`newQuoteControl` · `notice` 는 ReactNode,
  * `emptyMessage` 는 글자)은 서버에서 넘겨도 된다 — 지금처럼 `page.tsx` 에 둔다.
+ *
+ * ── 🔴 **채웠다** (2026-09-28 · 조각 PO 3i) ──────────────────────────────
+ * 위 문단은 **그때의 기록이라 그대로 둔다.** 그날이 왔고, 적힌 대로 했다 —
+ * `intakeHref` 는 **여기서** 건다. 다만 그 주소에 필요한 것(A/S 의 기준 주소)은
+ * **설정값**이라 서버만 안다. 그래서 `page.tsx` 가 그 **글자**를 프롭으로 내려보내고
+ * (글자는 경계를 넘어도 된다) 주소를 **짓는 함수**는 여기서 얹는다. 짓는 규칙은
+ * `lib/domain/as-app-link.ts` 한 벌이고, 내자 정리 화면이 같은 함수를 쓴다.
  *
  * 🔴 **`newQuoteControl` 은 그대로 `page.tsx` 가 넘기지만, 그 안의 조각은 여기 있다**
  * (조각 3e-3 의 `NewQuoteControl` — 아래). 슬롯이 ReactNode 라 서버 경계를 넘는 것은
@@ -297,7 +310,17 @@ type PassThroughProps = Omit<
   "rowHref" | "intakeHref" | "renderFileBadges" | "renderRowActions"
 >;
 
-export default function QuoteListSlots(props: PassThroughProps) {
+/**
+ * 🔴 조각 PO 3i — 화면이 받지 않는 값 하나를 **이 조각이** 받는다.
+ *
+ * `asAppBaseUrl` 은 A/S 관리 시스템(3000)의 기준 주소다. 서버(page.tsx)가 설정에서
+ * 읽어 내려보내고, 아래 `intakeHref` 가 그것으로 주소를 짓는다. 🔴 **서브모듈 화면에
+ * 넘기지 않는다** — 그 화면은 두 사이트가 함께 쓰는 한 벌이라 사이트마다의 주소를
+ * 알면 안 되고(그래서 슬롯이 함수다), 그래서 아래에서 `{...rest}` 로 갈라 보낸다.
+ */
+type QuoteListSlotsProps = PassThroughProps & { asAppBaseUrl: string | null };
+
+export default function QuoteListSlots({ asAppBaseUrl, ...props }: QuoteListSlotsProps) {
   return (
     <QuoteListScreen
       {...props}
@@ -313,6 +336,30 @@ export default function QuoteListSlots(props: PassThroughProps) {
        * 요청 앞에서 아무것도 막지 못한다.
        */
       rowHref={(row) => (props.canEdit ? `/quotes/${row.id}` : null)}
+      /**
+       * 🔴 조각 PO 3i — **인수번호를 누르면 A/S 의 수리 건 상세로 간다.**
+       *
+       * ⚠️ 이 슬롯은 2026-09-28 까지 **비어 있었다.** 까닭은 「수리 건 상세는 A/S 의
+       * 화면인데 그 주소를 이 사이트가 알 길이 없다」였고, 이제 설정으로 받는다
+       * (`AS_APP_BASE_URL` — env.ts). 비워 두는 동안 화면은 인수번호를 글자로 그렸고
+       * (서브모듈의 `IntakeLink`), **지금도 주소를 못 만들면 똑같이 글자다.**
+       *
+       * 🔴 못 만드는 갈래 둘 — 설정이 없거나 값이 엉뚱할 때, 그 줄에 수리 건 연결이
+       * 없을 때. 둘 다 `buildRepairCaseUrl` 이 null 로 답하고 화면이 글자로 그린다
+       * (domain/as-app-link.ts). 내자 정리 화면이 **같은 함수**를 쓴다 — 두 벌이 되면
+       * 한쪽만 고쳐지는 날이 온다.
+       *
+       * 🔴 `row.repairCaseId` 가 없는 줄에는 화면이 이 함수를 부르지도 않는다(그쪽이
+       * 먼저 「연결된 접수 건이 없습니다」로 그린다). `?? ""` 는 그 약속이 바뀌어도
+       * 링크를 짓지 않게 하는 빗장이다.
+       *
+       * ⚠️ 서브모듈의 `IntakeLink` 는 이 주소를 `next/link` 로 그린다. **다른 사이트
+       * 주소라도 괜찮다** — Next 는 바깥 주소면 가로채지 않고 브라우저에 맡긴다
+       * (node_modules/next/dist/client/app-dir/link.js 의 `isLocalURL` 갈래 — 실측
+       * 2026-09-28). 같은 탭에서 열리고, 이는 A/S 의 같은 링크와 같은 동작이다.
+       * 🔴 그래서 **서브모듈은 손대지 않는다.**
+       */
+      intakeHref={(row) => buildRepairCaseUrl(asAppBaseUrl, row.repairCaseId ?? "")}
       /**
        * 🔴 조각 3c-2 — **줄마다 [견적서 받기] 링크가 선다.**
        *

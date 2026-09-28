@@ -4,6 +4,7 @@ import QuoteListSlots, { NewQuoteControl } from "@/components/quotes/QuoteListSl
 import { requireAreaAccessForCurrentUser } from "@/lib/auth/area-guard";
 import { hasPermission } from "@/lib/auth/permission-resolver";
 import { listDeletedQuotes, listQuotes } from "@/lib/db/queries/quotes";
+import { env } from "@/lib/env";
 import {
   deleteQuoteAction,
   permanentlyDeleteQuoteAction,
@@ -62,11 +63,19 @@ export const dynamic = "force-dynamic";
  *                                「엑셀 전용」 배지 하나가 붙는다(그 값은 quotes 의
  *                                칸이라 첨부를 보지 않는다). 「결재 PDF」 ·
  *                                「엑셀 없음」은 붙은 파일을 세어야 하므로 3d 다.
- *   intakeHref                 → 🔴 **QuoteListSlots 에**(함수). 수리 건 상세는
- *                                **A/S 의 화면**이다 — 사이트를 건너가는 주소를
- *                                이 사이트가 지어내지 않는다. 그 주소를 어디서
- *                                얻을지는 배포 설정의 일이고 조각 4·5 에서 정한다.
- *                                지금은 인수번호가 글자로 보인다.
+ *   ✅ intakeHref              → 🔴 **조각 PO 3i 에서 채웠다**(2026-09-28).
+ *                                🔴 **QuoteListSlots 에서** — 함수라 여기서는 못
+ *                                넘긴다. 인수번호를 누르면 A/S 의 수리 건 상세
+ *                                (`{AS_APP_BASE_URL}/repair-cases/{id}`)로 간다.
+ *                                ⚠️ 여기 적혀 있던 「그 주소를 어디서 얻을지는 배포
+ *                                설정의 일이고 조각 4·5 에서 정한다. 지금은 인수번호가
+ *                                글자로 보인다」는 **그때의 기록**이다 — 그 「배포
+ *                                설정」이 `AS_APP_BASE_URL` 로 생겼다(env.ts).
+ *                                🔴 **설정이 없으면 예전 그대로 글자로 보인다** —
+ *                                주소를 못 지으면 링크를 만들지 않는다.
+ *                                🔴 그 **글자**(기준 주소)는 서버만 아는 값이라
+ *                                여기서 `asAppBaseUrl` 로 내려보낸다. 글자는 서버
+ *                                경계를 넘어도 된다 — 넘지 못하는 것은 함수다.
  *   ✅ newQuoteControl          → 조각 3b-2 에서 채웠고 **조각 3e-3 에서 팝업이
  *                                되었다**. 🔴 **여기서** — ReactNode 라 서버에서
  *                                넘어간다(함수 슬롯과 갈리는 자리다). 창을 여닫는
@@ -110,6 +119,19 @@ export default async function QuotesPage() {
       trashRows={trashRows}
       canEdit={canEdit}
       canDelete={canDelete}
+      /**
+       * 🔴 조각 PO 3i — **인수번호 칸이 A/S 의 수리 건 상세로 간다.**
+       *
+       * 위 「이 조각에 아직 없는 것」의 `intakeHref` 자리가 이것이다. 그 슬롯은
+       * **함수**라 여기서 넘길 수 없지만(넘기면 화면이 죽는다), 주소를 지으려면
+       * **설정값**이 있어야 하고 그것은 서버만 안다. 그래서 갈라 둔다 — 여기서는
+       * **글자**(기준 주소)만 내려보내고, 주소를 짓는 함수는 QuoteListSlots 가 얹는다.
+       *
+       * 🔴 **없으면 null 이고, 그때 인수번호는 지금까지처럼 글자로 보인다**
+       * (env.ts 의 asAppBaseUrl · domain/as-app-link.ts). 설정이 빠진 서버에서 404 로
+       * 가는 링크가 서는 것보다 낫다.
+       */
+      asAppBaseUrl={env.asAppBaseUrl}
       /**
        * 🔴 조각 3e-3 — **[새 견적서] 를 누르면 팝업이 뜬다.**
        *

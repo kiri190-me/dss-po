@@ -1,7 +1,9 @@
 "use client";
 
 import { useId, useMemo, useState, useTransition, type MouseEvent, type ReactNode } from "react";
-import Link from "next/link";
+// 🔴 `next/link` 를 쓰지 않는다(조각 PO 3i). 이 화면의 링크는 인수번호 하나뿐이고,
+//    그것이 가는 곳은 **다른 사이트**(A/S, 3000)다 — next/link 는 같은 사이트 안을
+//    도는 도구라 맞지 않는다. 아래 IntakeNumberLink 가 평범한 <a> 로 그린다.
 import { useRouter } from "next/navigation";
 import { showSavePopup } from "@/components/common/SavePopup";
 // 🔴 아래 넷은 2026-09-21(조각 3a)에 **서브모듈(vendor/dss-core)로 옮겨 갔다.**
@@ -39,6 +41,7 @@ import {
   isDomesticOrderSearchActive,
   resolveInitialDomesticOrderYear,
 } from "@/lib/domain/domestic-order-list";
+import { buildRepairCaseUrl } from "@/lib/domain/as-app-link";
 import {
   DOMESTIC_ORDER_DUE_DATE_LINK_NOTE,
   DUE_DATE_FROM_REPAIR_CASE_LABEL,
@@ -1326,13 +1329,35 @@ function EditRowButton({
  *
  * 연결 없는 줄을 링크로 만들지 않는 것은 갈 곳이 없어서다. 링크처럼 보이는데
  * 눌러도 아무 일이 없으면, 사람은 그 줄이 고장 났다고 읽는다.
+ *
+ * ── 🔴 **이 링크는 A/S 로 나간다** (2026-09-28 · 조각 PO 3i) ───────────────
+ * 수리 건 상세(`/repair-cases/{id}`)는 **A/S 관리 시스템(3000)의 화면**이다. 이
+ * 사이트에는 그 경로가 없다 — 그래서 그때까지 이 링크는 **PO 의 404** 로 갔다.
+ * 이제 서버가 내려보낸 저쪽 기준 주소(`asAppBaseUrl` — env.ts · page.tsx)로
+ * 절대 주소를 짓는다(domain/as-app-link.ts 의 buildRepairCaseUrl).
+ *
+ * 🔴 **주소 설정이 없으면 링크를 만들지 않고 글자만 그린다** — 연결이 없는 줄과
+ * 똑같이. 위 문단과 같은 판단이다: 갈 곳이 없는 링크를 내밀지 않는다.
+ *
+ * 🔴 `next/link` 가 아니라 평범한 `<a>` 다. 그 도구는 같은 사이트 안을 도는 것이라
+ * 다른 사이트 주소에는 맞지 않는다. **같은 탭**에서 연다(`target="_blank"` 를 붙이지
+ * 않는다) — A/S 의 같은 링크와 같은 동작이다.
  */
-function IntakeNumberLink({ row }: { row: DomesticOrderListItem }) {
+function IntakeNumberLink({
+  row,
+  asAppBaseUrl,
+}: {
+  row: DomesticOrderListItem;
+  asAppBaseUrl: string | null;
+}) {
   const label = dash(row.displayIntakeNumber);
   if (row.repairCaseId === null) return <>{label}</>;
+  const href = buildRepairCaseUrl(asAppBaseUrl, row.repairCaseId);
+  // 저쪽 주소를 모르면(설정이 없거나 값이 엉뚱하면) 글자만 — 위 갈래와 같다.
+  if (href === null) return <>{label}</>;
   return (
-    <Link
-      href={`/repair-cases/${row.repairCaseId}`}
+    <a
+      href={href}
       // 줄 아무 데나 누르면 수정 폼이 열린다 — 여기서 막지 않으면 수리 건으로
       // 넘어가면서 폼도 함께 열린다.
       onClick={(event) => event.stopPropagation()}
@@ -1346,7 +1371,7 @@ function IntakeNumberLink({ row }: { row: DomesticOrderListItem }) {
     >
       {label}
       <span className="sr-only"> 수리 건 상세로 이동</span>
-    </Link>
+    </a>
   );
 }
 
@@ -1699,6 +1724,7 @@ export default function DomesticOrderListScreen({
   canDelete = false,
   trashRows = [],
   sheetHeading,
+  asAppBaseUrl = null,
 }: {
   rows: DomesticOrderListItem[];
   /** 서버가 정한 "오늘". 머리말의 진행 상황 날짜다. */
@@ -1730,6 +1756,15 @@ export default function DomesticOrderListScreen({
    * 있는지는 canEdit 과 같은 판정이다(page.tsx).
    */
   sheetHeading: DomesticOrderSheetHeadingView;
+  /**
+   * 🔴 조각 PO 3i — A/S 관리 시스템(3000)의 기준 주소. 인수번호 링크가 그리로
+   * 나간다(IntakeNumberLink). 서버가 설정에서 읽어 내려보낸다(page.tsx).
+   *
+   * 🔴 **null 이면 링크를 만들지 않는다** — 인수번호가 글자로만 보인다. 설정이 빠진
+   * 서버에서 404 로 가는 링크가 서는 것보다 낫다. 기본값을 null 로 둔 것은 이 값이
+   * **없어도 화면이 돌아야 한다**는 뜻이다(권한 프롭들과 같은 모양).
+   */
+  asAppBaseUrl?: string | null;
 }) {
   const [editTarget, setEditTarget] = useState<EditTarget>(null);
   const [view, setView] = useState<ListView>("active");
@@ -2324,7 +2359,7 @@ export default function DomesticOrderListScreen({
                             (queries 의 displayIntakeNumber). 빈 줄로 두면 이어 붙일
                             단서가 화면에서 사라진다. */}
                         <td className="px-3 py-2 font-medium text-zinc-900 dark:text-zinc-50">
-                          <IntakeNumberLink row={row} />
+                          <IntakeNumberLink row={row} asAppBaseUrl={asAppBaseUrl} />
                         </td>
                         <td className="px-3 py-2">{dash(row.modelName)}</td>
                         <td className="px-3 py-2">{dash(row.lotNumber)}</td>
@@ -2533,7 +2568,7 @@ export default function DomesticOrderListScreen({
                               화면처럼 읽힌다. */}
                           <div className="flex flex-wrap items-baseline justify-between gap-2">
                             <span className="font-semibold text-zinc-900 dark:text-zinc-50">
-                              <IntakeNumberLink row={row} />
+                              <IntakeNumberLink row={row} asAppBaseUrl={asAppBaseUrl} />
                             </span>
                             <span className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
                               순번 {dash(row.displayOrder)}
