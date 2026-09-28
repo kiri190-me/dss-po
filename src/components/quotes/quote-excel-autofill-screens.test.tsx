@@ -19,13 +19,12 @@ import type { QuoteIssueNoticeLine } from "./quote-issue-messages";
  * 불변식 넷: (a) 읽기가 실패해도 붙이기는 그대로 (b) 사람이 적은 값을 말없이 덮지 않는다
  * (c) 종류 변경은 한 길 (d) 엑셀 전용이 아니면 아무 일도 없다.
  *
- * ── 🔴 A/S 의 같은 시험(355줄)에서 고친 한 곳 ───────────────────────────
+ * ── ⚠️ A/S 의 같은 시험(355줄)에서 고쳤던 한 곳 — 🔴 **되돌렸다**(조각 3c-3) ──
  * 저쪽은 훅의 세 함수 몸통을 잘라 볼 때 **끝 표지**로 `"function reloadAfterIssue("` 를
- * 쓴다. 🔴 **이 사이트의 QuoteAttachmentsSection 에는 그 함수가 없다** — [견적서 받기]
- * 뒤에 서버 칸을 다시 그려 오는 자리이고, 그 머리 단추가 **조각 3c-3**(발행)의 것이라
- * 함께 오지 않았다(그 파일 머리말의 「안 가져온 것 셋」). 그래서 그 한 자리만 **다음
- * 함수 이름**(`return {`) 으로 잘랐다 — 재는 것은 그대로다: 「[다시 올리기] · 저장 뒤
- * 올리기는 엑셀을 다시 읽지 않는다」.
+ * 쓴다. 조각 3d-4 때는 이 사이트의 QuoteAttachmentsSection 에 그 함수가 없어 그 한
+ * 자리만 다음 함수 이름(`return {`)으로 잘랐다. 🔴 **조각 3c-3(발행)이 그 함수를
+ * 되돌려 놓아**(2026-09-28) 끝 표지도 **저쪽 글자 그대로** 돌아왔다 — 재는 것은
+ * 처음부터 그대로다: 「[다시 올리기] · 저장 뒤 올리기는 엑셀을 다시 읽지 않는다」.
  * ============================================================================
  */
 
@@ -67,8 +66,8 @@ describe("훅 — 「수기 견적서 엑셀」을 고른 순간을 폼에 알�
     for (const [start, end] of [
       ["async function uploadNow(", "function pickFile("],
       ["function retry(", "function clearPending("],
-      // 🔴 저쪽의 끝 표지 `"function reloadAfterIssue("` 를 바꾼 그 한 자리(머리말).
-      ["async function uploadQueuedAfterCreate(", "return { quoteId,"],
+      // 🔴 조각 3c-3 이 저쪽의 끝 표지를 그대로 되돌려 놓았다(머리말).
+      ["async function uploadQueuedAfterCreate(", "function reloadAfterIssue("],
     ]) {
       const body = sliceBetween(section, start, end);
       assert.ok(!body.includes("onExcelPicked"), `${start} 가 읽기를 부른다([다시 올리기] · 저장 뒤 올리기는 다시 읽지 않는다)`);

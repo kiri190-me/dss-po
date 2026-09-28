@@ -89,9 +89,11 @@ import { QuoteAttachmentDeleteDialog, QuoteAttachmentSlotsView } from "./QuoteAt
  *  · ⚠️ `onExcelPicked`(수기 엑셀로 칸 채우기, 견적서 ①b) — 그때의 기록이다.
  *    🔴 **조각 3e-3 에 왔다**(2026-09-28). 아래 `pickFile` 이 「수기 견적서 엑셀」
  *    칸일 때만 폼에 알리고, `excelSlotDetails` 도 이제 폼이 그린 알림을 받는다.
- *  · `reloadAfterIssue` — 폼의 [견적서 받기]가 「수기 견적서 엑셀」 칸을 바꿨을 때
- *    서버 칸을 다시 그려 오는 자리다. 그 머리 단추는 **조각 3c-3** 의 것이라 이
- *    사이트의 폼에 없다.
+ *  · ⚠️ `reloadAfterIssue` — 폼의 [견적서 받기]가 「수기 견적서 엑셀」 칸을 바꿨을 때
+ *    서버 칸을 다시 그려 오는 자리다. 그때의 기록이다 — 🔴 **조각 3c-3 이 되돌려
+ *    놓았다**(2026-09-28). 그 머리 단추가 폼에 섰다(QuoteEditForm 의 handleIssueOutcome).
+ *    🔴 저쪽과 다른 한 줄: 저쪽은 `setArchiveNotice([])` 도 함께 하는데 이 사이트에는
+ *    `archiveNotice` 가 없다(바로 위 항목).
  *
  * ⚠️ 위 넷은 **조각 3d-4 때의 기록**이다. 그 가운데 「아직 없다」던 파일 셋이 그 뒤에
  *    들어왔다 — `quote-excel-parse.ts` · `quote-excel-autofill.ts` ·
@@ -108,6 +110,13 @@ import { QuoteAttachmentDeleteDialog, QuoteAttachmentSlotsView } from "./QuoteAt
  *    `function reloadAfterIssue(` 라는 자리가 아예 없다(저쪽 시험이 그 이름을 글 자르는
  *    표지로 쓰는 자리가 하나 있어, 이 사이트의 시험은 다음 함수 이름으로 자른다 —
  *    quote-excel-autofill-screens.test.tsx 머리말).
+ *
+ * ⚠️ 위 문단도 **그때의 기록**이다. 🔴 **조각 3c-3(발행)이 왔다**(2026-09-28) —
+ *    `reloadAfterIssue` 가 돌아와 이제 **안 가져온 것은 둘**이다(`archiveNotice` ·
+ *    `signedPdfForPreview`). 그래서 저쪽 시험의 끝 표지
+ *    `"function reloadAfterIssue("` 도 **저쪽 글자 그대로 되돌려 놓았다.**
+ *    `archiveNotice` 는 첨부 올리기 통로가 공유폴더 사본을 만들기 시작하는 날
+ *    (그 라우트의 울타리를 푸는 조각) 함께 온다.
  * ============================================================================
  */
 
@@ -142,6 +151,11 @@ export type QuoteAttachmentsController = {
     quoteId: string,
     onProgress: (current: number, total: number) => void
   ) => Promise<QueuedQuoteAttachmentsOutcome>;
+  /**
+   * [견적서 받기]가 「수기 견적서 엑셀」 칸을 바꿨다(또는 결과를 모른다) — 서버 칸을 다시 그려
+   * 온다. 앞서 한 일의 한 줄은 지난 일이라 걷는다. 폼에 적어 둔 값은 그대로다.
+   */
+  reloadAfterIssue: () => void;
 };
 
 const DELETE_FAILED_MESSAGE = "지우기 요청이 끝나지 못했습니다. 잠시 후 다시 시도해 주세요.";
@@ -310,6 +324,11 @@ export function useQuoteAttachments({
     return outcome;
   }
 
+  function reloadAfterIssue() {
+    setStatusText(null);
+    refreshServerSlots();
+  }
+
   return {
     quoteId,
     slots,
@@ -332,6 +351,7 @@ export function useQuoteAttachments({
     cancelDelete,
     confirmDelete: () => void runDelete(),
     uploadQueuedAfterCreate,
+    reloadAfterIssue,
   };
 }
 

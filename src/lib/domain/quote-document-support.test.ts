@@ -37,6 +37,13 @@ import { STORED_QUOTE_KINDS, quoteKindLabels } from "@/lib/validation/quote-inpu
  *   · 편집 화면의 두 단추(`canGetDocument`) — 그 단추가 **발행과 한 벌**이라 3c-3 과
  *     함께 온다(QuoteEditForm 의 머리 단추 자리 주석).
  * 그 셋이 오는 조각이 여기에 한 묶음씩 더한다. A/S 가 그대로 갖고 있다.
+ *
+ * ── ⚠️ 위 문단은 그때의 기록이다 — 🔴 **조각 3c-3 이 둘을 더했다**(2026-09-28) ──
+ * 발행 통로(`services/quote-issue.ts` · `api/quotes/[id]/issue/route.ts`)와 편집
+ * 화면의 단추(`canGetDocument`)가 왔다. 🔴 **남은 것은 미리보기 화면 하나**(조각
+ * 3f)다. 편집 화면 묶음 안에도 그 하나를 기다리는 단언이 있다 —
+ * [미리보기 · PDF] 단추가 아직 없음을 재는 줄이고, 3f 가 그것을 저쪽 것으로
+ * 되돌린다.
  * ============================================================================
  */
 
@@ -110,9 +117,13 @@ const read = (relativePath: string) =>
   readFileSync(new URL(relativePath, repoUrl), "utf8").replace(/\r\n/g, "\n");
 const flat = (source: string) => source.replace(/\s+/g, " ");
 
-describe("㉡ 막는 자리 — 받기 통로와 목록이 같은 판정을 부른다", () => {
+describe("㉡ 막는 자리 — 받기 통로 · 목록 · 발행 통로 · 편집 화면이 같은 판정을 부른다", () => {
   const xlsxRoute = flat(read("src/app/api/quotes/[id]/xlsx/route.ts"));
   const listSlots = flat(read("src/components/quotes/QuoteListSlots.tsx"));
+  // 🔴 조각 3c-3 이 더한 둘(아래 그 두 묶음).
+  const issueService = flat(read("src/lib/server/services/quote-issue.ts"));
+  const issueRoute = flat(read("src/app/api/quotes/[id]/issue/route.ts"));
+  const editForm = flat(read("src/components/quotes/QuoteEditForm.tsx"));
 
   test("🔴 GET 받기 통로 — 견적서를 읽은 **직후**, 채우기보다 앞에서 거절한다", () => {
     const at = xlsxRoute.indexOf(
@@ -164,10 +175,53 @@ describe("㉡ 막는 자리 — 받기 통로와 목록이 같은 판정을 부�
     assert.equal(listSlots.split("<QuoteDownloadLink row={row} />").length - 1, 1);
   });
 
-  test("🔴 두 곳 어디에도 종류를 손으로 적은 갈림이 없다 — 판정은 한 곳이다", () => {
+  /**
+   * ============================================================================
+   * 🔴 조각 3c-3 이 더한 둘 — **발행 통로**와 **편집 화면의 단추** (2026-09-28)
+   * ============================================================================
+   * 이 파일 머리말의 「나머지 셋」 가운데 둘이 왔다. 남은 하나는 미리보기 화면
+   * (`quotes/[id]/print/page.tsx` — 조각 3f)이고, A/S 가 그 단언을 그대로 갖고 있다.
+   *
+   * 🔴 발행 통로가 이 판정을 **공유폴더 · 첨부 칸에 닿기 전에** 보는지가 여기서
+   * 가장 값지다 — GET 받기는 잘못된 문서가 한 사람의 내려받기 폴더로 가지만, 발행은
+   * **사람의 서류함(공유폴더)과 첨부 칸에 남는다.**
+   * ============================================================================
+   */
+  test("🔴 발행 통로(POST issue) — 공유폴더 · 첨부 칸에 닿기 전에 거절한다", () => {
+    const at = issueService.indexOf(
+      'if (!canRenderQuoteDocument(quote)) { return fail("KIND_NOT_SUPPORTED", QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE); }'
+    );
+    assert.ok(at >= 0, "발행 통로가 거절하지 않는다");
+    assert.ok(
+      issueService.indexOf(
+        "return quote.isExcelOnly ? issueAttachedExcel(quote, input) : issueRenderedWorkbook(quote, input);"
+      ) > at,
+      "거절이 갈림길보다 뒤다"
+    );
+    // 라우트가 응답 코드로 바꾼다 — 고장(5xx 관리자 문의)이 아니라 아직 안 만든 기능이다.
+    assert.ok(issueRoute.includes("KIND_NOT_SUPPORTED: 501,"), "발행 통로의 응답 코드가 없다");
+  });
+
+  test("🔴 편집 화면 — 화면도 같은 판정을 본다(엑셀 전용 케이블은 열려 있다)", () => {
+    assert.ok(editForm.includes("const canGetDocument = canRenderQuoteDocument({ kind, isExcelOnly });"), "판정을 안 부른다");
+    assert.ok(editForm.includes("{savedQuote && canGetDocument && ( <QuoteIssueButton"), "발행 단추가 그 값을 안 본다");
+    // 안내 문장도 서버가 돌려주는 그 하나다 — 두 벌이면 화면과 통로가 다른 말을 한다.
+    assert.ok(editForm.includes("{!canGetDocument && ( <p"), "감춘 까닭을 말하지 않는다");
+    assert.ok(editForm.includes("{QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE} </p>"));
+    /**
+     * 🔴 [미리보기 · PDF] 단추는 **아직 없다**(조각 3f). 저쪽은 여기서
+     * `{canGetDocument && ( <button type="button" onClick={() => setShowPreview(true)}` 도
+     * 함께 본다 — 그 단추가 서는 날 이 줄을 저쪽 것으로 되돌린다.
+     */
+    assert.equal(editForm.includes("setShowPreview(true)"), false, "미리보기가 왔다 — 이 단언을 저쪽 것으로 되돌릴 것");
+  });
+
+  test("🔴 네 곳 어디에도 종류를 손으로 적은 갈림이 없다 — 판정은 한 곳이다", () => {
     for (const [name, source] of [
       ["GET 받기 통로", xlsxRoute],
       ["목록의 받기 링크", listSlots],
+      ["발행 통로", issueService],
+      ["발행 라우트", issueRoute],
     ] as const) {
       assert.ok(!source.includes('=== "CABLE"'), `${name} 가 종류를 손으로 가른다`);
       assert.ok(!source.includes('!== "CABLE"'), `${name} 가 종류를 손으로 가른다`);

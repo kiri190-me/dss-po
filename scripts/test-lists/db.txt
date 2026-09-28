@@ -114,3 +114,21 @@ src/lib/db/queries/shipment-approval-routes.integration.test.ts
 #    queries/shipment-approval-routes.integration.test.ts 의 before() 가 깨진다
 #    (그 파일은 판이 하나도 없는 것을 전제로 단언한다).
 src/lib/db/mutations/quote-approvals.integration.test.ts
+
+# ── 조각 PO 3c-3 — 견적서 발행 · 결재 PDF 복사 (2026-09-28) ──────────────
+# A/S 의 같은 이름 시험(935줄)에서 가져왔다. **재는 것은 하나도 빼지 않았다.**
+# 고친 곳 다섯은 그 파일 머리말에 있다: 환경 불러오기 · import 경로 · 권한 영역
+# 찾기 · 격리 이름 · 맨 아래 라우트 묶음(문지기 두 걸음 · 올리기 통로의 공유폴더
+# 복사가 이 사이트에 아직 없음).
+#
+# 🔴 **격리 이름을 저쪽과 같게 바꾸지 마라** — 발행번호 `PO-QISSUE-TEST-{실행토큰}-`
+#    (저쪽 `QI-TEST-`) · 견적일 2094-07(저쪽 2096-05 · 이웃 2095-09 · 9503 · 9506 ·
+#    9602). 같은 dss_as_test 를 쓰므로 겹치면 한쪽 after() 가 다른 쪽 자료를 치운다.
+#
+# 🔴 **저장 루트를 건드리지 않는다** — 공유폴더 루트도 첨부 저장소도 전부 OS 임시
+#    폴더(mkdtemp)이고 after() 가 통째로 지운다. `QUOTE_ARCHIVE_DIR` 과
+#    `UPLOADS_DIR` 을 한 번도 읽지 않는다(부르는 쪽이 루트를 직접 넘긴다).
+#
+# ⚠️ 양식 경로(.env.local 의 QUOTE_TEMPLATE_PATH …)가 없으면 **채우기가 필요한
+#    묶음만** 건너뛴다(skip). 그때는 `tests` 수가 줄어든다 — 「통과」로 읽지 말 것.
+src/lib/server/services/quote-issue.integration.test.ts

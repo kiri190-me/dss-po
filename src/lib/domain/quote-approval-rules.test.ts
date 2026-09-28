@@ -26,9 +26,10 @@ import {
  *  1. **표의 이넘을 들여오는 줄** — `@/lib/db/schema` → `@dss/core/schema`
  *     (두 사이트가 함께 쓰는 서브모듈. 조각 결재-A 가 같은 자리에서 한 것과 같다).
  *  2. 🔴 **마지막 묶음의 「발행 통로」 목록** — 이 사이트의 실제 파일들로 바꿨다.
- *     저쪽 목록의 `server/services/quote-issue.ts` 와 `api/quotes/[id]/issue/route.ts`
- *     는 이 사이트에 **없다**(발행은 조각 3c-3 이후의 일이다). 대신 이 사이트에서
- *     견적서 파일이 실제로 나가는 길 넷을 적었다.
+ *     그때 저쪽 목록의 `server/services/quote-issue.ts` 와
+ *     `api/quotes/[id]/issue/route.ts` 는 이 사이트에 **없었다**(발행은 조각
+ *     3c-3). ⚠️ **그 조각이 왔다**(2026-09-28) — 🔴 그 둘을 목록에 되돌려
+ *     넣어 이제 **여섯**이다. 까닭은 그 목록 위에 적어 두었다.
  * ============================================================================
  */
 
@@ -130,13 +131,18 @@ describe("🔴 발행을 막지 않는다 — 발행 통로는 결재 표를 읽
    * 파일이든 결재 표를 읽기 시작하면, 그 순간 「결재 전에는 발행 못 함」이 조용히
    * 생긴다.
    *
-   * 저쪽 목록과 다른 까닭 — `server/services/quote-issue.ts` 와
-   * `api/quotes/[id]/issue/route.ts` 는 이 사이트에 아직 없다(조각 3c-3). 대신
+   * ⚠️ 결재-B 때는 넷이었다 — 저쪽 목록의 `server/services/quote-issue.ts` 와
+   * `api/quotes/[id]/issue/route.ts` 가 이 사이트에 없어(조각 3c-3) 뺐고, 대신
    * 양식을 채우는 자리(`quote-workbook.ts`)가 이 사이트에서는 따로 서 있어 넣었다.
+   * 🔴 **조각 3c-3(발행)이 왔다**(2026-09-28) — 그 둘을 **저쪽 목록 그대로**
+   * 더해 이제 여섯이다. 🔴 `quote-workbook.ts` 는 그대로 둔다: 뺄 까닭이 없고,
+   * 빼면 그 파일이 결재를 읽기 시작해도 아무도 소리를 내지 않는다.
    */
   const ISSUE_PATH_SOURCES = [
     "src/app/api/quotes/[id]/xlsx/route.ts",
     "src/app/api/quotes/[id]/xlsx/download-source.ts",
+    "src/app/api/quotes/[id]/issue/route.ts",
+    "src/lib/server/services/quote-issue.ts",
     "src/lib/server/services/quote-workbook.ts",
     "src/lib/db/mutations/quote-exports.ts",
   ] as const;

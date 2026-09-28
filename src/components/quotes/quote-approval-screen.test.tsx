@@ -86,13 +86,14 @@ const panelSource = read("src/components/quotes/QuoteApprovalPanel.tsx");
 const textsSource = read("src/components/quotes/quote-approval-texts.ts");
 const editFormSource = read("src/components/quotes/QuoteEditForm.tsx");
 /**
- * 🔴 저쪽의 `QuoteIssueButton.tsx` 는 **수정 권한자의 [견적서 받기] 단추**였고,
- * 이 사이트에는 그 파일 안의 **결과 줄 조각 하나**만 와 있다(조각 3e-3 — 발행
- * 자체는 조각 3c-3). 그래도 같은 파일을 잰다: 그 조각이 결재를 보기 시작하는
- * 날이 곧 발행이 결재에 묶이기 시작하는 날이다.
+ * 🔴 **수정 권한자의 [견적서 받기](발행) 단추** — 조각 3e-3 때는 이 파일 안의
+ * 결과 줄 조각 하나뿐이었고, 🔴 **조각 3c-3 이 단추 본체를 더했다**(2026-09-28).
+ * 이 파일이 결재를 보기 시작하는 날이 곧 발행이 결재에 묶이기 시작하는 날이다.
  */
 const issueButtonSource = read("src/components/quotes/QuoteIssueButton.tsx");
-/** 🔴 이 사이트에서 견적서 파일이 실제로 나가는 길 — 목록 줄의 [견적서 받기]. */
+/** 🔴 단추가 부르는 곳 — 발행 통로(POST …/issue)를 부르는 자리는 이 파일 하나다. */
+const issueDownloadSource = read("src/components/quotes/quote-issue-download.ts");
+/** 🔴 보기 권한자가 파일을 받는 길 — 목록 줄의 [견적서 받기] 링크(GET …/xlsx). */
 const listSlotsSource = read("src/components/quotes/QuoteListSlots.tsx");
 const editPageSource = read("src/app/(app)/quotes/[id]/page.tsx");
 const newPageSource = read("src/app/(app)/quotes/new/page.tsx");
@@ -279,9 +280,22 @@ describe("🔴 결재는 아무 문도 잠그지 않는다 — 화면 쪽", () =
   });
 
   test("🔴 파일이 나가는 길([견적서 받기])도 결재를 보지 않는다", () => {
-    // 저쪽의 「발행 단추 자체도 결재를 보지 않는다」가 서던 자리다.
+    // 목록 줄의 받기 링크(GET …/xlsx)와 발행 단추(POST …/issue) 둘 다.
     assert.doesNotMatch(listSlotsSource, /approval/i);
     assert.doesNotMatch(issueButtonSource, /approval/i);
+  });
+
+  /**
+   * 🔴 조각 3c-3 이 더한 묶음 — **발행 단추가 실제로 섰다.**
+   * 저쪽 시험의 「[견적서 받기] 단추의 조건이 그대로다」가 이 사이트에도 설 수 있게
+   * 되었다(그 전에는 단추가 없어 뺐다). 조건이 둘뿐임을 글자로 재는 것이 요점이다 —
+   * 결재 상태가 끼어들면 여기서 걸린다.
+   */
+  test("[견적서 받기] 단추의 조건이 그대로다 — 저장 여부와 문서 종류 둘뿐", () => {
+    assert.ok(
+      flat(editFormSource).includes("{savedQuote && canGetDocument && ( <QuoteIssueButton"),
+      "발행 단추의 조건이 바뀌었다 — 결재 상태가 끼어들지 않았는지 확인할 것"
+    );
   });
 
   test("페이지가 편집 폼에 결재 값을 넘기지 않는다", () => {
@@ -302,26 +316,34 @@ describe("🔴 결재는 아무 문도 잠그지 않는다 — 화면 쪽", () =
     assert.ok(flat(panelSource).includes("{QUOTE_APPROVAL_DOES_NOT_BLOCK_ISSUE_NOTICE}"));
   });
 
-  test("🔴 화면이 **이 사이트에 없는 일**을 할 수 있다고 말하지 않는다", () => {
-    // 저쪽 문장은 「[견적서 수정] 탭에서 그대로 **발행할 수 있습니다**」였다.
-    // 그 탭에 발행 단추가 없는 이 사이트에서 그대로 두면 화면이 거짓말을 한다.
-    for (const notice of [
-      QUOTE_APPROVAL_DOES_NOT_BLOCK_ISSUE_NOTICE,
-      QUOTE_APPROVAL_ROUTE_MISSING_NOTICE,
-    ]) {
-      assert.doesNotMatch(
-        notice,
-        /발행할 수 있습니다|발행은 그대로 됩니다/,
-        `이 사이트에 없는 발행을 할 수 있다고 말한다: ${notice}`
-      );
-    }
-    // 🔴 「할 수 있다」고 적은 일은 실제로 되는 일이어야 한다 — 저장과 받기 둘.
-    assert.match(QUOTE_APPROVAL_DOES_NOT_BLOCK_ISSUE_NOTICE, /견적서 받기/);
-    assert.match(QUOTE_APPROVAL_ROUTE_MISSING_NOTICE, /견적서 받기/);
-    // 그 길이 실제로 있다(목록 줄의 링크). 없으면 이 문장도 거짓이 된다.
+  /**
+   * ⚠️ 이 묶음은 **뒤집혔다**(조각 3c-3, 2026-09-28).
+   *
+   * 결재-C 때 이 자리가 재던 것은 「화면이 **이 사이트에 없는 일**(발행)을 할 수
+   * 있다고 말하지 않는다」였다. 🔴 **이제 발행이 있다** — 그래서 재는 것이
+   * 뒤집힌다: 두 문장이 저쪽 말(발행)로 돌아왔고, **그 말이 가리키는 길이 실제로
+   * 있는가**를 본다. 문장만 되돌리고 단추를 안 세우면 여기서 걸린다.
+   */
+  test("🔴 화면이 말하는 일이 실제로 되는 일이다 — 발행 · 받기 둘 다 길이 있다", () => {
+    // 저쪽 글자 그대로다 — 「[견적서 수정] 탭에서 그대로 발행할 수 있습니다」.
+    assert.match(QUOTE_APPROVAL_DOES_NOT_BLOCK_ISSUE_NOTICE, /발행할 수 있습니다/);
+    assert.match(QUOTE_APPROVAL_DOES_NOT_BLOCK_ISSUE_NOTICE, /\[견적서 수정\] 탭/);
+    assert.match(QUOTE_APPROVAL_ROUTE_MISSING_NOTICE, /견적서 발행은 그대로 됩니다/);
+
+    // 🔴 그 탭에 발행 단추가 실제로 있다 — 없으면 위 두 문장이 거짓이 된다.
+    assert.ok(
+      flat(editFormSource).includes("{savedQuote && canGetDocument && ( <QuoteIssueButton"),
+      "[견적서 수정] 탭의 발행 단추가 사라졌다 — 위 문장이 거짓이 된다"
+    );
+    // 그리고 그 단추가 부르는 통로가 있다.
+    assert.ok(
+      flat(issueDownloadSource).includes("return `/api/quotes/${encodeURIComponent(quoteId)}/issue`;"),
+      "발행 통로를 부르는 자리가 사라졌다"
+    );
+    // 보기 권한자의 받기 링크(GET …/xlsx)도 그대로다 — 발행과 다른 길이다.
     assert.ok(
       flat(listSlotsSource).includes("href={`/api/quotes/${row.id}/xlsx`}"),
-      "[견적서 받기] 링크가 사라졌다 — 위 문장이 거짓이 된다"
+      "[견적서 받기] 링크가 사라졌다"
     );
   });
 });

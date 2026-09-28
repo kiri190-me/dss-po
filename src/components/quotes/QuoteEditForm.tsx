@@ -107,6 +107,13 @@ import {
   planExcelOnlyToggle,
   type QuoteLineCounts,
 } from "@/components/quotes/quote-attachment-files";
+import QuoteIssueButton, { QuoteIssueNoticeLines } from "@/components/quotes/QuoteIssueButton";
+import { shouldReloadSlotsAfterIssue, type QuoteIssueRunOutcome } from "@/components/quotes/quote-issue-download";
+import type { QuoteIssueNoticeLine } from "@/components/quotes/quote-issue-messages";
+import {
+  QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE,
+  canRenderQuoteDocument,
+} from "@/lib/domain/quote-document-support";
 
 /**
  * ============================================================================
@@ -1018,14 +1025,21 @@ export default function QuoteEditForm({
    *    🔴 **조각 3d-4 는 이 둘을 되돌려 놓지 않았다** — 그 조각이 세운 것은 견적서
    *    **수정 화면**의 첨부 구역이고(그 화면에는 id 가 이미 있어 곧바로 올라간다),
    *    새 견적서 화면은 그대로다. 올리는 길(uploadQueuedAfterCreate)은 훅에 와 있다.
-   *  · 3c-3 — `issueNotice`([견적서 받기]의 결과 줄) · `folderOpenOutcome`([폴더 열기]).
-   *    🔴 **조각 3c-2 는 이 둘을 되돌려 놓지 않았다** — 그 조각이 만든 것은 받기
-   *    통로와 **목록의 받기 링크**뿐이고, 이 화면의 단추는 발행(공유폴더 · 첨부 칸)과
-   *    한 벌이라 함께 미뤘다(아래 머리 단추 자리의 주석).
+   *  · ⚠️ `issueNotice`([견적서 받기]의 결과 줄) — 그때의 기록이다. 🔴 **조각 3c-3 이
+   *    되돌려 놓았다**(2026-09-28, 바로 아래). 발행 통로 · 공유폴더 · 첨부 칸이 함께
+   *    왔다. 곁의 `folderOpenOutcome`([폴더 열기])은 **오지 않았다** — [폴더 열기]는
+   *    로드맵에 없는 별건이라 이 조각이 가져오지 않았다(A/S 의 QuoteFolderOpenButton ·
+   *    quote-folder-helper · api/quote-folder-helper/*).
    *  · ⚠️ **수기 엑셀로 칸 채우기** — `excelAutofill` · `excelReader` ·
    *    `handoffSheetIndex`. 그때의 기록이다 — 🔴 **조각 3e-3 이 셋을 되돌려 놓았다**
    *    (2026-09-28, 바로 아래). 훅의 `onExcelPicked` 도 함께 이어졌다.
    */
+
+  /**
+   * [견적서 받기](발행 통로)의 결과 줄 — 머리의 단추들 바로 아래에 보인다(견적서 B1c).
+   * 저장하지 않은 변경이 있어 통로를 부르지 않았을 때의 「먼저 [저장]」도 여기다.
+   */
+  const [issueNotice, setIssueNotice] = useState<QuoteIssueNoticeLine[]>([]);
 
   /**
    * 「수기 견적서 엑셀」로 칸 채우기의 상태(견적서 ①b — ExcelAutofillState). 없으면 null.
@@ -1070,14 +1084,18 @@ export default function QuoteEditForm({
    */
   const isCable = kind === "CABLE";
 
-  /*
-   * 🔴 **조각 3c·3f 가 여기에 `canGetDocument` 를 되돌려 놓는다** — 이 장의 문서를
-   * 앱이 만들 수 있는가(domain/quote-document-support.ts 의 canRenderQuoteDocument).
-   * [미리보기 · PDF]와 [견적서 받기]를 그릴지 가르는 값이고, 그 두 단추가 이 조각에
-   * 없어 지금은 부를 자리가 없다. 🔴 그 조각들이 올 때 **규칙을 여기에 새로 적지
-   * 말고 그 함수를 부를 것** — 받기 통로 둘 · 미리보기 화면 · 목록이 같은 답을 내야
-   * 한다(그 파일 머리말).
+  /**
+   * 🔴 이 장의 문서를 앱이 만들 수 있는가 — **조각 3c-3 이 되돌려 놓았다**
+   * (2026-09-28). [견적서 받기] 단추를 그릴지 가르는 값이고, 조각 3f 가 올 때
+   * [미리보기 · PDF] 단추도 같은 값으로 가른다.
    *
+   * 🔴 **규칙을 여기에 새로 적지 않는다** — 받기 통로 둘(GET xlsx · POST issue) ·
+   * 목록 · (3f 의) 미리보기 화면이 같은 답을 내야 하므로 판정은
+   * `domain/quote-document-support.ts` 한 곳이다(그 파일 머리말).
+   */
+  const canGetDocument = canRenderQuoteDocument({ kind, isExcelOnly });
+
+  /*
    * 🔴 **조각 3d-4 가 `attachments`(useQuoteAttachments)를 되돌려 놓았다** — 바로
    * 아래다. 🔴 **구역 안이 아니라 폼이 들고 있는 것**이 요점이다: 미리보기(3f)는 폼을
    * 통째로 갈아 그리므로, 구역 안에 두면 미리보기를 여는 순간 골라 둔 파일이 사라진다.
@@ -1974,12 +1992,9 @@ export default function QuoteEditForm({
         return;
       }
 
-      /*
-       * 🔴 **조각 3c 가 여기에 한 줄을 되돌려 놓는다** —
-       * `setSavedFieldsSnapshot(JSON.stringify(fields))`. [견적서 받기]가
-       * 「저장하지 않은 변경이 있는가」를 재는 기준을 방금 보낸 값으로 옮기는 자리다
-       * (아래 `hasUnsavedChanges` 항목).
-       */
+      // 🔴 이제 이 값이 DB 에 저장된 값이다 — [견적서 받기]의 「저장하지 않은 변경」 기준을 옮긴다.
+      // 고치기는 곧 목록으로 떠나지만, 새 견적서가 파일을 못 올려 이 화면에 머물면 이 기준으로 받는다.
+      setSavedFieldsSnapshot(JSON.stringify(fields));
 
       if (savedQuote) {
         // 고친 뒤에도 저장 팝업을 0.5초 띄우고 왔던 목록으로 넘어간다(2026-09-15
@@ -2069,20 +2084,48 @@ export default function QuoteEditForm({
     chosenRepairTaskCount: selectedTasks.length,
   });
 
+  /**
+   * 🔴 저장하지 않은 변경이 있는가 — [견적서 받기]를 부를지 가른다(견적서 B1c).
+   *
+   * 발행 통로는 **DB 에 저장된 값**으로 파일을 만든다. 이 폼은 저장하지 않은 변경을 따로
+   * 추적하지 않으므로, 고치고 저장하지 않은 채 누르면 옛 내용이 최종 이름으로 사람의
+   * 서류함(공유폴더)에 들어간다. 그래서 **저장이 보내는 바로 그 값**(collectFields)을 글자로
+   * 접어 마지막 저장값과 맞춰 본다 — 다르면 통로를 부르지 않고 「먼저 [저장]」을 보인다.
+   *
+   *  · 기준은 처음 열 때의 폼 값(저장된 견적서를 편 것)이고, [저장]이 성공하면 그때 보낸
+   *    값으로 옮긴다(handleSubmit). 고쳤다가 되돌리면 같은 글자라 막지 않는다.
+   *  · 저장이 보내지 않는 것(화면 전용 key · 출고 부품 참고 목록 · 미리보기 여부)은 보지
+   *    않는다 — 파일에 들어가지 않는다.
+   *  · 파일 칸(결재 PDF · 수기 엑셀)은 [저장]과 따로 곧바로 반영되므로 여기 들지 않는다.
+   *  · 기준이 없으면(새 견적서, 아직 저장 전) 변경이 있는 것으로 본다 — 받을 장이 없어 단추도 없다.
+   */
+  const [savedFieldsSnapshot, setSavedFieldsSnapshot] = useState<string | null>(() =>
+    quote ? JSON.stringify(collectFields()) : null
+  );
+  const hasUnsavedChanges = savedFieldsSnapshot === null || JSON.stringify(collectFields()) !== savedFieldsSnapshot;
+
+  /** 발행 뒤 「수기 견적서 엑셀」 칸이 바뀌었으면(또는 모르면) 서버 칸을 다시 그려 온다 — 폼 값은 그대로다. */
+  function reloadSlotsAfterIssue(outcome: QuoteIssueRunOutcome) {
+    if (shouldReloadSlotsAfterIssue(outcome)) attachments.reloadAfterIssue();
+  }
+
+  /** 머리의 [견적서 받기] — 결과 줄을 단추들 아래에 두고, 칸을 다시 그려 온다. */
+  function handleIssueOutcome(outcome: QuoteIssueRunOutcome) {
+    setIssueNotice(outcome.lines);
+    reloadSlotsAfterIssue(outcome);
+  }
+
   /*
    * ============================================================================
-   * 🔴 조각 3c 가 「저장하지 않은 변경」을, 조각 3f 가 **미리보기**를 되돌려 놓는다
+   * 🔴 조각 3f 가 **미리보기**를 되돌려 놓는다
    * ============================================================================
-   * ── 3c: `savedFieldsSnapshot` · `hasUnsavedChanges` ──────────────────────
-   * 발행 통로는 **DB 에 저장된 값**으로 파일을 만든다. 고치고 저장하지 않은 채
-   * [견적서 받기]를 누르면 옛 내용이 최종 이름으로 사람의 서류함(공유폴더)에
-   * 들어간다. 그래서 **저장이 보내는 바로 그 값**(collectFields)을 글자로 접어
-   * 마지막 저장값과 맞춰 보고, 다르면 통로를 부르지 않는다. 기준을 옮기는 자리는
-   * handleSubmit 안에 주석으로 남겨 두었다.
+   * ── ⚠️ 3c: `savedFieldsSnapshot` · `hasUnsavedChanges` ───────────────────
+   * 그때의 기록이다 — 🔴 **조각 3c-3 이 되돌려 놓았다**(2026-09-28, 바로 위).
+   * 기준을 옮기는 자리는 handleSubmit 안에 있다.
    *
-   * ── 3c: `reloadSlotsAfterIssue` · `handleIssueOutcome` ───────────────────
-   * 발행 뒤 「수기 견적서 엑셀」 칸이 바뀌었으면 서버 칸을 다시 그려 오는 자리.
-   * 첨부(3d)가 함께 있어야 뜻이 있다.
+   * ── ⚠️ 3c: `reloadSlotsAfterIssue` · `handleIssueOutcome` ────────────────
+   * 그때의 기록이다 — 🔴 **조각 3c-3 이 되돌려 놓았다**(바로 위). 첨부(3d-4)가
+   * 이미 와 있어 `attachments.reloadAfterIssue()` 를 그대로 부른다.
    *
    * ── 3f: `if (showPreview) { … <QuotePrintView … /> }` ────────────────────
    * 폼을 **떠나지 않고** 같은 컴포넌트가 미리보기를 그린다 — 그래야 돌아왔을 때
@@ -2139,19 +2182,27 @@ export default function QuoteEditForm({
           {savedQuote ? "견적서 수정" : "새 견적서"}
         </h1>
         <div className="flex gap-2">
-          {/* 🔴 **여기에 머리 단추 셋이 돌아온다** — [미리보기 · PDF](조각 3f) ·
-              [견적서 받기](조각 3c-3) · [폴더 열기](조각 3c-3). 셋 다 **저장된 값이 아니라
-              지금 화면의 값**을 놓고 판단해야 한다는 규칙이 붙어 있다(위 「조각 3c·3f」
-              주석 덩이). 지금은 [취소] · [저장] 둘뿐이다.
-
-              🔴 **조각 3c-2(받기 통로 · 목록의 받기 링크)가 왔지만 이 단추는 그때
-              만들지 않았다.** 저쪽 화면의 [견적서 받기]는 파일을 내려주는 것으로
-              끝나지 않고 **발행과 한 벌**이다 — 누르면 사내 공유폴더에 저장하고
-              「수기 견적서 엑셀」 첨부 칸을 바꾼다(POST /api/quotes/{id}/issue). 그
-              공유폴더와 첨부 칸이 이 사이트에 아직 없으므로(3c-3 · 3d), 여기에
-              단추만 먼저 세우면 목록의 링크와 **같은 일을 하는 다른 단추**가 되고
-              이름만 [견적서 받기]인 채 발행을 하지 않는다. 지금 파일을 받는 길은
-              **목록의 링크 하나**다(components/quotes/QuoteListSlots.tsx). */}
+          {/* 🔴 **머리 단추 둘이 아직 없다** — [미리보기 · PDF](조각 3f)와
+              [폴더 열기]. 미리보기는 3f 의 것이고, [폴더 열기]는 **로드맵에 없는
+              별건**이라 이 조각이 가져오지 않았다(A/S 의 QuoteFolderOpenButton ·
+              quote-folder-helper · api/quote-folder-helper/*). 둘 다 **저장된 값이
+              아니라 지금 화면의 값**을 놓고 판단해야 한다는 규칙이 붙어 있다. */}
+          {/* 파일은 저장된 장에서만 받을 수 있다 — 만드는 통로가 DB 의 그 줄을
+              읽기 때문이다. 그래서 이 단추만 저장 뒤에 나타난다.
+              🔴 이 화면은 수정 권한자만 들어온다(page 가 redirect) — 그래서 링크가 아니라 발행
+              단추다(공유폴더 저장 · 엑셀 칸 교체, 견적서 B1c). 저장하지 않은 변경이 있으면 통로를
+              부르지 않고 「먼저 [저장]」을 알린다. 저장 중 · 충돌이면 잠근다. */}
+          {savedQuote && canGetDocument && (
+            <QuoteIssueButton
+              quoteId={savedQuote.id}
+              label="견적서 받기"
+              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-zinc-700"
+              hasUnsavedChanges={hasUnsavedChanges}
+              disabled={disabled}
+              showNotice={false}
+              onOutcome={handleIssueOutcome}
+            />
+          )}
           {/* 취소도 왔던 곳으로 — 수리 건에서 들어왔으면 그 건의 「견적서」 탭,
               아니면 지금까지와 같이 PO/내자 목록이다. */}
           <button
@@ -2171,15 +2222,28 @@ export default function QuoteEditForm({
         </div>
       </div>
 
-      {/* 🔴 **여기에 알림 셋이 돌아온다** — 앱 양식이 없는 종류라 단추를 감췄다는
-          안내(`!canGetDocument` · 3c·3f) · [견적서 받기] 결과 줄(3c-3) · [폴더 열기]
-          결과(3c-3). 🔴 안내 문장은 **서버가 거절할 때 돌려주는 것과 같은 하나**여야
-          한다(domain/quote-document-support.ts 의 QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE) —
-          두 벌이면 화면과 통로가 다른 말을 한다.
+      {/* 🔴 **지금 안 되는 일**을 말한다(2026-09-16 케이블 ③). 단추를 말없이 감추면 사람은
+          화면이 고장 난 줄 안다 — 무엇이 없고 왜 없는지 한 줄로 적는다. 🔴 문장은 서버가
+          거절할 때 돌려주는 것과 **같은 하나**다(domain/quote-document-support.ts) — 두 벌이면
+          화면과 통로가 다른 말을 한다. */}
+      {!canGetDocument && (
+        <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          {QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE}
+        </p>
+      )}
 
-          🔴 이 셋도 조각 3c-2 에서 만들지 않았다 — 셋 다 **위 머리 단추와 짝**이고
-          (감춘 단추를 설명하는 안내 · 누른 결과), 그 단추가 발행(3c-3)과 한 벌이라
-          함께 미뤘다. 그 까닭은 위 단추 자리에 적어 두었다. */}
+      {/* [견적서 받기] 결과 — 단추들 바로 아래(견적서 B1c). 「먼저 [저장]」도 여기에 뜬다. */}
+      {issueNotice.length > 0 && (
+        <div className="flex justify-end">
+          <QuoteIssueNoticeLines
+            lines={issueNotice}
+            className="max-w-xl rounded-md border border-zinc-200 bg-white p-3 text-right dark:border-zinc-800 dark:bg-zinc-900"
+          />
+        </div>
+      )}
+
+      {/* 🔴 **[폴더 열기] 결과는 없다** — 그 단추를 이 조각이 가져오지 않았다(위 머리
+          단추 자리의 곁말). */}
 
       {submitError && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
