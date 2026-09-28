@@ -412,6 +412,10 @@ src/app/api/attachments/download-route-source.test.ts
 # ⚠️ 위 두 줄은 **그때의 기록**이다. 막던 것 가운데 `lib/xlsx/handwritten-quote-reader.ts`
 #    는 **조각 3e-1 이 들여왔다**(아래 3e-1 절). 남은 것은
 #    `components/quotes/quote-issue-messages.ts` 하나다.
+# ⚠️ 그 남은 하나도 **조각 3e-2 가 들여왔다**(아래 3e-2 절). 막던 것은 이제 없고,
+#    `quote-excel-parse.ts` · `quote-excel-autofill.ts` 둘 다 이 저장소에 서 있다.
+#    셋이 갈라져 온 것은 남지만 **빠진 것은 없다**. 여전히 **아무도 안 부른다** —
+#    배선은 다음 조각(팝업)의 몫이다.
 #
 #  · new-quote-excel-handoff.test.ts — 팝업이 고른 엑셀 하나를 작성 화면으로 나르는
 #    모듈 수준 상자. 🔴 **A/S 에는 이 시험이 없다** — 여기서 새로 적었다. 담고 꺼내면
@@ -458,3 +462,47 @@ src/components/quotes/new-quote-excel-handoff.test.ts
 src/lib/xlsx/sheet-grid.test.ts
 src/lib/xlsx/handwritten-quote-reader.test.ts
 src/app/api/quotes/parse-excel/route-source.test.ts
+
+# ── 조각 3e-2 — 엑셀 읽기 클라이언트 · 칸 채우기 · 시트 고르기 ──────────
+# 3e-1 이 깐 읽개 · 통로 위의 **가운데 층**이다. 순수 모듈 넷을 A/S 에서 가져왔다
+# (머리말 아래 코드는 넷 다 바이트 동일). 서버 · DB · 스키마를 건드리지 않았고,
+# **화면에서 부르는 곳도 아직 없다** — 배선은 다음 조각([새 견적서] 팝업)이 한다.
+#
+# ⚠️ `quote-issue-messages.ts`(137줄)는 원래 **조각 3c-3(발행)의 것**이다. 여기 온
+#    까닭은 하나뿐이다 — `quote-excel-autofill.ts` 가 알림 줄의 모양
+#    (`QuoteIssueNoticeLine`) 타입 하나를 그 파일에서 가져다 쓴다. **파일만 왔고
+#    발행 기능은 오지 않았다**(발행 통로 · quote-issue.ts · QuoteIssueButton.tsx ·
+#    quote-archive.ts 는 그대로 없다). 그 나머지 함수들은 3c-3 이 올 때 쓰인다.
+#
+# ① quote-issue-messages.test.ts — 발행 · 결재 PDF 올리기 결과를 사람이 읽는 문장으로
+#    바꾸는 규칙. **A/S 에서 가져왔다**(머리말에 ⚠️ 한 덩이만 덧붙였다 — 「세 화면이
+#    쓴다」가 이 사이트에서는 아직 거짓이라서). 공유폴더 네 상태 × 여러 폴더, 엑셀 칸
+#    네 상태, 결과를 못 읽었을 때. 값만 본다 — DB 도 화면도 fetch 도 없다.
+#
+# ② quote-excel-parse.test.ts — 읽기 통로(POST /api/quotes/parse-excel)를 부르는
+#    클라이언트. **A/S 에서 한 글자도 고치지 않고 가져왔다.** fetch 를 흉내 내어
+#    응답을 준다(네트워크도 DB 도 실제 고객 파일도 없다): 옛 .xls 는 **보내지 않고**
+#    곧바로 돌려보내는가 · 응답의 칸마다 모양을 다시 보는가(모르는 모양은 그 칸만
+#    버린다) · `?sheet=` 를 붙이는가 · **마지막에 고른 파일의 결과만** 돌려주는가.
+#
+# ③ quote-excel-autofill.test.ts — 읽은 값으로 폼 칸을 채우는 계획과 알림 문장.
+#    **A/S 에서 가져왔다**(머리말에 ⚠️ 한 덩이만 덧붙였다 — 아래 ⑤ 의 까닭).
+#    빈 칸만 채우고 적힌 칸은 덮지 않는다 · 종류도 같은 규칙 · 금액의 콤마 차이는
+#    같은 값 · 🔴 새 견적서에서 **손대지 않은 기본 발행일자만** 빈 칸으로 본다.
+#
+# ④ new-quote-excel-sheets.test.ts — 한 통합문서에 든 견적서 시트들로 「무엇이
+#    들어 있나 · 종류를 맞춰 줄까 · 어느 탭을 읽을까」를 정하는 순수 규칙.
+#    **A/S 에서 가져왔다**(머리말에 ⚠️ 한 덩이만 덧붙였다 — NewQuoteDialog.test.tsx
+#    가 이 사이트에 아직 없다). `filled` 로 시트를 빼지 않는다 · 한 종류뿐일 때만
+#    맞춰 준다 · 짝이 없으면 시트를 지정하지 않는다.
+#
+# ⑤ ⚠️ **A/S 의 다섯째 시험은 못 가져왔다** — `quote-excel-autofill-screens.test.tsx`
+#    (355줄, 저쪽의 components 쪽 시험). 재는 대상이 이 저장소에 셋 다 없다:
+#    QuoteEditForm 의 엑셀 배선 · QuoteAttachmentsSection 의 `onExcelPicked` ·
+#    알림 조각 `QuoteExcelAutofillNotice`(QuoteAttachmentParts.tsx 에 없다).
+#    🔴 그래서 **components.txt 에 더한 줄이 없다.** 배선 조각이 그 셋과 함께
+#    가져와 components.txt 에 적어야 한다.
+src/components/quotes/quote-issue-messages.test.ts
+src/components/quotes/quote-excel-parse.test.ts
+src/components/quotes/quote-excel-autofill.test.ts
+src/components/quotes/new-quote-excel-sheets.test.ts

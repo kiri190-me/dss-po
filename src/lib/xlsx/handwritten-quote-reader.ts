@@ -51,6 +51,11 @@ import { ZipArchive } from "./zip-reader";
  * (`app/api/quotes/parse-excel/route.ts`)까지고, **화면에서 부르는 곳은 아직 없다** —
  * 뒤 조각([새 견적서] 팝업)이 잇는다.
  *
+ * ⚠️ 위 문단은 **조각 3e-1 때의 기록**이다. 지금은 ①b 둘 다 와 있다 — 조각 3e-2 가
+ * `components/quotes/quote-excel-parse.ts`(읽기 클라이언트) · `quote-excel-autofill.ts`
+ * (채우기 규칙) · `new-quote-excel-sheets.ts`(시트 고르기)를 들여왔다. 그래도
+ * **화면에서 부르는 곳은 여전히 없다** — 배선은 다음 조각([새 견적서] 팝업)의 몫이다.
+ *
  * ── 결과는 두 갈래, 내용 때문에 던지지 않는다 ──────────────────────────────
  *  · `{ ok: true, sheet, sheetIndex, sheetName, sheets, fields, warnings }` — 칸이 비거나
  *    이상하면 그 칸만 null 이고 까닭은 warnings 에 사람이 읽는 문장으로 싣는다.

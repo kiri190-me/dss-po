@@ -849,6 +849,12 @@ describe("새 견적서 화면 — 쓰기 권한이 없으면 들어올 수 없�
     //  · `quote-workbook` : 2026-09-22(조각 3c-2)에 왔지만 **받기 통로**(api/quotes/[id]/
     //    xlsx)의 것이다 — 새 견적서 화면이 워크북을 만들 일은 없다.
     //  · `quote-issue` : **조각 3c-3**(발행). 아직 이 저장소에 없다.
+    //    ⚠️ 그 마지막 줄은 **그때의 기록**이다. 조각 3e-2 가
+    //    `components/quotes/quote-issue-messages.ts` **하나만** 들여왔다(곁 파일
+    //    quote-excel-autofill.ts 가 알림 줄의 타입 하나를 쓴다 — 그 파일 머리말).
+    //    발행 자체는 여전히 없고, 🔴 **금지는 그대로다** — 이 글자는 부분 일치라
+    //    `quote-issue-messages` 도 걸린다. 새 견적서 화면이 발행 알림 문장을 끌고
+    //    올 까닭이 없으므로 **그것이 맞는 상태**다. 3c-3 이 오는 날 다시 잰다.
     for (const notYet of ["readAllQuoteTemplateHeaders", "quote-workbook", "quote-issue"]) {
       assert.equal(imports.includes(notYet), false, `${notYet} — 아직 오지 않은 조각을 끌고 왔다`);
     }

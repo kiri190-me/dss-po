@@ -39,6 +39,13 @@ import {
  * A/S 와 같고, 3c-3 이 오는 날 이 파일은 손대지 않아도 된다. 그 결과로 짓는 문장
  * (A/S 의 quote-issue-messages.ts 의 quoteUploadArchiveNoticeLines)도 **이 사이트에는
  * 아직 없다** — 그것도 3c-3 의 것이다.
+ *
+ * ⚠️ 위 마지막 줄은 **조각 3d-3b 때의 기록**이다. `components/quotes/quote-issue-messages.ts`
+ * 는 **조각 3e-2 가 파일만 먼저 들여왔다**(곁 파일 quote-excel-autofill.ts 가 알림 줄의
+ * 타입 하나를 쓰기 때문이다 — 그 파일 머리말). 그래서 `quoteUploadArchiveNoticeLines`
+ * 도 이제 **있기는 하다.** 🔴 그러나 **발행 기능은 여전히 없고**(공유폴더 저장 ·
+ * 발행 통로 · 그리는 단추), 이 통로의 `archive` 도 여전히 언제나 `null` 이다 — 그
+ * 문장을 부르는 곳은 아직 한 곳도 없다. 3c-3 이 잇는다.
  * ============================================================================
  */
 

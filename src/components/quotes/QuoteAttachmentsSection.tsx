@@ -92,6 +92,14 @@ import { QuoteAttachmentDeleteDialog, QuoteAttachmentSlotsView } from "./QuoteAt
  *  · `reloadAfterIssue` — 폼의 [견적서 받기]가 「수기 견적서 엑셀」 칸을 바꿨을 때
  *    서버 칸을 다시 그려 오는 자리다. 그 머리 단추는 **조각 3c-3** 의 것이라 이
  *    사이트의 폼에 없다.
+ *
+ * ⚠️ 위 넷은 **조각 3d-4 때의 기록**이다. 그 가운데 「아직 없다」던 파일 셋이 그 뒤에
+ *    들어왔다 — `quote-excel-parse.ts` · `quote-excel-autofill.ts` ·
+ *    `quote-issue-messages.ts`(그래서 `quoteUploadArchiveNoticeLines` 도 있다). 모두
+ *    **조각 3e-2** 가 들여온 순수 모듈이다.
+ *    🔴 **그래도 여기서 안 가져온 것 넷은 그대로 넷이다** — 이 파일에는 여전히
+ *    `onExcelPicked` 도 `archiveNotice` 도 없고, `excelSlotDetails` 는 받기만 하고
+ *    아무도 넘기지 않는다. 배선은 다음 조각([새 견적서] 팝업)의 몫이다.
  * ============================================================================
  */
 
