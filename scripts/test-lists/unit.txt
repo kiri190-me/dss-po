@@ -409,6 +409,9 @@ src/app/api/attachments/download-route-source.test.ts
 # 앞의 둘이 **이 저장소에 없는 것을 import** 하고 있어 멈췄다(A/S 의
 # `lib/xlsx/handwritten-quote-reader.ts` · `components/quotes/quote-issue-messages.ts`).
 # 상자 하나만 import 가 **아예 없어** 혼자 설 수 있었다.
+# ⚠️ 위 두 줄은 **그때의 기록**이다. 막던 것 가운데 `lib/xlsx/handwritten-quote-reader.ts`
+#    는 **조각 3e-1 이 들여왔다**(아래 3e-1 절). 남은 것은
+#    `components/quotes/quote-issue-messages.ts` 하나다.
 #
 #  · new-quote-excel-handoff.test.ts — 팝업이 고른 엑셀 하나를 작성 화면으로 나르는
 #    모듈 수준 상자. 🔴 **A/S 에는 이 시험이 없다** — 여기서 새로 적었다. 담고 꺼내면
@@ -418,3 +421,40 @@ src/app/api/attachments/download-route-source.test.ts
 # 🔴 **아무도 안 부른다** — 담는 쪽(NewQuoteDialog)도 꺼내는 쪽(QuoteEditForm 의 첫
 #    그림)도 아직 이 저장소에 없다. 다음 조각(팝업)이 잇는다.
 src/components/quotes/new-quote-excel-handoff.test.ts
+
+# ── 조각 3e-1 — 수기 엑셀 읽개 사슬 + 읽기 서버 통로 ────────────────────
+# 🔴 3d-6a 가 「막힌 것」으로 적어 둔 사슬의 **맨 아래 두 층**이다. 읽개 넷과 그
+# 읽개를 부르는 통로 하나를 A/S 에서 가져왔다(머리말 아래 코드는 바이트 동일).
+# **화면에서 부르는 곳은 아직 없다** — 뒤 조각([새 견적서] 팝업)이 잇는다.
+#
+# ⚠️ `excel-date.ts`(32줄) · `xml-entities.ts`(46줄)에는 시험을 적지 않았다 —
+#    **A/S 에도 그 둘의 시험 파일이 없다.** 둘 다 순수 함수이고, 실제로 쓰이는
+#    갈래는 아래 두 시험이 통째로 지난다(날짜 일련번호 · 1900/1904 체계는
+#    handwritten-quote-reader.test.ts 의 발행일자 묶음이, `<rPh>` 를 걷고 엔티티를
+#    푸는 일은 sheet-grid.test.ts 가 잰다). 없는 시험을 새로 지어내지 않았다.
+#
+# ① sheet-grid.test.ts — 시트 하나를 행 × 열 → 값으로 읽는 읽개. **A/S 에서
+#    한 글자도 고치지 않고 가져왔다.** 가짜 통합문서를 zip-writer 로 만들어
+#    읽는다(실제 양식 파일을 열지 않는다) — 칸의 종류 여섯 · 후리가나(`<rPh>`)
+#    걷기 · 1904 체계 · 열 문자 ↔ 번호.
+#
+# ② handwritten-quote-reader.test.ts — 수기 견적서 엑셀에서 값을 뽑는 1,045줄
+#    읽개. **A/S 에서 한 글자도 고치지 않고 가져왔다.** 양식 넷 가름(제너레이터
+#    내자 · OH, 매쳐 내자 · OH) · 시트 고르기 · 발행일자 · 공급가액 · 모델 줄
+#    나누기 · zip 상한(풀린 바이트로 잰다) · 값을 로그에 찍지 않는다.
+#    ⚠️ 맨 아래 「왕복」 · 「빈 양식 파일 그대로」 묶음은 **실제 양식 파일이 있어야**
+#    돈다 — scripts/test-template-bootstrap.ts 가 `.env.local` 에서 양식 경로
+#    넷을 넣어 주고, 없으면 그 묶음만 skip 된다(나머지는 그대로 돈다).
+#
+# ③ parse-excel/route-source.test.ts — 그 읽개를 부르는 **유일한 통로**의 소스를
+#    글자로 읽어 지킨다. 재는 것 둘: **본문을 받기 전에 끝내는 확인들의 순서**
+#    (같은 출처 → 세션 → quotes WRITE → 선언 길이 → 세며 읽기)와 **아무것도 쓰지
+#    않는다**(db.insert · db.update · tx. · 저장소 · 감사 · 공유폴더가 코드에
+#    없다). 응답에 내부 경로가 안 실리는 것도 함께 잰다. 인증을 이 사이트 식
+#    한 걸음(getSessionUser)으로 접은 것과, A/S 에만 있는 실패 코드 둘
+#    (DATABASE_MODE_REQUIRED · ACCOUNT_NOT_APPROVED)이 유니온에서 빠진 것도 잰다.
+#    🔴 이 시험만 **라우트 곁에** 있다 — `parse-excel` 에는 대괄호가 없어 형제
+#    둘처럼 한 칸 위로 피할 까닭이 없다(A/S 의 같은 자리 그대로).
+src/lib/xlsx/sheet-grid.test.ts
+src/lib/xlsx/handwritten-quote-reader.test.ts
+src/app/api/quotes/parse-excel/route-source.test.ts
