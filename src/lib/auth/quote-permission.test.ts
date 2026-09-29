@@ -31,10 +31,17 @@ import type { Role } from "./session";
  *     })
  *     canDeleteQuotes = 최고관리자 · 관리자
  *     canEditQuotes   = canViewQuotes = canViewDomesticOrders
- *                     = 최고관리자 · 관리자 · 영업
+ *                     = 최고관리자 · 관리자 · 영업 · A/S 엔지니어
  *
  * 이 값이 달라졌다면 **A/S 쪽 정책이 바뀐 것**이고, 그때 이 시험이 먼저 깨져야
  * 한다 — 조용히 갈라지는 것보다 여기서 멈추는 편이 낫다.
+ *
+ * 🔴 **2026-09-29 — 사용자가 A/S 엔지니어를 열었다.** 원문: 「엔지니어도 PO/내자에
+ * 모두 읽기/쓰기 할 수 있어야 해.」 부품 단가·작업비·합계가 엔지니어에게 보이고
+ * 엔지니어가 고칠 수 있게 된다는 것을 확인받고 내린 결정이다. 아래 표의
+ * AS_ENGINEER 줄이 NONE 에서 WRITE 로 **뒤집혔다** — 없어진 것이 아니다.
+ * 이 파일의 함수(quote-authorization.ts)는 한 글자도 고치지 않았다: 내자 정리의
+ * 보기 함수를 부르고 있어서 함께 따라온 것이다.
  * ============================================================================
  */
 
@@ -46,8 +53,10 @@ const EXPECTED_QUOTES: Record<Role, PermissionLevel> = {
   // 만들고 고칠 수 있다. 지우지는 못한다 — 고객사에 나간 문서라, 「무엇을 얼마에
   // 불렀는가」를 목록에서 없애는 판단을 담당자 각자에게 맡기지 않는다.
   SALES: "WRITE",
+  // 🔴 2026-09-29 사용자 결정으로 NONE → WRITE. 영업과 같은 자리다.
+  AS_ENGINEER: "WRITE",
   // 🔴 금액(부품 단가·작업비·합계)이 이유로 빠진다. 화면이 아예 안 열린다.
-  AS_ENGINEER: "NONE",
+  // 이번 결정에 없는 역할이라 **한 글자도 바뀌지 않았다.**
   INVENTORY_MANAGER: "NONE",
 };
 
@@ -77,12 +86,25 @@ describe("견적서 기본 권한 — A/S 와 같은 답", () => {
     }
   });
 
+  test("🔴 2026-09-29: 엔지니어는 견적서를 보고 고친다 — 사용자 결정", () => {
+    assert.equal(canViewQuotes("AS_ENGINEER"), true, "엔지니어가 견적서를 못 본다");
+    assert.equal(canEditQuotes("AS_ENGINEER"), true, "엔지니어가 견적서를 못 고친다");
+  });
+
   test("🔴 삭제는 관리자 이상이다 — 보기·고치기보다 좁다", () => {
     for (const role of roleEnum.enumValues) {
       if (!canDeleteQuotes(role)) continue;
       assert.ok(canEditQuotes(role), `${role} — 고치지 못하는 사람이 지울 수 있다`);
     }
     assert.equal(canDeleteQuotes("SALES"), false, "영업이 견적서를 지울 수 있다");
+    // 🔴 2026-09-29 의 결정은 「읽기/쓰기」까지다 — 보기·고치기가 열렸다고
+    // 삭제까지 따라가면 고객사에 실제로 나간 문서의 기록이 사라진다.
+    assert.equal(canDeleteQuotes("AS_ENGINEER"), false, "엔지니어가 견적서를 지울 수 있다");
+    assert.notEqual(
+      baselinePermissionLevel("quotes", "AS_ENGINEER"),
+      "MANAGE",
+      "엔지니어의 견적서 기본 상한이 관리다 — 휴지통이 열렸다"
+    );
   });
 });
 

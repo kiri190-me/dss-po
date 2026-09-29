@@ -31,10 +31,17 @@ import type { Role } from "./session";
  *
  *     repairLabor = ladder({ manage: canDeleteQuotes(role), read: canViewQuotes(role) })
  *     canDeleteQuotes = 최고관리자 · 관리자
- *     canViewQuotes   = canViewDomesticOrders = 최고관리자 · 관리자 · 영업
+ *     canViewQuotes   = canViewDomesticOrders
+ *                     = 최고관리자 · 관리자 · 영업 · A/S 엔지니어
  *
  * 이 값이 달라졌다면 **A/S 쪽 정책이 바뀐 것**이고, 그때 이 시험이 먼저 깨져야
  * 한다 — 조용히 갈라지는 것보다 여기서 멈추는 편이 낫다.
+ *
+ * 🔴 **2026-09-29 — 사용자가 A/S 엔지니어에게 내자 정리·견적서를 열었다**(「엔지니어도
+ * PO/내자에 모두 읽기/쓰기 할 수 있어야 해」). 작업 비용은 견적서 보기를 그대로
+ * 읽으므로 **함께 따라왔다** — 아래 표의 AS_ENGINEER 줄이 NONE 에서 READ 로
+ * 뒤집혔다. 값 수정(관리)은 따라오지 않았다: 이 화면의 값을 바꾸면 앞으로 나갈
+ * 모든 견적 금액이 바뀌고, 그 자리는 견적서를 지울 수 있는 사람의 것이다.
  * ============================================================================
  */
 
@@ -45,8 +52,11 @@ const EXPECTED_REPAIR_LABOR: Record<Role, PermissionLevel> = {
   ADMIN: "MANAGE",
   // 견적서를 보는 사람 = 값을 보는 사람. 고치지는 못한다.
   SALES: "READ",
+  // 🔴 2026-09-29 사용자 결정으로 NONE → READ. 영업과 같은 자리다 — 보기까지이고
+  // 값 수정은 열리지 않았다.
+  AS_ENGINEER: "READ",
   // 🔴 금액이 이유로 빠진다(domestic-order-authorization.ts). 화면이 아예 안 열린다.
-  AS_ENGINEER: "NONE",
+  // 이번 결정에 없는 역할이라 **한 글자도 바뀌지 않았다.**
   INVENTORY_MANAGER: "NONE",
 };
 

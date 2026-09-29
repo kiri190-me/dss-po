@@ -34,10 +34,17 @@ import type { Role } from "./session";
  *       read:   canViewDomesticOrders(role),
  *     })
  *     canDeleteDomesticOrders = 최고관리자 · 관리자
- *     canEditDomesticOrders   = canViewDomesticOrders = 최고관리자 · 관리자 · 영업
+ *     canEditDomesticOrders   = canViewDomesticOrders
+ *                             = 최고관리자 · 관리자 · 영업 · A/S 엔지니어
  *
  * 이 값이 달라졌다면 **A/S 쪽 정책이 바뀐 것**이고, 그때 이 시험이 먼저 깨져야
  * 한다 — 조용히 갈라지는 것보다 여기서 멈추는 편이 낫다.
+ *
+ * 🔴 **2026-09-29 — 사용자가 A/S 엔지니어를 열었다.** 원문: 「엔지니어도 PO/내자에
+ * 모두 읽기/쓰기 할 수 있어야 해.」 금액(VAT 별도)과 입금완료 여부가 엔지니어에게
+ * 보이고 엔지니어가 고칠 수 있게 된다는 것을 확인받고 내린 결정이다. 아래 표의
+ * AS_ENGINEER 줄이 NONE 에서 WRITE 로 **뒤집혔다** — 없어진 것이 아니다.
+ * 되돌리려면 사용자에게 다시 물어야 한다.
  * ============================================================================
  */
 
@@ -49,8 +56,11 @@ const EXPECTED_DOMESTIC_ORDERS: Record<Role, PermissionLevel> = {
   // 행을 더하고 고칠 수 있다. 지우지는 못한다 — 세금계산서 발행일과 입금 사실이
   // 들어 있는 줄이라, 15일 뒤 영구 삭제되는 판단을 각자에게 맡기지 않는다.
   SALES: "WRITE",
+  // 🔴 2026-09-29 사용자 결정으로 NONE → WRITE. 영업과 같은 자리다 — 보고
+  // 고치지만 지우지는 못한다.
+  AS_ENGINEER: "WRITE",
   // 🔴 금액(VAT 별도)과 입금완료 여부가 이유로 빠진다. 화면이 아예 안 열린다.
-  AS_ENGINEER: "NONE",
+  // 이번 결정에 없는 역할이라 **한 글자도 바뀌지 않았다.**
   INVENTORY_MANAGER: "NONE",
 };
 
@@ -74,6 +84,30 @@ describe("내자 정리 기본 권한 — A/S 와 같은 답", () => {
 });
 
 describe("역할 정책 자체", () => {
+  test("🔴 2026-09-29: 엔지니어는 내자 정리를 보고 고친다 — 사용자 결정", () => {
+    assert.equal(canViewDomesticOrders("AS_ENGINEER"), true, "엔지니어가 내자 정리를 못 본다");
+    assert.equal(canEditDomesticOrders("AS_ENGINEER"), true, "엔지니어가 내자 정리를 못 고친다");
+  });
+
+  test("🔴 2026-09-29: 엔지니어에게 삭제·휴지통은 열리지 않았다 — 이 조각의 안전선", () => {
+    // 사용자가 정한 것은 「읽기/쓰기」까지다. 보기·고치기가 열렸다는 이유로
+    // 삭제까지 따라가면 엔지니어가 세금계산서 발행일·입금 사실이 든 줄을
+    // 지울 수 있게 된다 — **같은 dss_as 의 실제 줄이다.**
+    assert.equal(canDeleteDomesticOrders("AS_ENGINEER"), false, "엔지니어에게 삭제가 열렸다");
+    assert.notEqual(
+      baselinePermissionLevel("domesticOrders", "AS_ENGINEER"),
+      "MANAGE",
+      "엔지니어의 기본 상한이 관리다 — 휴지통이 열렸다"
+    );
+  });
+
+  test("🔴 2026-09-29: 재고 담당자는 한 글자도 바뀌지 않았다 — 이번 결정에 없다", () => {
+    assert.equal(canViewDomesticOrders("INVENTORY_MANAGER"), false);
+    assert.equal(canEditDomesticOrders("INVENTORY_MANAGER"), false);
+    assert.equal(canDeleteDomesticOrders("INVENTORY_MANAGER"), false);
+    assert.equal(baselinePermissionLevel("domesticOrders", "INVENTORY_MANAGER"), "NONE");
+  });
+
   test("지우는 것은 최고관리자·관리자뿐이다", () => {
     assert.equal(canDeleteDomesticOrders("SUPER_ADMIN"), true);
     assert.equal(canDeleteDomesticOrders("ADMIN"), true);
