@@ -5,7 +5,8 @@ import { getSessionUser } from "@/lib/auth/session";
 import {
   QUOTE_FOLDER_HELPER_INSTALLER_FILE_NAME,
   buildQuoteFolderHelperInstaller,
-  resolveQuoteFolderHelperRoot,
+  quoteFolderHelperRootsInput,
+  resolveQuoteFolderHelperInstallRoots,
 } from "@/lib/server/quote-folder-helper";
 
 /**
@@ -42,16 +43,28 @@ import {
  * server/quote-folder-helper.ts 머리말.
  *
  * ── 🔴 본문은 요청마다 만든다 ─────────────────────────────────────────────
- * 설치 파일에는 사람이 탐색기에서 보는 공유폴더 루트(UNC — QUOTE_ARCHIVE_UNC_ROOT)가 들어간다.
+ * 설치 파일에는 사람이 탐색기에서 보는 공유폴더 루트(UNC)가 들어간다.
  * 파일로 만들어 두면 그 값이 저장소 · 이미지에 남는다. 그래서 부를 때마다 환경변수로 만든다.
  * 값은 로그 · 오류 응답에 싣지 않는다(설정이 비었거나 틀렸다는 사실만 알린다).
  *
+ * ── 🔴 루트는 여럿일 수 있다 (2026-10-07 — 도우미 한 벌 맞추기) ────────────
+ * 견적서 루트(QUOTE_ARCHIVE_UNC_ROOT)와 그 다른 주소(_ALT), 그리고 A/S 쪽 기능의 루트들
+ * (CUSTOMER_PORTAL_ARCHIVE_UNC_ROOT · 그 _ALT · CONTACT_FOLDER_ARCHIVE_UNC_ROOT)을 **한 벌에
+ * 함께** 심는다 — 도우미는 PC 당 한 벌이라 따로 설치할 수 없고, 따로 설치하면 그 PC 의 다른
+ * 사이트 [폴더 열기]가 죽는다(server/quote-folder-helper.ts 의 requireRoots · 머리말).
+ * 어느 것이 설정됐는지는 resolveQuoteFolderHelperInstallRoots 가 가리고, 이 통로는 그 목록을
+ * 그대로 넘긴다. 🔴 이 사이트에 그 기능이 없어도 **변수 이름은 저쪽과 같아야** 운영에서 같은
+ * 값을 넣었을 때 같은 설치본이 나온다.
+ *
  * ── 순서 ────────────────────────────────────────────────────────────────
  *  1) 세션(= 살아 있는 계정 · 승인) → 2) 권한(quotes READ)
- *  → 3) UNC 루트(비었거나 틀리면 409) → 4) 설치 파일(첨부)
+ *  → 3) UNC 루트(하나도 없거나 견적서 루트가 틀리면 409) → 4) 설치 파일(첨부)
  *
  * 권한이 READ 인 까닭: 도우미는 견적서 폴더를 **여는** 도구이고, 견적서를 볼 수 있는 사람이
  * [폴더 열기]를 누른다. 아무것도 바꾸지 않으므로 감사를 남기지 않는다.
+ * 🔴 **문턱은 지금까지와 같은 `quotes` READ 하나다.** 저쪽은 「quotes 또는 customerPortal」로
+ * 열지만 이 사이트에는 `customerPortal` 권한 영역이 없다 — 까닭은
+ * server/quote-folder-helper.ts 의 「설치 파일 · 설치 명령을 받을 수 있는 사람」 절.
  * ============================================================================
  */
 
@@ -77,16 +90,16 @@ export async function GET(): Promise<NextResponse> {
   }
 
   // ── 3) UNC 루트 — 값은 설치 파일 본문에만 들어간다 ─────────────────────
-  const helperRoot = resolveQuoteFolderHelperRoot();
-  if (helperRoot.status === "unset") {
+  const helperRoots = resolveQuoteFolderHelperInstallRoots();
+  if (helperRoots.status === "unset") {
     return fail(409, "HELPER_ROOT_NOT_CONFIGURED", "관리자가 공유폴더 주소를 설정해야 합니다.");
   }
-  if (helperRoot.status === "invalid") {
+  if (helperRoots.status === "invalid") {
     return fail(409, "HELPER_ROOT_INVALID", "공유폴더 주소 설정이 올바르지 않습니다. 관리자에게 문의해 주세요.");
   }
 
   // ── 4) 설치 파일 — ASCII 본문, 첨부로 ──────────────────────────────────
-  const body = new TextEncoder().encode(buildQuoteFolderHelperInstaller({ uncRoot: helperRoot.root, uncRootAlt: helperRoot.alt }));
+  const body = new TextEncoder().encode(buildQuoteFolderHelperInstaller(quoteFolderHelperRootsInput(helperRoots.roots)));
   return new NextResponse(body, {
     status: 200,
     headers: {

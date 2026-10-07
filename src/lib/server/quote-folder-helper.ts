@@ -1,6 +1,10 @@
 import "server-only";
 
 import {
+  QUOTE_FOLDER_FILE_LINK_PREFIX,
+  QUOTE_FOLDER_OPENABLE_EXTENSIONS,
+} from "@/lib/domain/quote-folder-file-link";
+import {
   QUOTE_FOLDER_LINK_MAX_ENCODED_LENGTH,
   QUOTE_FOLDER_LINK_PREFIX,
   QUOTE_FOLDER_RELATIVE_PATH_MAX_LENGTH,
@@ -22,17 +26,50 @@ import {
  *
  * ── 🔴 불변식 넷 ─────────────────────────────────────────────────────────
  * 이 도우미는 **다른 웹사이트도 부를 수 있는 입구**다.
- *   (a) 루트 아래의 **폴더만** 연다 — 파일 · 프로그램은 열거나 실행하지 않는다.
- *       스크립트가 주소를 풀어 domain/quote-folder-link.ts 와 **같은 규칙**으로 상대 경로를 거절하고,
- *       루트와 이어 GetFullPath 로 편 뒤 「루트 + \」 로 시작하는지(대소문자 무시) 보고, 폴더인지
- *       (Test-Path -PathType Container) 보고, 루트 아래 마디 가운데 바로 가기 폴더(정션 · 심볼릭
- *       링크 — 루트 밖을 가리킬 수 있다)가 있으면 열지 않는다. explorer.exe 에는 그 폴더 경로만,
- *       끝에 `\` 를 붙여 넘긴다(폴더로만 읽힌다).
+ *   (a) 루트(들) 아래의 **폴더**를 탐색기로 열고, 루트(들) 아래의 **허용 목록에 든 확장자의
+ *       파일 하나**를 그 PC 의 연결 프로그램으로 연다. 주소의 접두어가 어느 쪽인지를 가른다
+ *       (`open/` → 폴더 · `openfile/` → 파일).
+ *
+ *       ── 🔴 2026-10-05 에 **무엇이 · 왜 바뀌었나** ──────────────────────
+ *       예전 이 자리에는 「**폴더만** 연다 — 파일 · 프로그램은 열거나 실행하지 않는다」가
+ *       적혀 있었다. [파일 관리] 탭의 공유폴더 목록에서 **파일 이름을 눌러 바로 열고 싶다**는
+ *       것이 이 기능 전체에서 사용자가 가장 원한 것이었고, 사용자가 **아래 「남는 위험」을
+ *       설명 듣고 「바로 열린다」를 골랐다**(2026-10-05). 파일을 「그 PC 의 프로그램으로」 여는
+ *       것은 셸 연결 실행이다 — 그래서 없어진 「파일은 안 연다」 한 줄의 자리를 **검사 일곱**이
+ *       메운다. 스크립트가 **하나도 건너뛰지 않고** 다시 한다(서버가 이미 했어도 다시 한다 —
+ *       주소는 우리 화면이 아니라 아무 웹페이지나 만들 수 있다):
+ *         1. 상대 경로 규칙 — domain/quote-folder-link.ts 와 **같은 규칙**(Test-RelativePath)
+ *         2. 루트 담김 — 루트와 이어 GetFullPath 로 편 뒤 「루트 + \」 로 시작하는지(대소문자 무시)
+ *         3. 마디마다 바로 가기(정션 · 심볼릭 링크 — 루트 밖을 가리킬 수 있다) 없음
+ *            (Test-NoReparsePoint — 마지막 마디인 **파일 자신**까지 본다)
+ *         4. 🔴 **확장자 허용 목록**(Test-OpenableFileName · $OpenableExtensions) — 거절 목록이
+ *            아니다. 목록 밖은 전부 거절. `.exe` 류를 세는 방식은 Windows 가 실행하는 확장자를
+ *            하나라도 빠뜨리면 끝난다(`.lnk` · `.scf` · `.pif` · PATHEXT 로 늘어나는 것들 …)
+ *         5. 🔴 **폴더가 아니라 파일인지**([System.IO.File]::Exists · Directory::Exists 가 참이면
+ *            거절) — 폴더에 `.pdf` 이름을 붙여 둔 함정
+ *         6. 🔴 **확장자 없는 것 거절**(`문서` 처럼 점이 없는 이름 — 4번 함수 안)
+ *         7. 실행 — `Start-Process -FilePath <전체경로>`. **인자는 그 경로 하나뿐**이고
+ *            명령줄을 문자열로 조립하지 않는다(`-ArgumentList` 가 없다)
+ *       폴더 쪽(`open/`)은 **한 글자도 바뀌지 않았다** — explorer.exe 에 그 폴더 경로만, 끝에
+ *       `\` 를 붙여 넘긴다(폴더로만 읽힌다).
+ *
+ *       ── 🔴 남는 위험 — 숨기지 않는다 ───────────────────────────────────
+ *       `dss-folder://` 는 **아무 웹페이지나 부를 수 있다.** 그러므로 악성 페이지가 이 주소를
+ *       불러 **공유폴더 안의 문서를 열게 할 수 있다**(그 사람이 이미 열 수 있는 문서이고, 경로를
+ *       알아맞혀야 하지만, 0 은 아니다). 막은 것은 **실행 파일 · 바로 가기 · 스크립트**(목록 밖)와
+ *       **루트 밖 · 바로 가기를 지나는 경로**다. 막지 못한 것은 **허용 목록에 든 문서 형식 자체의
+ *       위험**이다 — `.xlsm` 매크로, 문서 뷰어의 취약점은 이 도우미가 걸러 주지 않는다.
+ *       (허용 목록에 `.xlsm` 을 일부러 넣은 까닭은 domain/quote-folder-file-link.ts 머리말.)
+ *
+ *       🔴 루트가 여럿이어도 이 검사들은 **루트마다 따로** 한다 — 어느 루트 아래도 아닌 경로는
+ *       어느 루트로도 열리지 않는다(requireRoots · 스크립트의 (e~f) 고리).
  *   (b) 주소가 명령줄로 삽입되지 않는다 — 레지스트리 명령은 `-File "…" "%1"` 이다. `-Command` 로
  *       주소를 이어 붙이지 않는다. `-File` 뒤의 것은 전부 스크립트 인자이고, 스크립트는 인자가
  *       **정확히 하나**가 아니면(따옴표를 깨고 인자를 늘린 주소) 끝낸다. 주소의 몸통은 base64url 이다.
  *   (c) 루트(UNC)는 저장소 · 빌드 결과에 남지 않는다 — 설치 파일 · 설치 명령 본문에만 들어가고,
- *       그 본문은 요청마다 환경변수 QUOTE_ARCHIVE_UNC_ROOT 로 만든다. 로그에도 찍지 않는다.
+ *       그 본문은 요청마다 환경변수(QUOTE_ARCHIVE_UNC_ROOT · CUSTOMER_PORTAL_ARCHIVE_UNC_ROOT 와
+ *       각각의 _ALT, 그리고 CONTACT_FOLDER_ARCHIVE_UNC_ROOT —
+ *       resolveQuoteFolderHelperInstallRoots)로 만든다. 로그에도 찍지 않는다.
  *       (견적서 폴더의 전체 주소를 사람에게 복사해 주는 통로는 아래 「전체 주소」 절.)
  *   (d) 공유폴더 저장 동작은 이 모듈과 무관하다(storage/quote-archive.ts).
  *
@@ -55,10 +92,79 @@ import {
  * Windows PowerShell 5.1 은 BOM 없는 .ps1 을 ANSI(한국어 Windows 는 CP949)로 읽는다. 루트 · 안내
  * 문장에 한글이 있으므로 BOM 을 붙인다(quoteFolderHelperScriptBytes).
  *
+ * ── 🔴 설치가 **함께** 하는 일 — 「로컬 인트라넷」 영역 등록 (2026-10-05 사용자 결정) ──
+ * 공유폴더의 파일을 [열기]로 열면 Windows 가 「이 파일이 신뢰할 수 있는 출처에서 온 것인가요?」
+ * 확인창을 띄운다. 까닭은 코드가 아니다 — Windows 는 `\\<IP>\…` 처럼 **IP 주소로 된 네트워크
+ * 위치**를 「인터넷 영역」으로 분류하고, 그 영역에서 온 파일을 열 때 저 창을 띄운다(탐색기에서
+ * 더블클릭해도 똑같이 뜬다). 이름(`\\NAS이름\…`)으로 바꾸는 길은 막혀 있다 — 사내 DNS 가 없고
+ * 개발 PC 와 NAS 가 다른 대역이라 NetBIOS 이름 조회도 안 된다(2026-10-05 조사 완료).
+ *
+ * 그래서 **도우미를 설치할 때 그 주소를 「로컬 인트라넷」 영역에 함께 등록한다.** 사용자가
+ * 「바꾸는 범위는 그 주소 하나뿐이고, 그 NAS 에 악성 파일이 올라오면 경고 없이 열리게 된다」를
+ * 듣고 골랐다.
+ *
+ *   HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Ranges\RangeN
+ *     ":Range" = "<주소>"   (REG_SZ)
+ *     "*"      = 1          (REG_DWORD — 1 = 로컬 인트라넷)
+ *
+ * 🔴 지키는 것 일곱 (QUOTE_FOLDER_HELPER_ZONE_REGISTER_PS · quoteFolderHelperZoneHosts):
+ *   1. **주소는 설정값에서 뽑는다.** 설치본에 심는 UNC 루트들의 호스트 부분을 꺼내 쓴다 —
+ *      코드에도, 설치 명령의 날 글자에도 주소가 박히지 않는다(루트와 같은 규칙: base64 payload
+ *      `ZONEHOSTS` 안에만 있다).
+ *   2. **같은 호스트는 한 번만.** 견적서 · 현황표 · 연락서 루트가 같은 NAS 이면 하나로 줄인다.
+ *   3. **이미 같은 `:Range` 가 있으면 그 키를 쓴다** — 새 `RangeN` 을 만들지 않는다.
+ *   4. **다른 `RangeN` 은 건드리지 않는다** — 사람이 다른 사내 서버를 등록해 두었을 수 있다.
+ *      새로 만들 때는 **안 쓰이는 번호**를 고른다(대소문자 무시).
+ *   5. **HKCU 만.** HKLM 은 관리자 권한이 필요하고 그 PC 의 모든 계정에 영향을 준다.
+ *   6. 🔴 **호스트가 IP 가 아니면(이름이면) 등록하지 않는다** — 점 없는 이름은 Windows 가 이미
+ *      인트라넷으로 본다. 쓸데없이 건드리지 않는다.
+ *   7. 🔴 **곁다리다.** 영역 등록이 실패해도 **도우미 설치는 끝난다**(자기 try/catch 안에서
+ *      조용히 삼키고, 폴더 열기 등록이 **다 끝난 뒤에** 돈다). 사람이 보는 결과 문구에 무엇을
+ *      했는지 한 줄 적는다(ZONE · ZONEFAIL payload).
+ * 🔴 이 조각은 Windows 가 띄우는 **확인창**을 없애는 것이지 **우리 검사 일곱**(위 (a))을 한 뼘도
+ *    느슨하게 하지 않는다 — 스크립트는 글자 하나 바뀌지 않았다.
+ *
+ * ── 🔴 영역 등록을 되돌리는 법 (실행하는 코드로 만들지 않는다) ──────────────
+ * 지우는 기능을 넣으면 그것이 또 하나의 울타리가 된다. 사람이 PowerShell 창에 한 줄 친다
+ * (`<주소>` 자리에 설정한 공유폴더 호스트를 적는다 — 그 주소의 RangeN 하나만 지운다):
+ *
+ *   Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Ranges' | Where-Object { $_.GetValue(':Range') -eq '<주소>' } | Remove-Item -Recurse -Force
+ *
  * ── 제거 ─────────────────────────────────────────────────────────────────
  * 설치 파일 머리 주석과 스크립트 머리 주석에 적는다:
  *   reg delete "HKCU\Software\Classes\dss-folder" /f
  *   del "%LOCALAPPDATA%\DSS\open-dss-folder.ps1"
+ * ============================================================================
+ */
+
+/**
+ * ============================================================================
+ * 🔴 A/S 에서 **글자 단위로** 가져왔다 — 다른 것은 설치 권한 한 자리뿐이다 (2026-10-07)
+ * ============================================================================
+ * 원본은 A/S 관리 시스템의 **같은 이름 · 같은 경로** 파일
+ * (`RF_Service_System/src/lib/server/quote-folder-helper.ts`).
+ *
+ * ── 🔴 왜 한 글자까지 맞추는가 ────────────────────────────────────────────
+ * 도우미는 **PC 당 한 벌**이다 — 파일 자리(`%LOCALAPPDATA%\DSS\open-dss-folder.ps1`)도
+ * 레지스트리 자리(`HKCU\Software\Classes\dss-folder`)도 두 사이트가 **똑같은 자리**를 쓴다.
+ * 그래서 **나중에 설치한 쪽이 앞의 것을 통째로 덮어쓴다.** 두 사이트가 서로 다른 도우미를
+ * 내면, PO 에서 설치한 사람의 PC 에서 A/S 의 [Excel 보기] · 파일 [열기]가 죽는다(그 반대도).
+ * 사용자가 2026-10-07 에 「두 사이트가 똑같은 도우미를 내게 한다」로 정했다 — 운영 설정
+ * (.env)에 **같은 루트 목록**을 넣는 대가를 받아들였다.
+ *
+ * 🔴 그러므로 이 파일의 보안 판단을 **새로 하지 않는다.** 위 머리말의 검사 일곱 · 허용
+ * 확장자 목록 · 영역 등록은 A/S 쪽에서 이미 사용자 승인을 받고 검증된 것이고, 여기서는
+ * 옮기기만 했다. 고치려면 **양쪽을 함께** 고쳐야 한다.
+ *
+ * ── 🔴 일부러 다르게 둔 것 — 설치 권한 하나뿐 ─────────────────────────────
+ * `mayInstallQuoteFolderHelper` · `QUOTE_FOLDER_HELPER_INSTALL_AREA_KEYS` 를 가져오지
+ * 않았다. 까닭은 아래 「설치 파일 · 설치 명령을 받을 수 있는 사람」 절.
+ *
+ * ── ⚠️ 이 사이트에 없는 기능의 루트 변수도 **그대로** 가져왔다 ────────────
+ * `CUSTOMER_PORTAL_ARCHIVE_UNC_ROOT`(+`_ALT`) · `CONTACT_FOLDER_ARCHIVE_UNC_ROOT` 는 PO 에
+ * 그 기능이 없지만 이름 · 차례까지 그대로 둔다. resolveQuoteFolderHelperInstallRoots 는
+ * **설정된 것만 모으는** 구조라 값이 없으면 그 루트가 그냥 안 들어간다. 이름을 달리하거나
+ * 빼면 운영에서 같은 값을 넣어도 **같은 스크립트가 나오지 않는다.**
  * ============================================================================
  */
 
@@ -69,6 +175,23 @@ export const QUOTE_FOLDER_HELPER_ROOT_ENV = "QUOTE_ARCHIVE_UNC_ROOT";
  * 도우미가 첫째로 못 열면 이것으로 한 번 더 해 본다 — 이름 풀이가 안 되는 PC 가 있기 때문이다.
  */
 export const QUOTE_FOLDER_HELPER_ROOT_ALT_ENV = "QUOTE_ARCHIVE_UNC_ROOT_ALT";
+/**
+ * 🔴 **다른 폴더**의 루트 — 고객사 현황표 공유폴더(견적서 루트 아래가 아니다).
+ * 도우미는 PC 마다 한 벌만 설치되므로(레지스트리 `dss-folder` · `%LOCALAPPDATA%\DSS\…ps1` 자리가
+ * 하나뿐이다) 현황표용 도우미를 따로 설치할 수 없다 — 그러면 그 PC 의 견적서 [폴더 열기]가 죽는다.
+ * 그래서 **한 벌에 루트를 여럿** 심고 차례로 시도한다. 불변식 (a) 는 루트마다 그대로 산다.
+ * 없어도 된다 — 없으면 견적서 루트만 심는다(지금까지와 같다).
+ */
+export const CUSTOMER_PORTAL_FOLDER_HELPER_ROOT_ENV = "CUSTOMER_PORTAL_ARCHIVE_UNC_ROOT";
+/** 위 현황표 루트를 가리키는 **다른 주소**(이름 ↔ IP). 없어도 된다 — 까닭은 견적서 _ALT 와 같다. */
+export const CUSTOMER_PORTAL_FOLDER_HELPER_ROOT_ALT_ENV = "CUSTOMER_PORTAL_ARCHIVE_UNC_ROOT_ALT";
+/**
+ * 🔴 또 하나의 **다른 폴더** — A/S 수리 건의 **연락서** 공유폴더(견적서 루트 아래가 아니다).
+ * 까닭은 바로 위 현황표 루트와 같다: 도우미는 PC 마다 한 벌뿐이라(레지스트리 `dss-folder`)
+ * 연락서용을 따로 설치하면 그 PC 의 견적서 [폴더 열기]가 죽는다. 그래서 한 벌에 함께 심는다.
+ * 없어도 된다 — 없으면 지금까지와 같다. 불변식 (a) 는 루트마다 그대로 산다.
+ */
+export const CONTACT_FOLDER_HELPER_ROOT_ENV = "CONTACT_FOLDER_ARCHIVE_UNC_ROOT";
 export const QUOTE_FOLDER_HELPER_SCRIPT_FILE_NAME = "open-dss-folder.ps1";
 export const QUOTE_FOLDER_HELPER_INSTALLER_FILE_NAME = "install-dss-folder-helper.cmd";
 /** 이 값이 "1" 이면 스크립트가 탐색기를 여는 대신 결과를 표준출력에 적고 끝낸다(시험용). */
@@ -84,6 +207,16 @@ export const QUOTE_FOLDER_HELPER_INSTALLED_MESSAGE = [
   "(지우는 방법은 이 설치 파일을 메모장으로 열면 맨 위에 있습니다.)",
 ].join("\r\n");
 export const QUOTE_FOLDER_HELPER_INSTALL_FAILED_MESSAGE = "설치하지 못했습니다 — 아래 내용을 관리자에게 알려 주세요.";
+
+/**
+ * 🔴 영역 등록까지 끝났을 때 사람이 보는 한 줄. **주소는 적지 않는다** — 설정값이다.
+ * (등록할 주소가 하나도 없으면 이 줄도, 아래 실패 줄도 나오지 않는다.)
+ */
+export const QUOTE_FOLDER_HELPER_ZONE_REGISTERED_MESSAGE =
+  "공유폴더 주소를 「로컬 인트라넷」 영역에 함께 등록했습니다 — 파일을 열 때 뜨던 확인창이 없어집니다.";
+/** 🔴 영역 등록만 못 했을 때 — 도우미 설치 자체는 끝났다는 것을 분명히 말한다. */
+export const QUOTE_FOLDER_HELPER_ZONE_FAILED_MESSAGE =
+  "영역 등록은 하지 못했습니다 — 폴더 열기는 설치되었습니다. 파일을 열 때 확인창이 뜨면 [계속 열기]를 눌러 주세요.";
 
 export class QuoteFolderHelperRootError extends Error {
   constructor() {
@@ -156,14 +289,25 @@ export type QuoteFolderHelperRootResolution =
   | { status: "ok"; root: string; alt?: string };
 
 /**
- * 도우미를 만드는 함수들이 함께 받는 것. `uncRootAlt` 는 **같은 공유폴더를 가리키는 다른 주소**다
- * (이름 ↔ IP). 도우미가 첫째로 못 열면 둘째로 한 번 더 해 본다.
+ * 도우미를 만드는 함수들이 함께 받는 것. 도우미는 여기 적힌 차례 그대로 시도한다.
+ *  · `uncRoot`    — 반드시 있어야 한다.
+ *  · `uncRootAlt` — **같은 공유폴더를 가리키는 다른 주소**(이름 ↔ IP). 없어도 된다.
+ *  · `extraRoots` — 🔴 **다른 폴더**의 루트들(현황표 공유폴더처럼 견적서 루트 아래가 아닌 곳).
+ *                   없어도 된다. 담김 검사는 여기 것들도 **루트마다 따로** 한다.
  */
-export type QuoteFolderHelperRootsInput = { uncRoot: string; uncRootAlt?: string };
+export type QuoteFolderHelperRootsInput = {
+  uncRoot: string;
+  uncRootAlt?: string;
+  extraRoots?: readonly string[];
+};
 
 /**
- * 환경변수 QUOTE_ARCHIVE_UNC_ROOT 를 **부르는 시점에** 읽는다. 값 자체는 로그로 찍지 않는다
- * (보안 규칙: .env 내용은 출력하지 않는다).
+ * 환경변수 QUOTE_ARCHIVE_UNC_ROOT(와 _ALT)를 **부르는 시점에** 읽는다. 값 자체는 로그로 찍지
+ * 않는다(보안 규칙: .env 내용은 출력하지 않는다).
+ *
+ * 이것은 **견적서 루트 한 벌**이다 — 「전체 주소」(resolveQuoteFolderHelperUncPath)가 이 루트로
+ * 견적서 폴더의 주소를 만든다. 설치 파일에 심을 **루트 전부**는 아래
+ * resolveQuoteFolderHelperInstallRoots 가 모은다.
  */
 export function resolveQuoteFolderHelperRoot(): QuoteFolderHelperRootResolution {
   const configured = process.env.QUOTE_ARCHIVE_UNC_ROOT;
@@ -179,6 +323,89 @@ export function resolveQuoteFolderHelperRoot(): QuoteFolderHelperRootResolution 
       : undefined;
   return alt === undefined ? { status: "ok", root } : { status: "ok", root, alt };
 }
+
+export type QuoteFolderHelperInstallRootsResolution =
+  | { status: "unset" }
+  | { status: "invalid" }
+  | { status: "ok"; roots: readonly [string, ...string[]] };
+
+/**
+ * ============================================================================
+ * 설치 파일 · 설치 명령에 심을 **루트 전부** — 부르는 시점에 읽는다
+ * ============================================================================
+ * 차례: 견적서 루트 → 견적서 다른 주소 → 현황표 루트 → 현황표 다른 주소 → 연락서 루트.
+ * 견적서를 먼저 두는 것은 **지금까지 설치된 것과 같은 차례**를 지키기 위해서다 — 설정이 예전
+ * 그대로인 PC 에서는 목록이 예전과 글자 하나 다르지 않다. 연락서를 **맨 뒤에** 더하는 것도
+ * 같은 까닭이다(먼저 끼워 넣으면 이미 설치된 PC 의 목록 차례가 통째로 밀린다).
+ *
+ * ── 일부만 설정됐을 때 ────────────────────────────────────────────────────
+ *  · 견적서 루트가 **틀리면** invalid — 지금까지와 같다. 첫째 루트의 오타는 크게 울어야 한다.
+ *  · 나머지(견적서 _ALT · 현황표 · 현황표 _ALT · 연락서)가 틀리면 **없는 셈** 친다. 곁다리 설정
+ *    하나 때문에 [폴더 열기]가 통째로 죽으면 안 된다(견적서 _ALT 가 이미 그렇게 정해져 있다).
+ *    🔴 특히 현황표 · 연락서 루트의 오타로 **견적서 [폴더 열기]가 죽는 일이 없어야 한다.**
+ *  · 하나도 설정되지 않으면 unset — 설치 파일을 받을 수 없다(지금까지와 같다).
+ *  · 견적서 루트가 비고 현황표 루트만 있으면 현황표 루트 하나로 만든다. 도우미는 자기 루트
+ *    아래만 여는 물건이라, 루트가 하나든 둘이든 규칙은 같다.
+ *
+ * 값은 돌려주기만 하고 로그 · 오류에 싣지 않는다.
+ * ============================================================================
+ */
+export function resolveQuoteFolderHelperInstallRoots(): QuoteFolderHelperInstallRootsResolution {
+  const quote = resolveQuoteFolderHelperRoot();
+  if (quote.status === "invalid") return { status: "invalid" };
+
+  const roots: string[] = [];
+  if (quote.status === "ok") {
+    roots.push(quote.root);
+    if (quote.alt !== undefined) roots.push(quote.alt);
+  }
+  // 곁다리 루트 — 비었거나 규칙 밖이면 없는 셈 친다(위 머리말).
+  for (const configured of [
+    process.env.CUSTOMER_PORTAL_ARCHIVE_UNC_ROOT,
+    process.env.CUSTOMER_PORTAL_ARCHIVE_UNC_ROOT_ALT,
+    process.env.CONTACT_FOLDER_ARCHIVE_UNC_ROOT,
+  ]) {
+    if (!configured || configured.trim().length === 0) continue;
+    const normalized = normalizeQuoteFolderHelperRoot(configured);
+    if (normalized !== null) roots.push(normalized);
+  }
+
+  if (roots.length === 0) return { status: "unset" };
+  const [first, ...rest] = roots;
+  return { status: "ok", roots: [first, ...rest] };
+}
+
+/**
+ * 모은 루트 목록을 도우미를 만드는 함수들의 입력으로 바꾼다 — 첫째가 `uncRoot`, 나머지가
+ * `extraRoots` 다(중복은 requireRoots 가 줄인다). 부르는 쪽(통로)이 루트 값을 여러 자리에서
+ * 만지지 않게 하려고 한 함수로 둔다.
+ */
+export function quoteFolderHelperRootsInput(roots: readonly [string, ...string[]]): QuoteFolderHelperRootsInput {
+  return { uncRoot: roots[0], extraRoots: roots.slice(1) };
+}
+
+/**
+ * ============================================================================
+ * 🔴 설치 파일 · 설치 명령을 **받을 수 있는 사람** — 이 사이트는 `quotes` READ 하나다
+ * ============================================================================
+ * 🔴 **A/S 에 있는 `mayInstallQuoteFolderHelper` · `QUOTE_FOLDER_HELPER_INSTALL_AREA_KEYS`
+ * 를 일부러 가져오지 않았다**(2026-10-07 조각 — 도우미 한 벌 맞추기).
+ *
+ * 저쪽은 [폴더 열기]가 있는 화면이 둘(견적서 편집 화면 · 고객사 현황표 패널)이라
+ * 「`quotes` 또는 `customerPortal` 가운데 **하나라도** READ」로 연다. 🔴 **이 사이트에는
+ * `customerPortal` 권한 영역이 아예 없다**(auth/permission-baseline.ts — 실측). 그 목록을
+ * 그대로 옮기면 통로가 **없는 영역을 묻게 되고**, 쓰이지도 않는 권한 판단이 보안 모듈에
+ * 죽은 코드로 남는다. 그래서 가져오지 않았고, 두 설치 통로는 지금까지와 똑같이
+ * `hasPermission(actingUser, "quotes", "READ")` 하나만 본다 — 문턱을 낮추지도 높이지도
+ * 않았다.
+ *
+ * ── 🔴 「같은 도우미」는 **깔리는 스크립트**가 같다는 뜻이다 ───────────────
+ * 이 조각이 맞춘 것은 설치본의 **내용**이다(스크립트 본문 · 검사 일곱 · 허용 확장자 ·
+ * 루트 목록 · 영역 등록). **누가 그 설치본을 받을 수 있나**는 사이트마다 제 권한 표를
+ * 따른다 — 두 사이트의 권한 영역 자체가 다르기 때문이다. 어느 쪽에서 설치하든 그 PC 에
+ * 깔리는 `open-dss-folder.ps1` 은 같은 글자다.
+ * ============================================================================
+ */
 
 /** PowerShell 작은따옴표 문자열 — 작은따옴표(와 닮은꼴)는 두 번. 루트 검사가 이미 막지만 한 겹 더. */
 function powerShellSingleQuoted(value: string): string {
@@ -196,32 +423,85 @@ function requireRoot(uncRoot: string): string {
 }
 
 /**
- * 도우미가 **차례로 시도할** 루트들. 첫째는 반드시 있어야 하고, 둘째(`uncRootAlt`)는 없어도 된다.
+ * 도우미가 **차례로 시도할** 루트들. 첫째는 반드시 있어야 하고, 나머지(`uncRootAlt` ·
+ * `extraRoots`)는 없어도 된다.
  *
- * 왜 둘인가 — 같은 공유폴더를 가리키는 주소가 PC 마다 다르게 닿는다. 이름(`\\DSS-NAS\…`)은
- * 이름 풀이가 되는 PC 에서만 열리고, IP(`\\192.168.0.222\…`)는 이름 풀이와 무관하지만 NAS 주소가
- * 바뀌면 죽는다. 하나만 두면 그 하나가 안 되는 PC 에서는 [폴더 열기]가 통째로 먹통이 된다.
+ * 왜 여럿인가 — 두 가지 까닭이 겹쳐 있다.
+ *  1) **같은 폴더의 다른 주소**(`uncRootAlt`): 같은 공유폴더를 가리키는 주소가 PC 마다 다르게
+ *     닿는다. 이름(`\\DSS-NAS\…`)은 이름 풀이가 되는 PC 에서만 열리고, IP(`\\192.168.0.222\…`)는
+ *     이름 풀이와 무관하지만 NAS 주소가 바뀌면 죽는다. 하나만 두면 그 하나가 안 되는 PC 에서는
+ *     [폴더 열기]가 통째로 먹통이 된다.
+ *  2) **다른 폴더**(`extraRoots`): 고객사 현황표 공유폴더는 견적서 루트 아래가 아니다(실측
+ *     2026-09-30). 도우미는 PC 당 한 벌이라 따로 설치할 수 없으므로 한 벌에 함께 심는다.
  *
  * 🔴 불변식 (a) 는 그대로다 — 루트는 **설치 때 정해지고** 웹 페이지가 바꿀 수 없으며, 열 수 있는
- *    것은 그 루트들 **아래의 폴더**뿐이다. 담김 검사는 시도하는 루트마다 따로 한다.
- * 같은 값이 둘 들어오면 하나로 줄인다 — 없는 서버를 두 번 기다리지 않게.
+ *    것은 그 루트들 **아래의 폴더**뿐이다. 담김 검사는 시도하는 루트마다 따로 한다(스크립트 (e)).
+ * 같은 값이 둘 들어오면 하나로 줄인다(대소문자 무시) — 없는 서버를 두 번 기다리지 않게.
  */
 function requireRoots(input: QuoteFolderHelperRootsInput): string[] {
   const roots = [requireRoot(input.uncRoot)];
-  const alt = input.uncRootAlt?.trim();
-  if (alt !== undefined && alt.length > 0) {
-    const normalized = requireRoot(alt);
-    if (normalized.toLowerCase() !== roots[0].toLowerCase()) roots.push(normalized);
+  const seen = new Set([roots[0].toLowerCase()]);
+  for (const candidate of [input.uncRootAlt, ...(input.extraRoots ?? [])]) {
+    const trimmed = candidate?.trim();
+    if (trimmed === undefined || trimmed.length === 0) continue;
+    // 🔴 여기서도 루트 검사를 그대로 거친다 — 규칙 밖 값은 스크립트에 박히지 않는다.
+    const normalized = requireRoot(trimmed);
+    if (seen.has(normalized.toLowerCase())) continue;
+    seen.add(normalized.toLowerCase());
+    roots.push(normalized);
   }
   return roots;
 }
 
 /**
+ * 🔴 IPv4 주소 그대로인가 — `192.168.0.222` 처럼 **네 토막 모두 숫자**여야 참이다.
+ * 앞의 0(`010.1.1.1`)은 거짓으로 본다 — Windows 가 다르게 읽을 수 있는 모양은 등록하지 않는다.
+ * 이름(`DSS-NAS` · `nas.example.com`)은 전부 거짓이다.
+ */
+function isIpv4Literal(value: string): boolean {
+  const parts = value.split(".");
+  if (parts.length !== 4) return false;
+  for (const part of parts) {
+    if (!/^\d{1,3}$/.test(part)) return false;
+    if (part.length > 1 && part.startsWith("0")) return false;
+    if (Number(part) > 255) return false;
+  }
+  return true;
+}
+
+/**
+ * ============================================================================
+ * 🔴 「로컬 인트라넷」 영역에 등록할 주소들 — 설치본에 심는 루트들에서 뽑는다 (2026-10-05)
+ * ============================================================================
+ * 까닭 · 지키는 것 일곱은 머리말 「설치가 함께 하는 일」. 여기서 하는 일은 셋뿐이다:
+ *  · UNC 루트(`\\<호스트>\공유\…`)의 **호스트 토막**만 꺼낸다. 드라이브 경로(`Z:\…`)는 호스트가
+ *    없으므로 건너뛴다.
+ *  · 🔴 **IP 가 아니면 버린다** — 이름은 Windows 가 이미 인트라넷으로 보므로 건드리지 않는다.
+ *  · 🔴 **같은 호스트는 한 번만** 남긴다(견적서 · 현황표 · 연락서가 같은 NAS 인 경우).
+ * 루트 검사(requireRoots)를 그대로 거치므로 규칙 밖 루트는 여기서도 던진다.
+ * 돌려주는 값은 payload(base64) 안으로만 간다 — 설치 명령의 날 글자에는 나오지 않는다.
+ * ============================================================================
+ */
+export function quoteFolderHelperZoneHosts(input: QuoteFolderHelperRootsInput): string[] {
+  const hosts: string[] = [];
+  const seen = new Set<string>();
+  for (const root of requireRoots(input)) {
+    if (!root.startsWith("\\\\")) continue;
+    const host = root.slice(2).split("\\")[0];
+    if (!isIpv4Literal(host)) continue;
+    if (seen.has(host)) continue;
+    seen.add(host);
+    hosts.push(host);
+  }
+  return hosts;
+}
+
+/**
  * open-dss-folder.ps1 의 본문(줄 끝 CRLF). 할 일과 거절 규칙은 머리말 (a) · (b).
  *
- * 표준출력 형식(DSS_FOLDER_DRY_RUN=1 일 때만): `OPEN <폴더 전체 경로>` · `NOT-FOUND` ·
- * `REJECT <까닭>`. 끝남 코드: 0 열었음 · 2 주소 모양 · 3 경로 규칙 · 루트 밖 · 바로 가기 폴더 ·
- * 4 폴더 없음 · 9 그 밖의 오류.
+ * 표준출력 형식(DSS_FOLDER_DRY_RUN=1 일 때만): `OPEN <폴더 전체 경로>` ·
+ * `OPEN-FILE <파일 전체 경로>` · `NOT-FOUND` · `REJECT <까닭>`. 끝남 코드: 0 열었음 ·
+ * 2 주소 모양 · 3 경로 규칙 · 루트 밖 · 바로 가기 · 확장자 · 파일 아님 · 4 없음 · 9 그 밖의 오류.
  */
 export function buildQuoteFolderHelperScript(input: QuoteFolderHelperRootsInput): string {
   const roots = requireRoots(input);
@@ -231,8 +511,11 @@ export function buildQuoteFolderHelperScript(input: QuoteFolderHelperRootsInput)
 # 설치 파일(${QUOTE_FOLDER_HELPER_INSTALLER_FILE_NAME})이 이 PC 의 현재 사용자에게 만든 파일입니다.
 # 손으로 고치지 마세요. 공유폴더 주소가 바뀌면 설치 파일을 새로 받아 다시 실행하면 됩니다.
 #
-# 브라우저의 dss-folder:// 주소를 받아, 아래 루트 아래의 폴더만 Windows 탐색기로 엽니다.
-# 파일 · 프로그램은 열거나 실행하지 않습니다. 기록(로그) · 네트워크 · 다른 명령이 없습니다.
+# 브라우저의 dss-folder:// 주소를 받아, 아래 루트 아래의 것만 엽니다.
+#   dss-folder://open/?p=...     폴더를 Windows 탐색기로
+#   dss-folder://openfile/?p=... 파일 하나를 이 PC 의 연결 프로그램으로(아래 허용 목록의 확장자만)
+# 허용 목록 밖 확장자 · 확장자 없는 이름 · 폴더에 파일 이름을 붙인 것 · 바로 가기(정션 · 심볼릭)를
+# 지나는 경로 · 루트 밖은 열지 않습니다. 기록(로그) · 네트워크 · 다른 명령이 없습니다.
 #
 # 지우려면:
 #   reg delete "HKCU\Software\Classes\dss-folder" /f
@@ -243,10 +526,17 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 
 # 공유폴더 루트 — 설치 때 정해졌습니다. 웹 페이지(주소)는 이 값을 바꿀 수 없습니다.
-# 같은 폴더를 가리키는 주소가 여럿이면 차례로 해 보고, 처음으로 실제 있는 것을 엽니다
-# (이름으로 안 닿는 PC 에서는 IP 로, 그 반대도 마찬가지).
+# 여럿이면 차례로 해 보고, 처음으로 실제 있는 폴더를 엽니다. 여럿인 까닭은 둘입니다:
+#  · 같은 폴더를 가리키는 주소가 여럿(이름으로 안 닿는 PC 에서는 IP 로, 그 반대도).
+#  · 서로 다른 공유폴더가 여럿(견적서 · 고객사 현황표).
+# 어느 루트로 시도하든 「그 루트 아래인가」는 아래 (e) 에서 **루트마다 따로** 봅니다.
 $Roots = @(${roots.map((r) => powerShellSingleQuoted(r)).join(", ")})
 $Prefix = '${QUOTE_FOLDER_LINK_PREFIX}'
+$FilePrefix = '${QUOTE_FOLDER_FILE_LINK_PREFIX}'
+
+# 🔴 열 수 있는 확장자 — **허용 목록**입니다. 여기 없는 것은 전부 거절합니다(거절 목록이
+# 아닙니다). 서버의 domain/quote-folder-file-link.ts 와 글자 그대로 같은 한 벌입니다.
+$OpenableExtensions = @(${QUOTE_FOLDER_OPENABLE_EXTENSIONS.map((e) => `'${e}'`).join(", ")})
 $MaxRelativeLength = ${QUOTE_FOLDER_RELATIVE_PATH_MAX_LENGTH}
 $MaxEncodedLength = ${QUOTE_FOLDER_LINK_MAX_ENCODED_LENGTH}
 $DryRun = ($env:${QUOTE_FOLDER_HELPER_DRY_RUN_ENV} -eq '1')
@@ -289,7 +579,39 @@ function Test-FolderState([string]$Path) {
   }
 }
 
-# 루트부터 그 폴더까지 마디마다 바로 가기(정션 · 심볼릭 링크)가 없는가.
+# 🔴 (검사 5) 파일이 있나 — 'found' · 'directory' · 'missing' · 'unreachable'.
+# 'directory' 는 **폴더에 .pdf 같은 이름을 붙여 둔 함정**입니다. File::Exists 는 폴더에 $false 를
+# 주지만, 「없다」와 섞어 버리면 다음 루트로 넘어가 조용히 끝납니다 — 따로 가려 거절합니다.
+# try/catch 가 있는 까닭은 Test-FolderState 와 같습니다(못 닿는 서버 이름은 던진다).
+function Test-FileState([string]$Path) {
+  try {
+    if ([System.IO.Directory]::Exists($Path)) { return 'directory' }
+    if ([System.IO.File]::Exists($Path)) { return 'found' }
+    return 'missing'
+  } catch {
+    return 'unreachable'
+  }
+}
+
+# 🔴 (검사 4 · 6) 이 이름을 열어도 되는가 — 허용 목록에 든 확장자인가.
+#  · 점이 없으면(「문서」) 거절합니다. 점이 맨 앞이어도(「.pdf」) 거절합니다 — 확장자가 없는
+#    것으로 봅니다(검사 6).
+#  · 확장자는 접어서 봅니다(「.PDF」도 같은 것, 「.EXE」도 당연히 거절). ToLowerInvariant 로
+#    접고 -ceq 로 맞춥니다 — 지역 설정이 비교를 바꾸지 못하게.
+#  · 끝에 점 · 공백이 붙은 이름(「보고서.pdf.」 · 「보고서.pdf 」— Windows 가 조용히 뗍니다)은
+#    Test-RelativePath 가 **먼저** 막습니다.
+function Test-OpenableFileName([string]$Name) {
+  $dot = $Name.LastIndexOf([char]'.')
+  if ($dot -lt 1) { return $false }
+  if ($dot -ge ($Name.Length - 1)) { return $false }
+  $extension = $Name.Substring($dot + 1).ToLowerInvariant()
+  foreach ($allowed in $OpenableExtensions) {
+    if ($extension -ceq $allowed) { return $true }
+  }
+  return $false
+}
+
+# 루트부터 그 폴더(또는 파일)까지 마디마다 바로 가기(정션 · 심볼릭 링크)가 없는가.
 # 읽다가 실패하면 $false — 확인하지 못한 것은 열지 않는다(안전한 쪽으로).
 function Test-NoReparsePoint([string]$RootFull, [string]$Relative) {
   try {
@@ -330,10 +652,20 @@ try {
   if ($args.Count -ne 1) { Stop-Helper 'REJECT argument-count' 2 }
   $link = [string]$args[0]
 
-  # (b) dss-folder://open/?p= 모양이 아니면 끝.
-  if ($link.Length -gt ($Prefix.Length + $MaxEncodedLength)) { Stop-Helper 'REJECT not-a-folder-link' 2 }
-  if (-not $link.StartsWith($Prefix, [System.StringComparison]::Ordinal)) { Stop-Helper 'REJECT not-a-folder-link' 2 }
-  $encoded = $link.Substring($Prefix.Length)
+  # (b) dss-folder://open/?p= (폴더) · dss-folder://openfile/?p= (파일) 모양이 아니면 끝.
+  #     🔴 접두어가 **동작을 가릅니다.** 폴더 쪽은 예전과 한 글자도 다르지 않습니다.
+  $Mode = 'folder'
+  $NotAFile = $false
+  if ($link.StartsWith($Prefix, [System.StringComparison]::Ordinal)) {
+    if ($link.Length -gt ($Prefix.Length + $MaxEncodedLength)) { Stop-Helper 'REJECT not-a-folder-link' 2 }
+    $encoded = $link.Substring($Prefix.Length)
+  } elseif ($link.StartsWith($FilePrefix, [System.StringComparison]::Ordinal)) {
+    if ($link.Length -gt ($FilePrefix.Length + $MaxEncodedLength)) { Stop-Helper 'REJECT not-a-folder-link' 2 }
+    $Mode = 'file'
+    $encoded = $link.Substring($FilePrefix.Length)
+  } else {
+    Stop-Helper 'REJECT not-a-folder-link' 2
+  }
   if ($encoded.Length -eq 0 -or ($encoded.Length % 4) -eq 1) { Stop-Helper 'REJECT bad-encoding' 2 }
   if ($encoded -cnotmatch '^[A-Za-z0-9_-]+\z') { Stop-Helper 'REJECT bad-encoding' 2 }
 
@@ -346,25 +678,42 @@ try {
   $strictUtf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false, $true
   try { $relative = $strictUtf8.GetString($bytes) } catch { Stop-Helper 'REJECT bad-encoding' 2 }
 
-  # (d) 상대 경로 규칙.
+  # (d) 상대 경로 규칙 — 🔴 검사 1. 폴더든 파일이든 **같은 규칙**이다.
   if (-not (Test-RelativePath $relative)) { Stop-Helper 'REJECT bad-path' 3 }
 
-  # (e~f) 루트를 차례로 — 담김 검사는 **루트마다 따로** 하고, 처음으로 실제 있는 폴더를 고른다.
+  # (d-2) 🔴 검사 4 · 6 — 파일일 때만. 허용 목록 밖 · 확장자 없는 이름은 여기서 끝난다.
+  #       맨 뒤 마디(파일 이름)만 본다 — 가운데 폴더 이름에는 확장자 규칙이 없다.
+  if ($Mode -ceq 'file') {
+    $segments = $relative.Split([char]'/')
+    if (-not (Test-OpenableFileName $segments[$segments.Length - 1])) { Stop-Helper 'REJECT bad-extension' 3 }
+  }
+
+  # (e~f) 루트를 차례로 — 담김 검사는 **루트마다 따로** 하고, 처음으로 실제 있는 것을 고른다.
   $target = $null
   $contained = $false
   $reparse = $false
   foreach ($candidateRoot in $Roots) {
-    # (e) 루트와 이어 편 뒤, 루트 + '\' 로 시작하는지(대소문자 무시).
+    # (e) 🔴 검사 2 — 루트와 이어 편 뒤, 루트 + '\' 로 시작하는지(대소문자 무시).
     $rootFull = [System.IO.Path]::GetFullPath($candidateRoot).TrimEnd('\')
     $full = [System.IO.Path]::GetFullPath($rootFull + '\' + $relative.Replace('/', '\'))
     if (-not $full.StartsWith($rootFull + '\', [System.StringComparison]::OrdinalIgnoreCase)) { continue }
     $contained = $true
 
-    # (f) 폴더가 아니면(없음 · 파일 · 서버에 못 닿음) 다음 루트로.
-    if ((Test-FolderState $full) -ne 'found') { continue }
+    if ($Mode -ceq 'file') {
+      # (f-2) 🔴 검사 5 — 파일인가. 폴더에 파일 이름을 붙여 둔 것이면 다음 루트로 넘기지 않고
+      #       여기서 멈춘다(안전한 쪽) — 수상한 것을 봤으면 열지 않는다.
+      $state = Test-FileState $full
+      if ($state -ceq 'directory') { $NotAFile = $true; break }
+      if ($state -cne 'found') { continue }
+    } else {
+      # (f) 폴더가 아니면(없음 · 파일 · 서버에 못 닿음) 다음 루트로.
+      if ((Test-FolderState $full) -ne 'found') { continue }
+    }
 
-    # 루트 아래 마디 가운데 바로 가기 폴더(정션 · 심볼릭 링크)는 루트 밖을 가리킬 수 있다 — 열지 않는다.
-    # 다음 루트로 넘기지 않는다: 같은 폴더를 다른 주소로 열어도 같은 바로 가기다.
+    # 🔴 검사 3 — 루트 아래 마디 가운데 바로 가기(정션 · 심볼릭 링크)는 루트 밖을 가리킬 수 있다.
+    # 파일일 때는 **마지막 마디(파일 자신)까지** 본다. 열지 않는다.
+    # 다음 루트로 넘기지 않고 여기서 멈춘다(안전한 쪽). 같은 폴더를 다른 주소로 열어도 같은 바로
+    # 가기이고, 루트가 서로 다른 폴더일 때도 «수상한 것을 봤으면 열지 않는다»가 낫다.
     if (-not (Test-NoReparsePoint $rootFull $relative)) { $reparse = $true; break }
 
     $target = $full
@@ -372,22 +721,43 @@ try {
   }
 
   if ($reparse) {
-    Show-Message '이 폴더는 바로 가기 폴더라 열 수 없습니다.'
+    # 🔴 폴더 쪽 문구는 예전 그대로다 — 파일 쪽만 따로 적는다.
+    if ($Mode -ceq 'file') { Show-Message '이 파일은 바로 가기라 열 수 없습니다.' }
+    else { Show-Message '이 폴더는 바로 가기 폴더라 열 수 없습니다.' }
     Stop-Helper 'REJECT reparse-point' 3
+  }
+
+  if ($NotAFile) {
+    Show-Message '이것은 파일이 아니라 폴더입니다 — 열지 않았습니다.'
+    Stop-Helper 'REJECT not-a-file' 3
   }
 
   # 어느 루트 아래에도 들지 않는 경로 — 규칙 위반이다(없는 폴더와 구별한다).
   if (-not $contained) { Stop-Helper 'REJECT outside-root' 3 }
 
   if ($null -eq $target) {
-    Show-Message ('폴더를 찾을 수 없습니다.' + [System.Environment]::NewLine + '공유폴더 연결을 확인하거나, 견적서 폴더가 옮겨졌는지 확인해 주세요.')
+    # 🔴 폴더 쪽 문구는 예전 그대로다 — 파일 쪽만 따로 적는다.
+    if ($Mode -ceq 'file') { Show-Message ('파일을 찾을 수 없습니다.' + [System.Environment]::NewLine + '공유폴더 연결을 확인하거나, 파일이 옮겨졌는지 확인해 주세요.') }
+    else { Show-Message ('폴더를 찾을 수 없습니다.' + [System.Environment]::NewLine + '공유폴더 연결을 확인하거나, 견적서 폴더가 옮겨졌는지 확인해 주세요.') }
     Stop-Helper 'NOT-FOUND' 4
   }
   $full = $target
 
+  if ($DryRun -and ($Mode -ceq 'file')) { Stop-Helper ('OPEN-FILE ' + $full) 0 }
   if ($DryRun) { Stop-Helper ('OPEN ' + $full) 0 }
 
-  # (g) 탐색기에 그 폴더 경로만 넘긴다. 끝의 '\' 는 폴더로만 읽히게 한다. 파일 · 프로그램은 열지 않는다.
+  # (g-2) 🔴 검사 7 — 이 PC 의 연결 프로그램으로 **그 파일 하나**를 연다.
+  #       인자는 그 전체 경로 하나뿐입니다 — 인자 목록을 따로 넘기지 않고, 명령줄을 문자열로
+  #       조립하지도 않습니다.
+  #       여기까지 오려면 검사 1~6 을 모두 지났다. 마지막으로 한 번 더 「파일인가」를 본다.
+  if ($Mode -ceq 'file') {
+    if ([System.IO.Directory]::Exists($full)) { Stop-Helper 'REJECT not-a-file' 3 }
+    if (-not [System.IO.File]::Exists($full)) { Stop-Helper 'NOT-FOUND' 4 }
+    Start-Process -FilePath $full
+    exit 0
+  }
+
+  # (g) 탐색기에 그 폴더 경로만 넘긴다. 끝의 '\' 는 폴더로만 읽히게 한다.
   if (-not [System.IO.Directory]::Exists($full)) { Stop-Helper 'NOT-FOUND' 4 }
   $start = New-Object System.Diagnostics.ProcessStartInfo
   $start.FileName = Join-Path $env:SystemRoot 'explorer.exe'
@@ -425,6 +795,37 @@ export const QUOTE_FOLDER_HELPER_PAYLOAD_READER_PS = String.raw`function Read-Ds
 export const QUOTE_FOLDER_HELPER_COMMAND_BUILDER_PS = String.raw`$q = [string][char]34; $percent = [string][char]37; $command = $q + $powershell + $q + ' -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File ' + $q + $script + $q + ' ' + $q + $percent + '1' + $q`;
 
 /**
+ * 🔴 영역 지정이 들어 있는 레지스트리 자리 — **HKCU 아래** 경로다(HKLM 이 아니다).
+ * 시험은 이 값을 쓰지 않고 `$zoneRangesPath` 에 임시 키를 넣어 돌린다 — 그래야 진짜 영역 설정을
+ * 건드리지 않는다.
+ */
+export const QUOTE_FOLDER_HELPER_ZONE_RANGES_PATH =
+  "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\Ranges";
+
+/**
+ * ============================================================================
+ * 🔴 영역 등록 알맹이 (한 줄) — 앞에서 `$zoneHostText` · `$zoneRangesPath` 가 정해져 있어야 한다
+ * ============================================================================
+ * 끝나면 `$zoneWanted`(등록해야 할 주소 수)와 `$zoneCount`(실제로 등록한 수)가 든다.
+ * 🔴 **던지지 않는다** — 통째로 try/catch 안이고 catch 는 비어 있다. 영역 등록은 곁다리라서,
+ * 여기서 막혀 폴더 열기가 안 깔리면 안 된다(머리말 7).
+ *
+ * 하는 일:
+ *  · `$zoneHostText` 를 줄 단위로 끊어 빈 줄을 버린다(payload `ZONEHOSTS`).
+ *  · `Ranges` 키를 **HKCU 에서** 연다(없으면 만든다).
+ *  · 주소마다 — 이미 같은 `:Range` 가 있는 `RangeN` 을 찾으면 **그 키를 쓰고**, 없으면
+ *    **안 쓰이는 번호**(Range1, Range2 … 대소문자 무시)를 골라 새로 만든다.
+ *    🔴 다른 `RangeN` 은 읽기만 한다 — 값을 쓰는 것은 고른 키 하나뿐이다.
+ *  · 그 키에 `:Range`(REG_SZ)와 `*` = 1(REG_DWORD — 로컬 인트라넷)을 적는다.
+ *
+ * 🔴 cmd 줄 안에 들어가므로 `"` · `%` · `!` · `^` · `&` · `|` · `<` · `>` 가 하나도 없다
+ * (시험이 지킨다). 그래서 파이프(Where-Object)를 쓰지 않고 foreach 로만 돈다.
+ * 되돌리는 법은 머리말 「영역 등록을 되돌리는 법」 — 지우는 코드는 **만들지 않는다.**
+ * ============================================================================
+ */
+export const QUOTE_FOLDER_HELPER_ZONE_REGISTER_PS = String.raw`$zoneWanted = 0; $zoneCount = 0; try { $zoneHosts = @(); foreach ($zoneLine in $zoneHostText.Split([char]10)) { $zoneTrimmed = $zoneLine.Trim(); if ($zoneTrimmed.Length -ne 0) { $zoneHosts = $zoneHosts + $zoneTrimmed } }; $zoneWanted = $zoneHosts.Count; if ($zoneWanted -ne 0) { $zoneRanges = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($zoneRangesPath); try { foreach ($zoneHost in $zoneHosts) { $zoneNames = $zoneRanges.GetSubKeyNames(); $zoneName = ''; foreach ($zoneCandidate in $zoneNames) { if ($zoneName -eq '') { $zoneExisting = $zoneRanges.OpenSubKey($zoneCandidate); if ($null -ne $zoneExisting) { $zoneRange = $zoneExisting.GetValue(':Range'); $zoneExisting.Close(); if ($zoneRange -is [string]) { if ([string]::Equals($zoneRange, $zoneHost, [System.StringComparison]::OrdinalIgnoreCase)) { $zoneName = $zoneCandidate } } } } }; if ($zoneName -eq '') { $zoneNumber = 1; $zoneTaken = $true; while ($zoneTaken) { $zoneTaken = $false; foreach ($zoneCandidate in $zoneNames) { if ([string]::Equals($zoneCandidate, 'Range' + $zoneNumber, [System.StringComparison]::OrdinalIgnoreCase)) { $zoneTaken = $true } }; if ($zoneTaken) { $zoneNumber = $zoneNumber + 1 } }; $zoneName = 'Range' + $zoneNumber }; $zoneKey = $zoneRanges.CreateSubKey($zoneName); $zoneKey.SetValue(':Range', $zoneHost, [Microsoft.Win32.RegistryValueKind]::String); $zoneKey.SetValue('*', 1, [Microsoft.Win32.RegistryValueKind]::DWord); $zoneKey.Close(); $zoneCount = $zoneCount + 1 } } finally { $zoneRanges.Close() } } } catch { }`;
+
+/**
  * 설치가 실패했을 때의 끝냄 — 설치 파일(.cmd)에서는 이 코드가 %ERRORLEVEL% 로 이어져야 한다.
  * 창에 붙여넣는 명령에서는 이 조각만 덜어낸다(아래 「파일 없이 도는 설치 명령」 절). 아래
  * INSTALL_STATEMENTS 의 마지막 문장에 **정확히 한 번** 들어 있고, 못 찾으면 명령을 만들지 않는다.
@@ -448,7 +849,15 @@ const INSTALL_STATEMENTS = [
   String.raw`$commandKey.SetValue('', $command)`,
   String.raw`$commandKey.Close()`,
   String.raw`$key.Close()`,
-  String.raw`Write-Host ([System.Text.Encoding]::UTF8.GetString((Read-DssPayload 'DONE'))) } catch { Write-Host ([System.Text.Encoding]::UTF8.GetString((Read-DssPayload 'FAILED'))); Write-Host $_.Exception.Message; exit 1 }`,
+  // ── 🔴 여기부터는 곁다리다 — 폴더 열기 등록은 **위에서 이미 끝났다**(머리말 7). ──
+  //    payload 를 못 읽어도, 영역 등록이 실패해도 아래 「설치했습니다」까지 간다.
+  String.raw`$zoneHostText = ''`,
+  String.raw`try { $zoneHostText = [System.Text.Encoding]::UTF8.GetString((Read-DssPayload 'ZONEHOSTS')) } catch { $zoneHostText = '' }`,
+  String.raw`$zoneRangesPath = '${QUOTE_FOLDER_HELPER_ZONE_RANGES_PATH}'`,
+  QUOTE_FOLDER_HELPER_ZONE_REGISTER_PS,
+  String.raw`Write-Host ([System.Text.Encoding]::UTF8.GetString((Read-DssPayload 'DONE')))`,
+  // 사람이 보는 결과 문구에 **무엇을 했는지** 한 줄. 등록할 주소가 없으면 아무 줄도 내지 않는다.
+  String.raw`if ($zoneWanted -ne 0) { if ($zoneCount -eq $zoneWanted) { Write-Host ([System.Text.Encoding]::UTF8.GetString((Read-DssPayload 'ZONE'))) } else { Write-Host ([System.Text.Encoding]::UTF8.GetString((Read-DssPayload 'ZONEFAIL'))) } } } catch { Write-Host ([System.Text.Encoding]::UTF8.GetString((Read-DssPayload 'FAILED'))); Write-Host $_.Exception.Message; exit 1 }`,
 ];
 
 /** cmd 줄에 들어가는 PowerShell `-Command` 본문. */
@@ -457,14 +866,28 @@ export function quoteFolderHelperInstallCommand(): string {
 }
 
 /**
- * 설치가 PC 로 옮기는 것 셋 — 도우미 스크립트 · 설치 완료 문구 · 실패 문구.
+ * 🔴 영역 등록할 주소 목록을 payload 바이트로 — 한 줄에 하나, 끝에도 줄바꿈.
+ * 비어 있어도 **빈 payload 를 만들지 않는다**(읽개가 「덩어리가 없다」로 보고 던진다) —
+ * 등록할 주소가 없으면 줄바꿈 하나만 들어가고, PowerShell 쪽에서 빈 줄은 버린다.
+ */
+function quoteFolderHelperZoneHostsBytes(input: QuoteFolderHelperRootsInput): Uint8Array {
+  return new Uint8Array(Buffer.from(`${quoteFolderHelperZoneHosts(input).join("\n")}\n`, "utf8"));
+}
+
+/**
+ * 설치가 PC 로 옮기는 것 — 도우미 스크립트 · 설치 완료 문구 · 실패 문구, 그리고 🔴 영역 등록 셋
+ * (등록할 주소 목록 · 등록했다는 문구 · 등록만 실패했다는 문구).
  * 🔴 설치 파일(base64 덩어리)과 붙여넣는 설치 명령(base64 문자열)이 **이 한 벌**을 함께 쓴다.
+ * 🔴 **차례는 뒤에만 더한다** — 앞의 셋은 글자 하나 움직이지 않는다(이미 설치된 PC 와 비교하기 쉽게).
  */
 function quoteFolderHelperPayloads(input: QuoteFolderHelperRootsInput): ReadonlyArray<{ name: string; bytes: Uint8Array }> {
   return [
     { name: "HELPER", bytes: quoteFolderHelperScriptBytes(input) },
     { name: "DONE", bytes: new Uint8Array(Buffer.from(QUOTE_FOLDER_HELPER_INSTALLED_MESSAGE, "utf8")) },
     { name: "FAILED", bytes: new Uint8Array(Buffer.from(QUOTE_FOLDER_HELPER_INSTALL_FAILED_MESSAGE, "utf8")) },
+    { name: "ZONEHOSTS", bytes: quoteFolderHelperZoneHostsBytes(input) },
+    { name: "ZONE", bytes: new Uint8Array(Buffer.from(QUOTE_FOLDER_HELPER_ZONE_REGISTERED_MESSAGE, "utf8")) },
+    { name: "ZONEFAIL", bytes: new Uint8Array(Buffer.from(QUOTE_FOLDER_HELPER_ZONE_FAILED_MESSAGE, "utf8")) },
   ];
 }
 
@@ -494,9 +917,20 @@ export function buildQuoteFolderHelperInstaller(input: QuoteFolderHelperRootsInp
     "rem         powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden",
     // rem 줄에도 cmd 가 해석할 수 있는 글자(< > | &)를 두지 않는다.
     `rem           -ExecutionPolicy Bypass -File "[helper]" "[link]"`,
-    "rem  The helper opens ONLY folders under the share root fixed at install time,",
-    "rem  in Windows Explorer. It never opens or runs files.",
+    "rem    3. Adds the share host to the Local intranet zone for this user, so that",
+    "rem       Windows stops asking about every file opened from that share:",
+    "rem         HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
+    "rem           \\ZoneMap\\Ranges\\RangeN  [ :Range = host, * = 1 ]",
+    "rem       Only IP hosts are added, each one once, and existing ranges are kept.",
+    "rem       This step is optional - the helper is installed even if it fails.",
+    "rem       Removing that zone entry is not automated - see the server source.",
+    "rem  The helper only works under the share roots fixed at install time:",
+    "rem    - dss-folder://open/...     opens a folder in Windows Explorer",
+    "rem    - dss-folder://openfile/... opens ONE file with its associated program,",
+    "rem      and only when its extension is on the allow list inside the helper.",
+    "rem  It never runs programs, scripts or shortcuts.",
     "rem  Run this file again to repair the helper or to apply a new share root.",
+    "rem  Older helpers do not know openfile - run this again to add it.",
     "rem",
     "rem  Uninstall (Command Prompt):",
     'rem    reg delete "HKCU\\Software\\Classes\\dss-folder" /f',

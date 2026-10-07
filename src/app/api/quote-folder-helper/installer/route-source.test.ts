@@ -74,15 +74,15 @@ describe("도우미 설치 파일 통로 — 소스로 지킨다", () => {
     assert.ok(route.includes('export const dynamic = "force-dynamic";'));
   });
 
-  test("🔴 순서: 세션 → quotes READ → UNC 루트 → 설치 파일", () => {
+  test("🔴 순서: 세션 → quotes READ → UNC 루트(여럿) → 설치 파일", () => {
     const marks = [
       // 🔴 저쪽의 네 걸음이 이 한 줄이다 — 걸음 수만 줄었고 거르는 것은 그대로다(파일 머리말).
       "await getSessionUser()",
       'hasPermission(actingUser, "quotes", "READ")',
-      "resolveQuoteFolderHelperRoot()",
-      'helperRoot.status === "unset"',
-      'helperRoot.status === "invalid"',
-      "buildQuoteFolderHelperInstaller({ uncRoot: helperRoot.root, uncRootAlt: helperRoot.alt })",
+      "resolveQuoteFolderHelperInstallRoots()",
+      'helperRoots.status === "unset"',
+      'helperRoots.status === "invalid"',
+      "buildQuoteFolderHelperInstaller(quoteFolderHelperRootsInput(helperRoots.roots))",
     ];
     let previous = -1;
     for (const mark of marks) {
@@ -94,13 +94,37 @@ describe("도우미 설치 파일 통로 — 소스로 지킨다", () => {
     assert.equal(getBody.match(/hasPermission\(/g)?.length, 1);
   });
 
+  /**
+   * ============================================================================
+   * 🔴 설치 문턱은 **지금까지 그대로**다 — 2026-10-07 조각이 바꾸지 않았다
+   * ============================================================================
+   * 그날 맞춘 것은 **깔리는 스크립트**(파일 열기 · 루트 여럿 · 영역 등록)이지 **누가 받을 수
+   * 있나**가 아니다. 저쪽(A/S)은 「`quotes` 또는 `customerPortal` 가운데 하나라도 READ」로
+   * 열지만, 🔴 **이 사이트에는 `customerPortal` 권한 영역이 아예 없다.** 그래서 이 통로는
+   * `quotes` READ 하나를 그대로 본다 — 낮추지도 높이지도 않았다.
+   * 이 시험이 그것을 **글자로** 못 박는다: 묻는 영역은 `quotes` 하나, 수준은 READ 뿐,
+   * 통과하지 못하면 그대로 403.
+   * ============================================================================
+   */
+  test("🔴 설치 문턱은 quotes READ 하나 — 영역을 늘리지도, 수준을 올리지도 않았다", () => {
+    assert.equal(getBody.match(/hasPermission\(/g)?.length, 1);
+    assert.ok(getBody.includes('hasPermission(actingUser, "quotes", "READ")'));
+    // 🔴 이 사이트에 없는 영역 · 더 높은 수준이 들어오지 않았다.
+    for (const forbidden of ['"customerPortal"', '"WRITE"', '"MANAGE"', "mayInstallQuoteFolderHelper"]) {
+      assert.equal(route.includes(forbidden), false, forbidden);
+    }
+    const permissionAt = getBody.indexOf('hasPermission(actingUser, "quotes", "READ")');
+    const rejected = getBody.indexOf('fail(403, "FORBIDDEN", "이 작업을 수행할 권한이 없습니다.")');
+    assert.ok(permissionAt >= 0 && rejected > permissionAt, "권한을 통과하지 못했을 때 403 이 아니다");
+  });
+
   test("루트가 비었거나 틀리면 409 와 사람이 읽는 문장 — 값은 싣지 않는다", () => {
     assert.ok(getBody.includes('fail(409, "HELPER_ROOT_NOT_CONFIGURED", "관리자가 공유폴더 주소를 설정해야 합니다.")'));
     assert.ok(getBody.includes('fail(409, "HELPER_ROOT_INVALID",'));
-    // 루트 값은 설치 파일을 만드는 자리 한 번만 나온다(오류 · 로그에 없다).
-    assert.equal(getBody.match(/helperRoot\.root/g)?.length, 1);
+    // 루트 값은 설치 파일을 만드는 자리 한 번만 나온다(루트가 여럿이어도 — 오류 · 로그에 없다).
+    assert.equal(getBody.match(/helperRoots\.roots/g)?.length, 1);
     for (const call of [...getBody.matchAll(/fail\([^)]*\)/g)].map((match) => match[0])) {
-      assert.equal(call.includes("helperRoot.root"), false, call);
+      assert.equal(call.includes("helperRoots.roots"), false, call);
     }
     assert.equal(route.includes("console."), false);
     assert.equal(route.includes("process.env"), false);

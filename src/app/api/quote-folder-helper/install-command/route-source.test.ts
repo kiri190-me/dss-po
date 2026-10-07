@@ -78,15 +78,15 @@ describe("도우미 설치 명령 통로 — 소스로 지킨다", () => {
     assert.ok(route.includes('export const dynamic = "force-dynamic";'));
   });
 
-  test("🔴 순서: 세션 → quotes READ → UNC 루트 → 명령", () => {
+  test("🔴 순서: 세션 → quotes READ → UNC 루트(여럿) → 명령", () => {
     const marks = [
       // 🔴 저쪽의 네 걸음이 이 한 줄이다 — 걸음 수만 줄었고 거르는 것은 그대로다(파일 머리말).
       "await getSessionUser()",
       'hasPermission(actingUser, "quotes", "READ")',
-      "resolveQuoteFolderHelperRoot()",
-      'helperRoot.status === "unset"',
-      'helperRoot.status === "invalid"',
-      "buildQuoteFolderHelperInlineInstallCommand({ uncRoot: helperRoot.root, uncRootAlt: helperRoot.alt })",
+      "resolveQuoteFolderHelperInstallRoots()",
+      'helperRoots.status === "unset"',
+      'helperRoots.status === "invalid"',
+      "buildQuoteFolderHelperInlineInstallCommand(quoteFolderHelperRootsInput(helperRoots.roots))",
     ];
     let previous = -1;
     for (const mark of marks) {
@@ -97,6 +97,24 @@ describe("도우미 설치 명령 통로 — 소스로 지킨다", () => {
     }
     assert.equal(getBody.match(/hasPermission\(/g)?.length, 1);
     assert.equal(getBody.includes('"WRITE"'), false);
+  });
+
+  /** 설치 파일 통로와 **같은 잣대**(installer/route-source.test.ts 의 같은 이름 시험). */
+  test("🔴 설치 문턱은 quotes READ 하나 — 영역을 늘리지도, 수준을 올리지도 않았다", () => {
+    assert.ok(getBody.includes('hasPermission(actingUser, "quotes", "READ")'));
+    for (const forbidden of ['"customerPortal"', '"WRITE"', '"MANAGE"', "mayInstallQuoteFolderHelper"]) {
+      assert.equal(route.includes(forbidden), false, forbidden);
+    }
+    const permissionAt = getBody.indexOf('hasPermission(actingUser, "quotes", "READ")');
+    const rejected = getBody.indexOf('fail(403, "FORBIDDEN", "이 작업을 수행할 권한이 없습니다.")');
+    assert.ok(permissionAt >= 0 && rejected > permissionAt, "권한을 통과하지 못했을 때 403 이 아니다");
+  });
+
+  /** 🔴 두 통로의 문지기가 갈라지지 않게 — 권한 줄이 **글자 그대로** 같아야 한다. */
+  test("🔴 설치 권한 줄이 설치 파일 통로와 글자 그대로 같다", () => {
+    const line = 'if (!(await hasPermission(actingUser, "quotes", "READ"))) {';
+    assert.ok(getBody.includes(line), getBody.slice(0, 400));
+    assert.ok(installerRoute.includes(line), "설치 파일 통로의 권한 줄이 다르다");
   });
 
   test("🔴 문지기가 설치 파일 통로와 같다 — 실패 코드 · 사유 문장이 글자 그대로 같다", () => {
@@ -121,10 +139,10 @@ describe("도우미 설치 명령 통로 — 소스로 지킨다", () => {
     }
   });
 
-  test("루트 값은 명령을 만드는 자리 한 번뿐 — 오류 · 로그에 없다", () => {
-    assert.equal(getBody.match(/helperRoot\.root/g)?.length, 1);
+  test("루트 값은 명령을 만드는 자리 한 번뿐 — 오류 · 로그에 없다(루트가 여럿이어도)", () => {
+    assert.equal(getBody.match(/helperRoots\.roots/g)?.length, 1);
     for (const call of [...getBody.matchAll(/fail\([^)]*\)/g)].map((match) => match[0])) {
-      assert.equal(call.includes("helperRoot.root"), false, call);
+      assert.equal(call.includes("helperRoots.roots"), false, call);
     }
     assert.equal(route.includes("console."), false);
     assert.equal(route.includes("process.env"), false);
