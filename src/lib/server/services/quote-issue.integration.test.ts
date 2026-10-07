@@ -473,14 +473,13 @@ describe("일반 견적서 — 채우기 → 공유폴더 → 첨부 칸 → 감
     assert.equal(await exportAuditCount(quote.id), 2, "내려받기는 두 번이라 감사도 두 줄");
   });
 
-  test("내용을 바꿔 받기 — 공유폴더 ` (2)` · replaced 1 · 옛 첨부는 휴지통, 같은 내용이면 다시 unchanged", async () => {
+  test("🔴 내용을 바꿔 받기 — 공유폴더는 **그 한 장을 덮어쓴다**(조각 PO 4c) · replaced 1 · 옛 첨부는 휴지통", async () => {
     const fields = quoteFields("CHANGED");
     const quote = await createTestQuote(fields);
     const archiveRoot = await makeTempRoot("dss-qi-arc-");
     const naming = namingOf(fields);
     const folder = `${YEAR_FOLDER}/${quoteArchiveFolderName(naming)}`;
     const fileName = quoteArchiveFileName(naming, { extension: "xlsx" });
-    const secondName = numberedQuoteArchiveName(fileName, 2);
 
     const first = expectIssued(await issue(quote.id, archiveRoot));
     const [oldRow] = await liveExcel(quote.id);
@@ -495,13 +494,15 @@ describe("일반 견적서 — 채우기 → 공유폴더 → 첨부 칸 → 감
 
     const second = expectIssued(await issue(quote.id, archiveRoot));
     assert.equal(second.bytes.equals(first.bytes), false, "내용을 바꿨으니 바이트가 달라야 한다");
+    // 🔴 전에는 ` (2)` 가 생겼다. 이제는 이름 줄기가 같은 그 한 장을 덮어쓴다 —
+    //    견적서 엑셀(QUOTE_FILE)은 앱이 다시 만들 수 있고, 사람이 보고 싶은 것은 마지막 판이다.
+    //    🔴 결재본(SIGNED_PDF)은 그대로 번호를 붙여 비켜 간다(아래 「결재 PDF 복사」 묶음).
     assert.deepEqual(second.result, {
-      archive: { status: "saved", relativePath: `${folder}/${secondName}`, multipleFolderMatches: false },
+      archive: { status: "saved", relativePath: `${folder}/${fileName}`, multipleFolderMatches: false },
       attachment: { status: "replaced", displacedCount: 1 },
     });
-    assert.deepEqual(await filesIn(archiveRoot, folder), [fileName, secondName].sort());
-    assert.ok((await readFile(absoluteIn(archiveRoot, `${folder}/${fileName}`))).equals(first.bytes), "앞의 파일은 그대로");
-    assert.ok((await readFile(absoluteIn(archiveRoot, `${folder}/${secondName}`))).equals(second.bytes));
+    assert.deepEqual(await filesIn(archiveRoot, folder), [fileName], "🔴 공유폴더 파일은 여전히 한 장");
+    assert.ok((await readFile(absoluteIn(archiveRoot, `${folder}/${fileName}`))).equals(second.bytes), "마지막 판이 남는다");
 
     const rows = await quoteAttachmentRows(quote.id);
     const old = rows.find((row) => row.id === oldRow.id);
@@ -509,16 +510,17 @@ describe("일반 견적서 — 채우기 → 공유폴더 → 첨부 칸 → 감
     assert.equal(old?.deleteReason, QUOTE_ATTACHMENT_REPLACED_REASON);
     const [live, ...more] = await liveExcel(quote.id);
     assert.equal(more.length, 0);
-    assert.equal(live.originalFileName, secondName);
+    assert.equal(live.originalFileName, fileName);
     assert.ok(second.bytes.equals(await readStored(live.storedPath)));
 
-    // 바꾼 내용 그대로 한 번 더 — ` (2)` 를 가리키고 칸도 그대로다.
+    // 바꾼 내용 그대로 한 번 더 — 같은 바이트라 아예 쓰지 않고(unchanged) 칸도 그대로다.
     const third = expectIssued(await issue(quote.id, archiveRoot));
     assert.deepEqual(third.result, {
-      archive: { status: "unchanged", relativePath: `${folder}/${secondName}`, multipleFolderMatches: false },
+      archive: { status: "unchanged", relativePath: `${folder}/${fileName}`, multipleFolderMatches: false },
       attachment: { status: "unchanged" },
     });
     assert.equal((await quoteAttachmentRows(quote.id)).length, 2);
+    assert.deepEqual(await filesIn(archiveRoot, folder), [fileName]);
   });
 
   test("OH 견적서 — 공유폴더 · 첨부 이름에 `(OH포함)`", async () => {
@@ -833,11 +835,13 @@ describe("케이블 견적서 — 제 양식으로 발행되고 세 곳에 남�
  * 필수로 받아 그 길을 막는다. 🔴 `npm run test:db` 는 `.env.local` 을 통째로 읽으므로
  * (scripts/load-test-env.ts) 그 값이 **실제로 들어와 있다.**
  *
- * ── ⚠️ A/S 의 같은 묶음과 다른 한 가지 ──────────────────────────────────
- * 저쪽의 ⑤ 는 「고쳐 저장해도 공유폴더 파일은 **한 장**」을 잰다 — 저쪽 저장 모듈이
- * 2026-10-06 에 견적서 엑셀만 같은 자리에 덮어쓰도록 바뀌었기 때문이다. 🔴 **이 사이트는
- * 아직 그 전 판이라 내용이 달라지면 ` (2)`, ` (3)` 으로 비켜 간다.** 아래 ⑤ 는 그
- * **지금 사실**을 잰다 — 덮어쓰기를 가져오는 날 이 시험이 걸려, 그 변경을 눈에 띄게 한다.
+ * ── 🔴 2026-10-07 (조각 PO 4c) — ⑤ 를 새 사실로 뒤집었다 ─────────────────
+ * 앞 조각(4b)의 ⑤ 는 「고쳐 저장하면 ` (2)`, ` (3)` 으로 비켜 간다」를 잰, **그때의
+ * 사실**이었다. 이 조각이 저쪽(2026-10-06)의 `QUOTE_FILE` 덮어쓰기를 가져왔으므로
+ * ⑤ 는 이제 「고쳐 저장해도 공유폴더 파일은 **한 장**」을 잰다. 🔴 **결재본
+ * (`SIGNED_PDF`)은 그대로다** — 같은 이름의 결재본을 두 번 넣으면 여전히 ` (2)` 가
+ * 생기고, 그것은 아래 「결재 PDF 복사 — archiveSignedQuotePdf」 묶음과
+ * lib/storage/quote-archive.test.ts 가 잰다.
  * (같은 바이트면 아예 쓰지 않는 규칙은 지금도 그대로라, ⑤ 끝에서 그것도 함께 잰다.)
  * ============================================================================
  */
@@ -884,7 +888,7 @@ describe("저장에 딸린 견적서 엑셀 — 공유폴더 + 첨부 칸, 감�
   );
 
   test(
-    "⚠️ ⑤ 고쳐 저장하면 아직 ` (2)` 로 비켜 간다 — 같은 바이트면 안 쓴다 · 칸에는 늘 마지막 판",
+    "🔴 ⑤ 고쳐 저장해도 공유폴더 파일은 한 장이다 — 쌓이지 않고 마지막 판이 남는다",
     { skip: skipRender },
     async () => {
       const fields = quoteFields("SAVE-EDIT");
@@ -899,7 +903,6 @@ describe("저장에 딸린 견적서 엑셀 — 공유폴더 + 첨부 칸, 감�
 
       // 세 번 고쳐 저장한다 — 값이 바뀌므로 바이트도 매번 달라진다.
       let version = quote.version;
-      let nth = 1;
       for (const cost of ["150000.00", "160000.00", "170000.00"]) {
         const updated = await updateQuote({
           id: quote.id,
@@ -911,26 +914,25 @@ describe("저장에 딸린 견적서 엑셀 — 공유폴더 + 첨부 칸, 감�
         if (!updated.ok) throw new Error("unreachable");
         version = updated.version;
 
-        nth += 1;
         const result = await onSave(quote.id, archiveRoot);
         assert.equal(result.status, "done", JSON.stringify(result));
         if (result.status !== "done") throw new Error("unreachable");
-        // ⚠️ 덮어쓰기가 없어 번호가 붙는다(이 묶음 머리말). A/S 는 늘 `fileName` 이다.
+        // 🔴 늘 같은 자리다 — 번호가 붙지 않는다.
         assert.deepEqual(result.archive, {
           status: "saved",
-          relativePath: `${folder}/${numberedQuoteArchiveName(fileName, nth)}`,
+          relativePath: `${folder}/${fileName}`,
           multipleFolderMatches: false,
         });
       }
 
-      // ⚠️ 네 번 저장했으니 네 장이다 — 덮어쓰기를 가져오면 이 줄이 걸린다.
+      // 🔴 네 번 저장했는데 파일은 한 장이다.
       assert.deepEqual(
         await filesIn(archiveRoot, folder),
-        [1, 2, 3, 4].map((n) => numberedQuoteArchiveName(fileName, n)).sort(),
-        "⚠️ 공유폴더 쓰기 규칙이 바뀌었다 — storage/quote-archive.ts 머리말을 볼 것"
+        [fileName],
+        "🔴 공유폴더에 장이 쌓였다 — storage/quote-archive.ts 머리말을 볼 것"
       );
 
-      // 🔴 첨부 칸에는 **마지막 판 한 장**뿐이다(덮어쓰기와 무관하다).
+      // 🔴 첨부 칸에도 **마지막 판 한 장**뿐이고, 공유폴더의 그 한 장도 마지막 판이다.
       const edit = await getQuoteForEdit(quote.id);
       assert.ok(edit);
       const expected = await renderQuoteWorkbook(edit);
@@ -938,7 +940,7 @@ describe("저장에 딸린 견적서 엑셀 — 공유폴더 + 첨부 칸, 감�
       assert.equal(rest.length, 0, "칸에 여러 장이 살아 있다");
       assert.ok(expected.equals(await readStored(row.storedPath)), "칸에 마지막 판이 없다");
       assert.ok(
-        (await readFile(absoluteIn(archiveRoot, `${folder}/${numberedQuoteArchiveName(fileName, 4)}`))).equals(expected),
+        (await readFile(absoluteIn(archiveRoot, `${folder}/${fileName}`))).equals(expected),
         "마지막 판이 공유폴더에 없다"
       );
       assert.equal(await exportAuditCount(quote.id), 0);
@@ -949,7 +951,7 @@ describe("저장에 딸린 견적서 엑셀 — 공유폴더 + 첨부 칸, 감�
       if (again.status !== "done") throw new Error("unreachable");
       assert.equal(again.archive.status, "unchanged", "🔴 같은 내용인데 또 썼다");
       assert.equal(again.attachment.status, "unchanged", "🔴 같은 내용인데 칸을 또 바꿨다");
-      assert.equal((await filesIn(archiveRoot, folder)).length, 4, "🔴 저장만 반복했는데 장이 늘었다");
+      assert.deepEqual(await filesIn(archiveRoot, folder), [fileName], "🔴 저장만 반복했는데 장이 늘었다");
     }
   );
 

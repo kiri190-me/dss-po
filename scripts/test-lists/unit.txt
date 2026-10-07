@@ -710,6 +710,10 @@ src/components/domestic-orders/domestic-order-intake-link.test.ts
 #    이 사이트는 아직 `wx` 로만 써서 내용이 달라지면 ` (2)` 로 비켜 간다. 사내
 #    공유폴더의 결재본이 걸린 별건이라 따로 결정할 일이고, 들어오는 날
 #    `quote-save-archive-source.test.ts` 의 그 묶음이 **반드시 걸리게** 해 두었다.
+#    ⚠️ 🔴 **조각 PO 4c 가 그 덮어쓰기를 가져왔다**(2026-10-07) — 못 박아 둔 묶음이
+#    약속대로 걸렸고, 단언을 지우지 않고 **뒤집어** 새 사실로 적었다. 이제 견적서
+#    엑셀은 번호 없는 그 한 자리에 덮어쓰고, 🔴 **결재본(`SIGNED_PDF`)은 그대로**
+#    ` (2)` 로 비켜 간다. 위 ① 은 **더 이상 사실이 아니다**(기록으로 남긴다).
 #  ② 이름 꼬리 `faultDescription` — 이 사이트의 `domain/quote-archive-naming.ts` 가
 #    아직 그 칸을 받지 않는 옛 판이라 넘기지 않는다(넘겨도 버려진다).
 src/lib/server/actions/quote-save-archive-source.test.ts

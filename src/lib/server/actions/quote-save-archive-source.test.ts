@@ -17,16 +17,15 @@ import { describe, test } from "node:test";
  *  · 🔴 **DB 트랜잭션 바깥**이다 — mutation 이 돌아온 **뒤**, 성공 분기 안
  *  · 🔴 **실패해도 견적서 저장은 되돌아가지 않는다** — 그 토막에 `return` 도 `throw` 도 없다
  *  · 🔴 **로그에 파일 이름 · 폴더 이름 · 경로 · 오류 message 가 없다**
+ *  · 🔴 **덮어쓰기는 `QUOTE_FILE` 에만** — 결재본(`SIGNED_PDF`)은 쓰는 방식이 한 글자도
+ *    바뀌지 않았다(사내 견적서 폴더의 파일 2,100 개 가운데 542 개가 사람이 올린 결재본이다)
  *  · 🔴 **지우기를 늘리지 않았다** — `unlink` 는 저장 모듈에 한 군데뿐이고 `rm` · `rename` 은 0
  *  · 🔴 **저장은 감사(EXCEL_EXPORT)를 남기지 않는다** — 그 기록의 뜻은 「받아 갔다」이다
  *
- * ── ⚠️ A/S 와 다른 한 묶음 ───────────────────────────────────────────────
- * 저쪽의 같은 파일에는 「**덮어쓰기는 `QUOTE_FILE` 에만**」 묶음이 있다(2026-10-06 에
- * 저쪽 `storage/quote-archive.ts` 가 견적서 엑셀만 같은 자리에 덮어쓰도록 바뀌었다).
- * 🔴 **이 사이트의 저장 모듈은 아직 그 전 판이다** — 견적서 엑셀도 결재본도 `wx` 로만
- * 열어 ` (2)`, ` (3)` 으로 비켜 간다. 그래서 그 묶음 대신 아래 「쓰기 길은 그대로다」가
- * **지금 사실을 못 박는다**: 덮어쓰기를 가져오는 날 이 묶음이 걸려, 그 변경을
- * **눈에 띄게** 만든다(사내 공유폴더의 결재본 수백 장이 걸린 별건이다).
+ * ── 🔴 2026-10-07 (조각 PO 4c) — 「아직 덮어쓰지 않는다」 묶음을 뒤집었다 ────
+ * 앞 조각(4b)은 「A/S 의 덮어쓰기는 아직 없다」를 일부러 못 박아, 그것이 들어오는 날
+ * **반드시 걸리게** 해 두었다. 이 조각이 그 덮어쓰기를 가져왔으므로 **사실이 바뀌었다** —
+ * 단언을 지운 것이 아니라 **뒤집어** 적었다(아래 묶음은 저쪽 2026-10-06 판과 같다).
  * ============================================================================
  */
 
@@ -178,56 +177,71 @@ describe("저장하면 견적서 엑셀이 공유폴더에 — 액션에 끼운 
 
 /*
  * ============================================================================
- * storage 쪽 — 🔴 **쓰기 길은 그대로다**(덮어쓰기를 가져오지 않았다)
+ * storage 쪽 — 🔴 **덮어쓰기는 `QUOTE_FILE` 에만**
  * ============================================================================
- * A/S 의 같은 자리는 「덮어쓰기는 `QUOTE_FILE` 에만」을 잰다. 이 사이트는 그 변경을
- * 아직 가져오지 않았으므로(이 파일 머리말 ⚠️), 여기서 잴 수 있는 것은 **지금 사실**이다 —
- * 견적서 엑셀도 결재본도 `wx` 로만 열고, 같은 바이트면 아예 쓰지 않는다.
- *
- * 🔴 덮어쓰기를 가져오는 날 이 묶음이 **반드시 걸린다.** 그때 고칠 것은 이 묶음이고,
- * 그 전에 사내 공유폴더의 결재본(사람이 올린 원본)이 덮어쓰기 대상이 되지 않는지를
- * 먼저 본다. 동작은 lib/storage/quote-archive.test.ts 가 임시 폴더에서 본다.
+ * 결재본(`SIGNED_PDF`)은 사람이 올린 원본이고 앱이 다시 만들 수 없다. 덮어쓰기를 함수
+ * 전체에 켜면 사내 폴더의 결재본 542 장이 전부 덮어쓰기 대상이 된다 — 그 가름을 글자로
+ * 못 박는다. 동작은 lib/storage/quote-archive.test.ts 가 임시 폴더에서 본다.
  * ============================================================================
  */
 
-const saveBody = bodyOf(storage, "async function save(");
+const writeArchiveFileBody = bodyOf(storage, "function writeArchiveFile(");
+const overwriteFileBody = bodyOf(storage, "async function overwriteFile(");
 const writeNewFileBody = bodyOf(storage, "async function writeNewFile(");
+const writeAndCloseBody = bodyOf(storage, "async function writeAndClose(");
 
-describe("공유폴더 쓰기 길 — 아직 덮어쓰지 않는다", () => {
-  test("🔴 쓰기를 부르는 자리는 하나이고, 그 길은 `wx` 로만 연다", () => {
-    assert.equal(occurrences(storage, "await writeNewFile("), 1, "쓰기를 부르는 자리가 하나가 아니다");
+describe("덮어쓰기는 견적서 엑셀에만 — 결재본은 지금 그대로", () => {
+  test("🔴 종류로 가른다 — `QUOTE_FILE` 만 덮어쓰고 나머지는 예전 길을 탄다", () => {
+    assert.ok(writeArchiveFileBody.includes('fileKind === "QUOTE_FILE"'), "가름이 없다");
+    assert.ok(writeArchiveFileBody.includes("overwriteFile("), "덮어쓰는 길이 없다");
+    assert.ok(writeArchiveFileBody.includes("writeNewFile("), "🔴 예전 길이 사라졌다");
+    // 쓰기를 부르는 자리는 하나다 — 저장 길이 둘로 갈라지면 반드시 어긋난다.
+    assert.equal(occurrences(storage, "await writeArchiveFile("), 1, "쓰기를 부르는 자리가 하나가 아니다");
+  });
+
+  test("🔴 결재본이 타는 길(writeNewFile)은 `wx` 로만 연다 — 덮어쓰기 모드가 없다", () => {
     assert.ok(writeNewFileBody.includes('await open(target, "wx")'), "wx 가 사라졌다");
-    assert.equal(writeNewFileBody.includes('"w")'), false, "🔴 덮어쓰기 모드가 들어왔다 — 이 파일 머리말 ⚠️ 를 볼 것");
+    assert.equal(writeNewFileBody.includes('"w")'), false, "🔴 결재본 길에 덮어쓰기 모드가 들어왔다");
     // 번호 비켜가기와 상한은 그대로다.
     assert.ok(writeNewFileBody.includes("numberedQuoteArchiveName(fileName, n)"), "번호 비켜가기가 사라졌다");
     assert.ok(writeNewFileBody.includes("QUOTE_ARCHIVE_MAX_NUMBERED_COPIES"), "상한이 사라졌다");
     assert.ok(writeNewFileBody.includes('errorCode(error) === "EEXIST"'), "EEXIST 로 다음 번호로 가지 않는다");
   });
 
-  test("⚠️ A/S 의 덮어쓰기(`writeArchiveFile` · `overwriteFile`)는 아직 없다 — 들어오면 여기서 걸린다", () => {
-    for (const notYet of ["writeArchiveFile", "overwriteFile"]) {
-      assert.equal(
-        storage.includes(notYet),
-        false,
-        `🔴 덮어쓰기(${notYet})가 들어왔다 — 결재본(有印 PDF)이 덮어쓰기 대상이 되지 않는지 먼저 보고, 이 시험 묶음을 A/S 판으로 바꿀 것`
-      );
-    }
+  test("🔴 덮어쓰는 길은 번호를 붙이지 않는다 — 이미 쌓인 ` (2)` 를 열지도 않는다", () => {
+    assert.ok(overwriteFileBody.includes('await open(target, "w")'), "덮어쓰기 모드가 없다");
+    assert.equal(
+      overwriteFileBody.includes("numberedQuoteArchiveName"),
+      false,
+      "🔴 덮어쓰는 길이 번호 붙은 이름을 만든다"
+    );
+    assert.equal(
+      overwriteFileBody.includes("QUOTE_ARCHIVE_MAX_NUMBERED_COPIES"),
+      false,
+      "덮어쓰는 길이 상한을 본다"
+    );
+    // 경로가 루트 밖을 가리키면 쓰지 않는다 — 예전 길과 같은 관문을 지난다.
+    assert.ok(overwriteFileBody.includes("assertInsideRoot(root, target)"), "🔴 루트 밖 검사를 건너뛴다");
   });
 
   test("🔴 지우기를 늘리지 않았다 — `unlink` 는 한 군데, `rm` · `rename` 은 0", () => {
     assert.equal(occurrences(storage, "unlink("), 1, "🔴 지우는 자리가 늘었다");
-    assert.ok(writeNewFileBody.includes("await unlink(target)"), "지우는 자리가 writeNewFile 가 아니다");
+    assert.ok(writeAndCloseBody.includes("await unlink(target)"), "지우는 자리가 writeAndClose 가 아니다");
+    // 🔴 이번에 만든 파일일 때만 치운다 — 이미 있던 파일은 덮어쓸 뿐 지우지 않는다.
+    assert.ok(writeAndCloseBody.includes("if (created) await unlink(target)"), "🔴 이미 있던 파일까지 지운다");
+    assert.equal(overwriteFileBody.includes("unlink"), false, "덮어쓰는 길이 제 손으로 지운다");
     for (const forbidden of ["rm(", "rmdir(", "rename(", "unlinkSync", "truncate("]) {
       assert.equal(storage.includes(forbidden), false, `저장 모듈에 ${forbidden} 가 생겼다`);
     }
   });
 
-  test("🔴 「내용이 같으면 안 쓴다」가 그대로다 — 저장이 자주 일어나는 길이다", () => {
+  test("🔴 「내용이 같으면 안 쓴다」가 그대로다 — 덮어쓰기는 내용이 다를 때만 일어난다", () => {
+    const saveBody = bodyOf(storage, "async function save(");
     assert.ok(saveBody.includes("await findSameContentFile("), "🔴 같은 내용 건너뛰기가 사라졌다");
     assert.ok(saveBody.includes('status: "unchanged"'), "unchanged 가 사라졌다");
-    // 같은 내용 검사가 **쓰기보다 앞**이다 — 뒤로 가면 매번 새 장이 쌓인다.
+    // 같은 내용 검사가 **쓰기보다 앞**이다 — 뒤로 가면 매번 덮어쓴다.
     assert.ok(
-      saveBody.indexOf("await findSameContentFile(") < saveBody.indexOf("await writeNewFile("),
+      saveBody.indexOf("await findSameContentFile(") < saveBody.indexOf("await writeArchiveFile("),
       "🔴 같은 내용을 보기 전에 쓴다"
     );
   });
