@@ -718,3 +718,34 @@ src/components/domestic-orders/domestic-order-intake-link.test.ts
 #    아직 그 칸을 받지 않는 옛 판이라 넘기지 않는다(넘겨도 버려진다).
 src/lib/server/actions/quote-save-archive-source.test.ts
 src/lib/server/actions/quote-archive-folder-source.test.ts
+
+# ── 조각 PO 4d — 공유폴더 **안에 무엇이 있는가**를 읽어 오는 길 (2026-10-07) ──
+# A/S 가 2026-10-06 에 넣은 셋을 가져왔다(domain/share-folder-naming.ts ·
+# storage/quote-archive-entries.ts · api/quotes/[id]/archive-folder/entries).
+# 🔴 **화면은 붙이지 않았다** — [Excel 보기]는 다음 조각이고, 지금 이 통로를 부르는
+# 자리는 아직 없다.
+#
+# ① 목록을 세우는 순수 규칙 — 정렬과 「빼는 줄」(~$ · Thumbs.db · desktop.ini · 점).
+#    🔴 맨 아래 한 묶음이 **다듬기가 두 벌로 갈라지지 않게** 지킨다: 이 파일의
+#    normalizeShareFolderNameForCompare 와 quote-archive-naming.ts 의
+#    normalizeQuoteArchiveNameForCompare 가 같은 답을 내는지 직접 견준다.
+src/lib/domain/share-folder-naming.test.ts
+# ② 🔴 **사람의 서류함을 읽는 층** — A/S 의 같은 이름 시험(355줄)을 바이트 동일로.
+#    🔴 모든 시험이 OS 임시 폴더(mkdtemp)에서만 돈다 — 실제 공유폴더를 안 건드린다.
+#    재는 것: 맨 위 칸만 · 하위 폴더로 안 내려간다 · 찌꺼기는 세기 전에 뺀다 ·
+#    줄 수와 기다리기에 상한 · 맞는 폴더가 **여럿이면 목록도 경로도 안 낸다** ·
+#    돌려주는 값과 실패 사유에 **절대 경로가 한 글자도 없다**.
+src/lib/storage/quote-archive-entries.test.ts
+# ③ 그 층의 **원본 글자**를 지킨다 — 지우기 · 만들기 · 파일 내용 읽기가 한 글자도
+#    없는가. ⚠️ A/S 와 다른 한 곳: 저쪽은 공용 도우미(storage/share-folder-fs.ts)를
+#    불러 「fs 를 아예 안 가져온다」를 쟀지만, 🔴 **이 사이트에는 그 공용 도우미가
+#    없어** 읽기 절편이 원본 파일 안에 비공개로 들어 있다. 그래서 대신 **들어오는
+#    이름이 `readdir` 과 `stat` 둘뿐이고 디렉터리를 읽는 자리가 하나뿐**임을 글자로
+#    못 박는다(그 파일 머리말 ①).
+src/lib/storage/quote-archive-entries-source.test.ts
+# ④ 🔴 **새 통로의 문지기** — 목록을 밖으로 내보내는 길이라 여기가 이 조각의 핵심이다.
+#    이웃 통로(`[id]/archive-folder/route.ts`)의 문지기 토막과 **글자 그대로 같은지**를
+#    두 원본을 떼어 맞대어 본다. 문턱도 같은 글자(`quotes` READ) 하나이고, 권한이
+#    조회보다 앞이며, 조회 뒤에는 403 이 없다(존재 여부를 흘리지 않는다).
+#    🔴 시험 파일은 `[id]` **밖**에 둔다 — 대괄호 경로는 실행기가 거절한다.
+src/app/api/quotes/archive-folder-entries-route-source.test.ts
