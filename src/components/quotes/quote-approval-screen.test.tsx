@@ -95,6 +95,8 @@ const issueButtonSource = read("src/components/quotes/QuoteIssueButton.tsx");
 const issueDownloadSource = read("src/components/quotes/quote-issue-download.ts");
 /** 🔴 보기 권한자가 파일을 받는 길 — 목록 줄의 [견적서 받기] 링크(GET …/xlsx). */
 const listSlotsSource = read("src/components/quotes/QuoteListSlots.tsx");
+/** 🔴 보기 권한자의 받기 링크가 사는 자리 — 2026-10-07 에 목록에서 여기로 옮겨 잰다. */
+const printViewSource = read("src/components/quotes/QuotePrintView.tsx");
 const editPageSource = read("src/app/(app)/quotes/[id]/page.tsx");
 const newPageSource = read("src/app/(app)/quotes/new/page.tsx");
 /** 🔴 서버가 눌렀을 때 돌려주는 거절 문구가 있는 자리(조각 결재-B 가 깔았다). */
@@ -341,9 +343,16 @@ describe("🔴 결재는 아무 문도 잠그지 않는다 — 화면 쪽", () =
       "발행 통로를 부르는 자리가 사라졌다"
     );
     // 보기 권한자의 받기 링크(GET …/xlsx)도 그대로다 — 발행과 다른 길이다.
+    //
+    // ⚠️ 🔴 **읽는 파일이 2026-10-07 에 바뀌었다.** 그때까지는 **목록**(QuoteListSlots)의
+    //    줄마다 선 그 링크를 봤는데, 🔴 **목록의 [견적서 받기]가 빠졌다**(사용자 지시 —
+    //    받는 곳을 사내 공유폴더 하나로 모은다. A/S 가 2026-10-06 에 먼저 했다).
+    //    🔴 **재는 뜻은 그대로다**: 보기 권한자가 발행과 **다른 길**로 파일을 받을 수
+    //    있는가. 그 길은 이제 **인쇄 미리보기 화면**의 같은 링크다(QuotePrintView —
+    //    수정 권한자에게는 발행 단추, 보기 권한자에게는 이 링크다).
     assert.ok(
-      flat(listSlotsSource).includes("href={`/api/quotes/${row.id}/xlsx`}"),
-      "[견적서 받기] 링크가 사라졌다"
+      flat(printViewSource).includes("href={`/api/quotes/${quoteId}/xlsx`}"),
+      "[견적서 받기] 링크가 사라졌다 — 보기 권한자가 파일을 받을 길이 없다"
     );
   });
 });

@@ -165,22 +165,36 @@ describe("㉡ 막는 자리 — 받기 통로 · 목록 · 발행 통로 · 미�
     assert.ok(xlsxRoute.indexOf("recordQuoteExport({") > excelAt, "감사가 갈래보다 앞이다");
   });
 
-  test("🔴 목록의 받기 링크 — 그 줄에는 받기를 내밀지 않는다", () => {
-    // 🔴 링크 대신 **꺼진 단추**를 세운다(2026-09-22 눈 확인 — 단추 칸이 모든 줄에서
-    //    같아야 한다). 문장은 이 판정이 돌려주는 그 하나다.
+  test("🔴 목록 — 양식 없는 줄에는 미리보기를 내밀지 않고, 까닭을 곁말로 적는다", () => {
+    // ⚠️ 🔴 **이 시험의 이름과 재는 곳이 2026-10-07 에 바뀌었다.** 그때까지는
+    //    「목록의 받기 링크 — 그 줄에는 받기를 내밀지 않는다」였고, 양식이 없는 줄에
+    //    **꺼진 [견적서 받기] 단추**(`UnavailableDownload`)를 세우는지 쟀다.
+    //    🔴 **받기는 목록에서 통째로 빠졌다**(사용자 지시 — 받는 곳을 사내 공유폴더
+    //    하나로 모은다. A/S 가 2026-10-06 에 먼저 했다). 그래서 그 칸이 통째로 비는데,
+    //    **까닭을 말하는 곁말은 남겼다** — 저쪽과 같은 조각 · 같은 이름이다.
+    // 🔴 **단언을 약하게 하지 않았다**: 여전히 ㉠ 의 판정 함수 하나를 부르는지, 그 문장이
+    //    서버와 같은 하나인지, 미리보기가 같은 판정으로 빠지는지를 잰다.
     assert.ok(
       listSlots.includes(
-        "if (!canRenderQuoteDocument(row)) { return <UnavailableDownload reason={QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE} />; }"
+        "function DocumentUnsupportedNote({ row }: { row: QuoteListItem }) { if (canRenderQuoteDocument(row)) return null;"
       ),
-      "목록의 받기가 그 판정을 부르지 않는다"
+      "목록의 곁말이 판정을 보지 않는다"
     );
-    // 링크보다 앞이다 — 뒤에 있으면 링크가 이미 그려진다.
-    const at = listSlots.indexOf("if (!canRenderQuoteDocument(row))");
-    assert.ok(listSlots.indexOf("href={`/api/quotes/${row.id}/xlsx`}") > at, "링크가 판정보다 앞이다");
+    assert.ok(listSlots.includes("<span title={QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE}"), "곁말이 같은 문장을 쓰지 않는다");
+    assert.ok(
+      listSlots.includes(
+        "function QuotePreviewLink({ row }: { row: QuoteListItem }) { if (!canRenderQuoteDocument(row)) return null;"
+      ),
+      "목록의 미리보기가 그대로 있다"
+    );
+    // 🔴 **받기가 정말로 빠졌다** — 되살아나면 여기서 깨진다.
+    assert.equal(listSlots.includes("<QuoteDownloadLink row={row} />"), false, "목록의 받기가 되살아났다");
+    assert.equal(listSlots.includes("<UnavailableDownload"), false, "꺼진 받기 단추가 되살아났다");
     // 표와 카드 두 곳이 **같은 조각**을 쓴다 — 슬롯이 하나라 화면이 그 값을 둘에 건다
     // (그것을 보는 것은 quote-list-screen-source.test.ts 의 「표와 카드가 같은 슬롯을
-    // 받는다」다). 여기서는 이 사이트가 그 슬롯에 넣은 것이 하나임을 본다.
-    assert.equal(listSlots.split("<QuoteDownloadLink row={row} />").length - 1, 1);
+    // 받는다」다). 여기서는 이 사이트가 그 슬롯에 넣은 것이 하나씩임을 본다.
+    assert.equal(listSlots.split("<QuotePreviewLink row={row} />").length - 1, 1);
+    assert.equal(listSlots.split("<DocumentUnsupportedNote row={row} />").length - 1, 1);
   });
 
   /**

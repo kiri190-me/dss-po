@@ -1,0 +1,173 @@
+"use client";
+
+import { useState, useSyncExternalStore } from "react";
+
+import {
+  QUOTE_ARCHIVE_EXCEL_OPEN_BUTTON_TITLE,
+  runQuoteArchiveExcelOpen,
+  type QuoteArchiveExcelOpenOutcome,
+} from "./quote-archive-excel-open";
+import {
+  isWindowsDesktopClient,
+  readQuoteFolderClientPlatform,
+  runQuoteFolderHelperInstallCommandCopy,
+} from "./quote-folder-open";
+import type { QuoteIssueNoticeLine, QuoteIssueNoticeTone } from "./quote-issue-messages";
+
+/**
+ * ============================================================================
+ * 줄마다의 [Excel 보기] — 그 줄의 엑셀을 공유폴더에서 찾아 이 PC 의 엑셀로 연다
+ * ============================================================================
+ * 🔴 **A/S 에서 가져왔다**(2026-10-07). 저쪽에서는 이 조각이 목록 화면 원본 안에 들어
+ * 있다(`RF_Service_System/src/components/quotes/QuoteListScreen.tsx` 의
+ * `ArchiveExcelOpenButton` · `ExcelNoticeLines` — 2026-10-07 실측 744~868줄).
+ * 🔴 **이 사이트의 목록 화면은 서브모듈(vendor/dss-core)이라 한 글자도 고칠 수 없다** —
+ * 그 화면이 열어 둔 `renderRowActions` 슬롯에 이 조각을 끼운다(QuoteListSlots.tsx).
+ * 그래서 **파일만 따로 섰고 안의 글자는 저쪽 그대로**다.
+ *
+ * 누른 뒤의 세 걸음(폴더 안 목록 받기 → 번호가 맞는 엑셀 고르기 → 여는 장치에 넘기기)은
+ * 전부 quote-archive-excel-open.ts 가 한다. 이 조각은 **단추와 결과 줄만** 그린다.
+ *
+ * ── 🔴 누를 때 찾는다 ───────────────────────────────────────────────────
+ * 목록을 그릴 때는 공유폴더를 읽지 않는다. 줄이 열한 개면 화면을 여는 것만으로 공유폴더를
+ * 열한 번 때리게 된다 — NAS 가 느린 날 목록 자체가 늦어진다.
+ *
+ * ── 🔴 두 번 눌러도 두 번 열리지 않는다 ─────────────────────────────────
+ * 찾는 동안 단추를 잠그고(busy) 글자를 「여는 중…」으로 바꾼다. 공유폴더가 느릴 수 있어
+ * 눌린 것이 보이지 않으면 사람이 한 번 더 누른다.
+ *
+ * ── 🔴 어디에 알리나 — 그 줄 옆이다 ─────────────────────────────────────
+ * 화면 위의 띠는 **한 번에 하나**뿐인 조작(지우기 · 되살리기)의 자리다. 이 단추는 줄마다
+ * 있어 띠에 적으면 어느 견적서 이야기인지 알 수 없다.
+ *
+ * ── 🔴 안 그리는 경우는 Windows 가 아닐 때뿐이다 ────────────────────────
+ * 도우미는 Windows PC 에만 설치된다 — 그 밖의 기기에서는 누를 수 있어도 열리지 않는다.
+ * 공유폴더 설정이 꺼져 있는지(disabled), 그 종류의 엑셀이 만들어지는지(엑셀 전용 장은
+ * 저장이 공유폴더를 건너뛴다)는 **누르기 전에 알 수 없고**, 알더라도 사람이 손으로 넣어 둔
+ * 엑셀이 그 폴더에 있을 수 있다. 그래서 줄마다 그냥 그리고, 누르면 사실대로 알린다.
+ *
+ * 🔴 결과 줄에 따라오는 「열리지 않으면 도우미를 다시 설치해 주세요」와 [설치 명령 복사]는
+ * 여는 장치가 제 결과로 내는 것이다 — 여기서 끄지 않는다.
+ *
+ * 🔴 **`dark:` 스타일을 지우지 않는다.** 이 사이트에 다크 모드가 없어 아무것도 안 켜지지만,
+ * 지우면 A/S 와 같은 모양이 깨진다(2026-09-28 사용자 결정).
+ *
+ * 서버 액션을 부르지 않는다 — `server-only` 사슬 없이 그려 볼 수 있다
+ * (QuoteArchiveExcelOpenButton.test.tsx).
+ * ============================================================================
+ */
+
+const subscribeToNothing = () => () => {};
+const isWindowsDesktopNow = () =>
+  typeof navigator !== "undefined" && isWindowsDesktopClient(readQuoteFolderClientPlatform(navigator));
+const hiddenOnServer = () => false;
+
+const EXCEL_NOTICE_TONE_CLASS: Record<QuoteIssueNoticeTone, string> = {
+  normal: "text-zinc-700 dark:text-zinc-300",
+  muted: "text-zinc-400 dark:text-zinc-500",
+  warning: "font-medium text-amber-700 dark:text-amber-400",
+};
+
+/** 결과 줄들. 목록 한 줄 안(인라인 자리)에 들어가므로 span 으로 적는다. */
+export function ExcelNoticeLines({ lines }: { lines: readonly QuoteIssueNoticeLine[] }) {
+  if (lines.length === 0) return null;
+  return (
+    <>
+      {lines.map((line, index) => (
+        <span key={`${index}-${line.text}`} className={`block break-words ${EXCEL_NOTICE_TONE_CLASS[line.tone]}`}>
+          {line.text}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/**
+ * 🔴 줄 하나를 받는다 — 쓰는 칸은 **id 와 발행번호 둘뿐**이다. 서브모듈의 `QuoteListItem`
+ * 을 통째로 받지 않는 까닭은, 이 조각이 그 타입의 다른 칸(엑셀 전용 여부 · 금액 …)을
+ * 보기 시작하면 「누르기 전에 아는 척」하는 갈래가 생기기 때문이다(위 머리말).
+ */
+export type QuoteArchiveExcelOpenRow = { id: string; quoteNumber: string };
+
+/**
+ * 단추와 결과 줄 자체 — Windows 판단 없이. 화면에는 기본 내보내기
+ * (QuoteArchiveExcelOpenButton)를 쓴다. 🔴 **갈라 둔 까닭은 시험이다** — 기본 내보내기는
+ * 서버 렌더에서 아무것도 그리지 않으므로(아래) 그려지는 글자를 볼 수 없다. 편집 화면 머리의
+ * [폴더 열기]가 같은 방법으로 갈라져 있다(QuoteFolderOpenButton 의 `QuoteFolderOpenControl`).
+ */
+export function QuoteArchiveExcelOpenControl({ row }: { row: QuoteArchiveExcelOpenRow }) {
+  const [busy, setBusy] = useState(false);
+  const [copyBusy, setCopyBusy] = useState(false);
+  const [outcome, setOutcome] = useState<QuoteArchiveExcelOpenOutcome | null>(null);
+  const [copyLines, setCopyLines] = useState<QuoteIssueNoticeLine[]>([]);
+
+  async function handleOpen() {
+    // 🔴 찾는 중에는 다시 눌리지 않는다 — 단추도 잠그지만 여기서도 한 번 더 막는다.
+    if (busy) return;
+    setBusy(true);
+    setOutcome(null);
+    setCopyLines([]);
+    try {
+      setOutcome(await runQuoteArchiveExcelOpen({ quoteId: row.id, quoteNumber: row.quoteNumber }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCopy() {
+    if (copyBusy) return;
+    setCopyBusy(true);
+    try {
+      setCopyLines(await runQuoteFolderHelperInstallCommandCopy());
+    } finally {
+      setCopyBusy(false);
+    }
+  }
+
+  return (
+    <span className="print:hidden flex min-w-0 max-w-[16rem] flex-col items-start gap-0.5 whitespace-normal">
+      <button
+        type="button"
+        onClick={() => void handleOpen()}
+        disabled={busy}
+        aria-busy={busy}
+        title={QUOTE_ARCHIVE_EXCEL_OPEN_BUTTON_TITLE}
+        data-quote-archive-excel-open=""
+        className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+      >
+        {busy ? "여는 중…" : "Excel 보기"}
+      </button>
+      {outcome && (
+        <span role="status" className="flex min-w-0 flex-col items-start gap-0.5 text-xs">
+          <ExcelNoticeLines lines={outcome.lines} />
+          {outcome.offerHelperInstall && (
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              disabled={copyBusy}
+              aria-busy={copyBusy}
+              data-quote-archive-excel-helper-install-command=""
+              className="text-xs text-zinc-500 underline underline-offset-2 hover:text-zinc-800 disabled:opacity-50 dark:text-zinc-400 dark:hover:text-zinc-200"
+            >
+              {copyBusy ? "복사하는 중…" : "설치 명령 복사"}
+            </button>
+          )}
+          <ExcelNoticeLines lines={copyLines} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * 🔴 **Windows PC 에서만 그린다** — 서버 렌더 · 첫 렌더는 감춘 채.
+ *
+ * 렌더 중에 navigator 를 만지면 서버 렌더와 첫 렌더가 어긋난다(hydration). 서버용
+ * 스냅샷(「아니다」)을 따로 주면 서버 · 첫 렌더는 감춘 채 그리고, 마운트 뒤 실제 값으로
+ * 한 번 맞춰진다 — 편집 화면 머리의 [폴더 열기]와 **같은 방법**이다.
+ */
+export default function QuoteArchiveExcelOpenButton({ row }: { row: QuoteArchiveExcelOpenRow }) {
+  const isWindows = useSyncExternalStore(subscribeToNothing, isWindowsDesktopNow, hiddenOnServer);
+  if (!isWindows) return null;
+  return <QuoteArchiveExcelOpenControl row={row} />;
+}

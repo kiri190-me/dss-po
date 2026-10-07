@@ -71,3 +71,15 @@ src/components/quotes/quote-folder-open-screens.test.ts
 src/components/quotes/QuoteFolderOpenButton.test.tsx
 src/components/quotes/quote-folder-open.test.ts
 src/components/common/copy-text.test.ts
+
+# ── 조각 PO 4e — 줄마다의 [Excel 보기] 단추 (2026-10-07) ────────────────
+# A/S 의 같은 묶음(저쪽 `QuoteListScreen.test.ts` 의 「줄마다의 [Excel 보기]」 —
+# 2026-10-07 실측 345~419줄)에서 가져왔다. 🔴 **재는 것은 하나도 빼지 않았다.**
+# 🔴 고친 곳은 **자리 한 가지**다: 저쪽은 그 단추가 목록 화면 원본 **안**에 있어 그
+#    파일의 글자로 쟀는데, 이 사이트의 목록 화면은 **서브모듈(vendor/dss-core)이라
+#    손댈 수 없어** 단추가 제 파일로 따로 섰다. 「자리는 [미리보기 · PDF] 바로
+#    오른쪽」은 슬롯을 거는 쪽에서 재므로 unit 의
+#    components/quotes/quote-list-screen-source.test.ts 에 있다.
+# 🔴 `react-dom/server` 로 단추와 결과 줄을 **실제로 그려 본다** — 그래서 unit 이
+#    아니라 여기다(이 파일 머리의 플래그 설명).
+src/components/quotes/QuoteArchiveExcelOpenButton.test.tsx

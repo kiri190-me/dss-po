@@ -310,24 +310,30 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     );
   });
 
-  test("🔴 조각 3c-2 · 3d-2 · PO 3j — 줄마다 [미리보기 · PDF] · [견적서 받기] 가 선다. 엑셀이 붙은 엑셀 전용 줄도 같은 링크다", () => {
-    // 위 시험에서 `renderRowActions=` 를 뺀 자리를 메운다 — 금지 목록으로는 더 이상
-    // 잴 수 없으니 **무엇이 걸렸는지를 이름으로 못 박는다**(3c-1 이 new/page.tsx 에서
-    // 한 방식과 같다).
+  /**
+   * ==========================================================================
+   * 🔴 **2026-10-07 — 받기가 빠지고 [Excel 보기]가 들어왔다** (사용자 지시)
+   * ==========================================================================
+   * 이 자리에 있던 시험의 이름은 「줄마다 [미리보기 · PDF] · **[견적서 받기]** 가 선다」
+   * 였다(조각 3c-2 · 3d-2 · PO 3j). 그것은 **그때의 기록**이다 — 사용자가 받는 곳을
+   * **사내 공유폴더 하나로 모으기로** 했고(A/S 가 2026-10-06 에 같은 일을 했다), 목록
+   * 줄의 받기 단추 셋이 함께 빠졌다:
+   *   `QuoteDownloadLink` · `UnavailableDownload` · `ExcelMissingDownload`
+   *
+   * 🔴 **단언을 약하게 하지 않았다.** 옛 시험이 재던 것(슬롯의 모양 · 무엇이 걸렸는지 ·
+   * 차례)을 그대로 재고, **없어진 것이 정말로 없어졌는지**와 🔴 **받는 길이 남아 있는지**를
+   * 더 잰다. 「하나를 더하면서 다른 하나가 조용히 빠지는 것」을 막는 것이 이 시험의 몫이고,
+   * 이번에는 **일부러 뺀 것**이라 그 사실까지 글자로 못 박는다.
+   * ==========================================================================
+   */
+  test("🔴 2026-10-07 — 줄마다 [미리보기 · PDF] · [Excel 보기] 가 선다. [견적서 받기]는 빠졌다", () => {
     const slots = flat(slotsSource);
 
     // 🔴 함수 슬롯이라 **QuoteListSlots 에서** 건다 — page.tsx 에서 넘기면 화면이 죽는다.
-    //
-    // ⚠️ 🔴 **이 단언의 글자가 2026-09-28(조각 PO 3j)에 늘었다.** 그때까지는
-    //    `renderRowActions={(row) => <QuoteDownloadLink row={row} />}` 한 줄이었다 —
-    //    사용자가 두 화면을 나란히 놓고 「A/S 처럼」이라고 지시해 [미리보기 · PDF]가
-    //    **받기 앞에** 섰고, 조각 둘이 나란히 서야 해서 슬롯이 조각(fragment)을 돌려준다.
-    //    🔴 **단언을 약하게 하지 않았다** — 아래 넷이 함께 잰다: 모양 · 미리보기가
-    //    걸렸다는 것 · **받기가 여전히 걸려 있다는 것** · 그 차례. 하나를 더하면서
-    //    다른 하나가 조용히 빠지는 것이 이 시험이 막는 일이다.
     assert.ok(
       slots.includes(
-        "renderRowActions={(row) => ( <> <QuotePreviewLink row={row} /> <QuoteDownloadLink row={row} /> </> )}"
+        "renderRowActions={(row) => ( <> <QuotePreviewLink row={row} /> " +
+          "<QuoteArchiveExcelOpenButton row={row} /> <DocumentUnsupportedNote row={row} /> </> )}"
       ),
       "줄 단추 슬롯이 채워지지 않았거나 모양이 다르다"
     );
@@ -341,70 +347,91 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
       "미리보기가 줄 단추 슬롯에서 빠졌다"
     );
     assert.ok(
-      rowActions.includes("<QuoteDownloadLink row={row} />"),
-      "받기가 줄 단추 슬롯에서 빠졌다 — 미리보기를 더하면서 받기가 사라졌다"
+      rowActions.includes("<QuoteArchiveExcelOpenButton row={row} />"),
+      "[Excel 보기]가 줄 단추 슬롯에서 빠졌다"
+    );
+    assert.ok(
+      rowActions.includes("<DocumentUnsupportedNote row={row} />"),
+      "앱 양식이 없는 종류의 곁말이 빠졌다 — 그 줄의 단추 칸이 통째로 빈다"
     );
     // 🔴 **차례도 잰다.** 사용자가 화면을 보고 지시한 것이라 차례가 바뀌면 지시와 다른
     //    것이 된다. [삭제]는 화면(서브모듈)이 이 슬롯 **다음 줄**에 붙인다.
     assert.ok(
-      rowActions.indexOf("<QuotePreviewLink") < rowActions.indexOf("<QuoteDownloadLink"),
-      "차례가 뒤집혔다 — [미리보기 · PDF] → [견적서 받기] 여야 한다"
+      rowActions.indexOf("<QuotePreviewLink") < rowActions.indexOf("<QuoteArchiveExcelOpenButton"),
+      "차례가 뒤집혔다 — [미리보기 · PDF] → [Excel 보기] 여야 한다"
     );
 
-    // 🔴 그 주소에 실제로 통로가 있어야 한다 — 없는 곳으로 보내는 링크는 3a 가 막던 그것이다.
+    // 🔴 단추 조각은 **제 파일**에 있다 — 서브모듈 화면에 박을 수 없어 따로 섰다.
+    assert.ok(
+      slots.includes('import QuoteArchiveExcelOpenButton from "./QuoteArchiveExcelOpenButton";'),
+      "[Excel 보기] 조각을 제 파일에서 가져오지 않는다"
+    );
+    assert.equal(
+      existsSync(fileURLToPath(new URL("src/components/quotes/QuoteArchiveExcelOpenButton.tsx", repoUrl))),
+      true,
+      "[Excel 보기] 조각이 없다"
+    );
+
+    // 🔴 **받기가 정말로 빠졌다** — 목록 쪽 원본(주석을 뺀 코드)에 자취가 없다.
+    const slotsCode = codeOf(slotsSource);
+    for (const gone of [
+      "QuoteDownloadLink",
+      "UnavailableDownload",
+      "ExcelMissingDownload",
+      "ROW_ACTION_CLASS",
+      "견적서 받기",
+      "/xlsx",
+      "QUOTE_EXCEL_MISSING_NOTICE",
+      "NoticePopup",
+    ]) {
+      assert.equal(slotsCode.includes(gone), false, `목록에 받기의 자취가 남았다: ${gone}`);
+    }
+
+    // 🔴 **곁말 한 조각은 저쪽과 같은 모양이다** — 옛 꺼진 단추가 지키던 자리를 잇는다.
+    const note = codeOf(sliceBetween(slotsSource, "function DocumentUnsupportedNote(", "\n}\n"));
+    assert.ok(note.includes("if (canRenderQuoteDocument(row)) return null;"), note);
+    assert.ok(note.includes("title={QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE}"), note);
+    assert.equal(note.includes("canEdit"), false, "권한 갈래가 남았다");
+    assert.equal(note.includes("disabled"), false, "곁말이 아직 꺼진 단추다");
+  });
+
+  /**
+   * ==========================================================================
+   * 🔴 **받는 길이 사라진 것이 아니다** (2026-10-07)
+   * ==========================================================================
+   * 목록 줄의 받기 단추를 뗀 조각이라, 「그래서 사람이 파일을 못 받게 됐나」를 여기서
+   * 못 박는다. 🔴 **통로도, 다른 화면의 받기도 한 줄도 안 건드렸다.**
+   * ==========================================================================
+   */
+  test("🔴 2026-10-07 — 받는 길은 그대로 넷이다. 통로도 살아 있다", () => {
+    // ① 줄의 [Excel 보기] — 이 조각이 세운 길. 공유폴더의 그 엑셀을 PC 의 엑셀로 연다.
+    const open = read("src/components/quotes/quote-archive-excel-open.ts");
+    assert.ok(open.includes("export async function runQuoteArchiveExcelOpen("), "[Excel 보기] 흐름이 없다");
+    assert.ok(
+      codeOf(read("src/components/quotes/QuoteArchiveExcelOpenButton.tsx")).includes("runQuoteArchiveExcelOpen("),
+      "단추가 그 흐름을 부르지 않는다"
+    );
+
+    // ② 견적서 수정 화면 머리의 [폴더 열기] — 그 견적서의 공유폴더를 탐색기로 연다.
+    assert.ok(
+      codeOf(editFormSource).includes("<QuoteFolderOpenButton"),
+      "수정 화면의 [폴더 열기]가 사라졌다 — A/S 가 받는 두 길 가운데 하나다"
+    );
+
+    // ③ 견적서 수정 화면 머리의 [견적서 받기] — 🔴 **이 조각은 목록만 건드렸다.**
+    assert.ok(codeOf(editFormSource).includes("<QuoteIssueButton"), "수정 화면의 [견적서 받기]가 사라졌다");
+
+    // ④ 인쇄 미리보기 화면의 [견적서 받기].
+    assert.ok(
+      codeOf(read("src/components/quotes/QuotePrintView.tsx")).includes("href={`/api/quotes/${quoteId}/xlsx`}"),
+      "인쇄 미리보기의 받기 링크가 사라졌다"
+    );
+
+    // 🔴 통로 자체도 그대로다 — 화면 한 자리에서만 뗐다.
     assert.equal(
       existsSync(fileURLToPath(new URL("src/app/api/quotes/[id]/xlsx/route.ts", repoUrl))),
       true,
-      "받기 링크가 가리키는 통로가 없다"
-    );
-
-    const link = flat(sliceBetween(slotsSource, "function QuoteDownloadLink(", "/** 화면이 받는 프롭에서"));
-
-    // 🔴 **평범한 링크 하나**다. `download` 도 fetch 도 쓰지 않는다 — 파일 이름은 서버가
-    //    Content-Disposition 으로 정한다(domain/quote-file-name.ts). 클라이언트가 이름을
-    //    정하면 화면마다 다른 이름으로 저장되는 날이 온다.
-    assert.ok(link.includes("href={`/api/quotes/${row.id}/xlsx`}"), "받기 링크의 주소가 다르다");
-    // 🔴 `<a>` 의 속성만 본다 — 주석에도 그 낱말이 나온다(파일 이름 규칙을 가리킨다).
-    const anchor = sliceBetween(link, "<a href={`/api/quotes", ">");
-    assert.equal(anchor.includes("download"), false, "클라이언트가 파일 이름을 정하고 있다");
-    assert.equal(link.includes("fetch("), false, "링크가 아니라 fetch 로 받고 있다");
-
-    // 🔴 **권한으로 갈리지 않는다** — 그 통로의 문턱은 `quotes` READ 라 수정 권한자도
-    //    같은 링크로 받는다. A/S 는 수정 권한자에게 여기서 발행 단추를 보이는데 그것은
-    //    조각 3c-3 의 것이다(그 단추가 오면 이 단언이 깨지고, 그때 뜻을 다시 적는다).
-    assert.equal(link.includes("canEdit"), false, "받기 링크가 canEdit 으로 갈린다");
-
-    // 🔴 조각 3d-2 — **엑셀 전용 줄도 같은 링크다.** 통로가 갈라져 붙인 엑셀을 그대로
-    //    내려주므로(api/quotes/[id]/xlsx/route.ts 의 6번 갈래), 그 줄만 단추를 끄면
-    //    **되는 일을 못 하게 만드는 것**이 된다. 3c-2 의 꺼진 단추와 그 문장 상수
-    //    (domain/quote-excel-only-download.ts)는 이 조각에서 함께 사라졌다.
-    //
-    // 🔴 2026-09-23(**조각 3d-5**)에 이 단언의 모양이 바뀌었다 — 「`row.isExcelOnly`
-    //    를 아예 보지 않는다」에서 「**엑셀 전용이라는 이유만으로는 갈라지지 않는다**」로.
-    //    그 조각이 「엑셀 전용인데 **붙인 엑셀이 없는**」 줄을 팝업 갈래로 떼어 냈기
-    //    때문이다(아래 이웃 시험). 지키려는 것은 그대로다: 엑셀이 **붙어 있는** 엑셀
-    //    전용 줄은 평범한 링크로 그대로 내려가야 한다. 그래서 주석을 뺀 코드에서
-    //    `row.isExcelOnly` 가 나오는 자리가 **그 한 갈래뿐**임을 센다.
-    const linkCode = codeOf(sliceBetween(slotsSource, "function QuoteDownloadLink(", "/** 화면이 받는 프롭에서"));
-    assert.ok(
-      linkCode.includes("if (row.isExcelOnly && !row.hasExcel) {"),
-      "「엑셀 전용인데 붙인 엑셀이 없다」 갈래가 없거나 조건이 다르다"
-    );
-    assert.equal(
-      linkCode.split("row.isExcelOnly").length - 1,
-      1,
-      "엑셀 전용을 보는 자리가 그 한 갈래 말고 또 있다 — 붙은 엑셀이 있는 줄까지 링크에서 새고 있다"
-    );
-    assert.equal(
-      slots.includes("QUOTE_EXCEL_ONLY_DOWNLOAD_MESSAGE"),
-      false,
-      "지워진 문장 상수를 아직 들여온다"
-    );
-    // 🔴 「양식 없는 종류」 갈래는 그대로 **꺼진 단추**다(지금 걸리는 종류는 없다 —
-    //    다음 종류를 기다리는 자물쇠다).
-    assert.ok(
-      link.includes("<UnavailableDownload reason={QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE} />"),
-      "양식 없는 종류 갈래가 다른 모양이다"
+      "받기 통로가 사라졌다"
     );
   });
 
@@ -486,33 +513,45 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
     );
   });
 
-  test("🔴 조각 3c-2(눈 확인 뒤) — 단추 칸은 **모든 줄에서 같다**. 못 받는 줄은 흐린 단추다", () => {
-    // 🔴 처음에는 받을 수 없는 줄의 단추 자리에 「엑셀 전용」 곁말을 넣었는데, 글자 폭이
-    //    단추와 달라 **그 두 줄만 [삭제] 가 밀려** 목록이 들쭉날쭉했다(2026-09-22 눈
-    //    확인). A/S 는 딱지를 왼쪽 칸에 두고 단추 칸은 모든 줄이 같다.
-    const slots = flat(slotsSource);
-    const unavailable = flat(sliceBetween(slotsSource, "function UnavailableDownload(", "function QuoteDownloadLink("));
+  /**
+   * ==========================================================================
+   * 🔴 단추 칸은 **모든 줄에서 같다** — 재는 방법이 2026-10-07 에 바뀌었다
+   * ==========================================================================
+   * ⚠️ 여기 있던 시험은 **그때의 기록**이라 뜻을 옮겨 적는다. 2026-09-22 눈 확인에서
+   * 받을 수 없는 줄의 단추 자리에 「엑셀 전용」 곁말을 넣었더니 글자 폭이 단추와 달라
+   * **그 두 줄만 [삭제] 가 밀려** 목록이 들쭉날쭉했다. 그래서 받기 자리를 **켜진 것과
+   * 꺼진 것이 같은 상자 모양**(`ROW_ACTION_CLASS`)으로 맞췄고, 그것을 쟀다.
+   *
+   * 🔴 **그 상자 모양은 받기와 함께 사라졌다**(2026-10-07 — 받기 단추 셋이 다 빠졌다).
+   * 지키려는 것은 그대로이므로 **지금 맞는 방법으로** 잰다: 이제 그 칸에 서는 것은
+   * [미리보기 · PDF] 와 [Excel 보기] 둘뿐이고, 🔴 **[Excel 보기]는 줄의 값으로 갈리지
+   * 않는다** — 모든 줄에 같은 단추가 선다(Windows 가 아니면 모든 줄에서 함께 빠진다).
+   * ==========================================================================
+   */
+  test("🔴 2026-10-07 — [Excel 보기]는 줄의 값으로 갈리지 않는다. 칸이 들쭉날쭉해지지 않는다", () => {
+    const buttonCode = codeOf(read("src/components/quotes/QuoteArchiveExcelOpenButton.tsx"));
 
-    // 🔴 상자 모양을 **켜진 것과 꺼진 것이 같은 값**으로 쓴다 — 칸이 흔들리지 않는 근거다.
-    assert.ok(slots.includes("const ROW_ACTION_CLASS ="), "받기 자리의 상자 모양이 한 곳에 없다");
-    assert.ok(unavailable.includes("${ROW_ACTION_CLASS}"), "꺼진 단추가 다른 상자 모양을 쓴다");
-    assert.ok(
-      flat(sliceBetween(slotsSource, "<a", "</a>")).includes("${ROW_ACTION_CLASS}"),
-      "받기 링크가 다른 상자 모양을 쓴다"
+    // 🔴 누르기 전에 아는 척하지 않는다 — 사람이 손으로 넣어 둔 엑셀이 있을 수 있고,
+    //    공유폴더 사정(꺼짐 · 폴더 없음)은 눌러 보기 전에 알 수 없다.
+    for (const branching of ["canRenderQuoteDocument", "isExcelOnly", "hasExcel", "canEdit"]) {
+      assert.equal(buttonCode.includes(branching), false, `[Excel 보기]가 줄의 값으로 갈린다: ${branching}`);
+    }
+    // 🔴 안 그리는 갈래는 **Windows 가 아닐 때 하나**다 — 그때는 모든 줄에서 함께 빠진다.
+    //    단추 조각 자체(Control)에는 안 그리는 갈래가 아예 없다.
+    assert.ok(buttonCode.includes("if (!isWindows) return null;"), buttonCode);
+    const control = sliceBetween(
+      buttonCode,
+      "export function QuoteArchiveExcelOpenControl(",
+      "export default function QuoteArchiveExcelOpenButton("
     );
-    // 이름도 같다 — 같은 자리에 다른 낱말이 서면 칸 폭이 달라진다.
-    assert.ok(unavailable.includes("견적서 받기"), "꺼진 단추의 이름이 다르다");
-    assert.ok(flat(sliceBetween(slotsSource, "<a", "</a>")).includes("견적서 받기"), "받기 링크의 이름이 다르다");
+    assert.equal(control.includes("return null;"), false, "단추 조각이 줄에 따라 스스로 빠진다");
 
-    // 🔴 정말로 **꺼져 있다**(눌러서 실패하는 단추가 아니다). 흐리게 하는 방식은 이
-    //    저장소의 관행 그대로다 — `disabled:` 짝과 곁말(title).
-    assert.ok(unavailable.includes("disabled"), "꺼진 단추가 실제로 꺼져 있지 않다");
-    assert.ok(
-      unavailable.includes("disabled:cursor-not-allowed disabled:opacity-50"),
-      "흐리게 하는 방식이 이 저장소의 관행과 다르다"
-    );
-    // 🔴 곁말은 감싼 span 에도 단다 — 꺼진 단추는 제 title 을 못 띄우는 브라우저가 있다.
-    assert.equal(unavailable.split("title={reason}").length - 1, 2, "곁말이 한 곳에만 있다");
+    // 🔴 곁말은 **앱 양식이 없는 종류에만** 선다. 그 줄에는 [미리보기 · PDF]도 없으므로
+    //    칸이 통째로 비지 않게 자리를 지킨다(두 조각이 **같은 함수** 하나를 본다).
+    const preview = codeOf(sliceBetween(slotsSource, "function QuotePreviewLink(", "\n}\n"));
+    const note = codeOf(sliceBetween(slotsSource, "function DocumentUnsupportedNote(", "\n}\n"));
+    assert.ok(preview.includes("if (!canRenderQuoteDocument(row)) return null;"), preview);
+    assert.ok(note.includes("if (canRenderQuoteDocument(row)) return null;"), note);
   });
 
   /**
@@ -532,42 +571,33 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
    *      고생했고, 까닭을 말하는 문장은 0.5초에 읽히지 않는다.
    * ==========================================================================
    */
-  test("🔴 조각 3d-5 — 엑셀이 없는 엑셀 전용 줄은 눌리는 단추이고, 누르면 팝업이 뜬다", () => {
-    const slots = flat(slotsSource);
-    // 🔴 **주석을 뺀 코드만** 본다 — 이 갈래 뒤에 오는 `UnavailableDownload` 머리말이
-    //    `disabled:…` 를 글자로 설명하고 있어, 원본을 그대로 훑으면 거기 걸린다.
-    const missing = codeOf(sliceBetween(slotsSource, "function ExcelMissingDownload(", "function UnavailableDownload("));
+  test("🔴 조각 3d-5 · 2026-10-07 — 「엑셀 없음」을 말하는 곳이 **왼쪽 칸의 딱지 하나**로 남았다", () => {
+    // ⚠️ 🔴 **이 시험의 이름과 재는 곳이 2026-10-07 에 바뀌었다.** 그때까지는
+    //    「엑셀이 없는 엑셀 전용 줄은 **눌리는 단추**이고, 누르면 팝업이 뜬다」였다 —
+    //    그 단추가 [견적서 받기]였고(조각 3d-5), **받기와 함께 빠졌다**(사용자 지시 —
+    //    받는 곳을 공유폴더 하나로 모은다).
+    //
+    // 🔴 **지키려는 것은 그대로다**: 붙은 엑셀이 없다는 사실을 화면이 **말해야 한다.**
+    //    이제 그 말을 하는 곳은 왼쪽 「견적서」 칸의 호박색 딱지 하나뿐이므로,
+    //    ㉢(팝업 문장 = 딱지 곁말)이 재던 **그 상수**를 딱지 쪽에서 잰다.
+    // 🔴 그 팝업 단추가 정말 사라졌는지는 위 이웃 시험이 글자로 못 박는다.
+    const slotsCode = codeOf(slotsSource);
+    assert.equal(slotsCode.includes("ExcelMissingDownload"), false, "받기와 함께 뗀 팝업 단추가 남아 있다");
 
-    // ㉡ 칸은 흔들리지 않되(같은 상자 · 같은 글자) **꺼져 있지 않다.**
-    assert.ok(missing.includes("${ROW_ACTION_CLASS}"), "팝업 단추가 다른 상자 모양을 쓴다");
-    assert.ok(missing.includes("견적서 받기"), "팝업 단추의 이름이 다르다");
-    assert.ok(missing.includes('type="button"'), "단추가 type=\"button\" 이 아니다 — 폼 안에서 제출로 샌다");
-    assert.equal(
-      missing.includes("disabled"),
-      false,
-      "꺼진 단추다 — 눌리지 않으면 팝업이 뜰 수 없고, 사용자가 요구한 것은 팝업이다"
-    );
-    assert.ok(missing.includes("onClick={() => setNoticeOpen(true)}"), "눌러도 팝업이 열리지 않는다");
-
-    // 🔴 fetch 로 먼저 물어보지 않는다 — 목록 줄이 이미 아는 값으로 가른다.
-    assert.equal(missing.includes("fetch("), false, "누르기 전에 아는 것을 서버에 다시 묻고 있다");
-
-    // ㉢ 팝업 문장 = 딱지 곁말. 두 벌이 되면 마우스를 올렸을 때와 눌렀을 때 말이 갈린다.
-    assert.ok(missing.includes("message={QUOTE_EXCEL_MISSING_NOTICE}"), "팝업이 딱지와 다른 글자를 쓴다");
-    assert.ok(
-      slots.includes('import { QUOTE_EXCEL_MISSING_NOTICE } from "./quote-attachment-files"'),
-      "팝업 문장을 딱지와 같은 자리에서 가져오지 않는다"
-    );
     const badgeRule = flat(sliceBetween(filesSource, "export function quoteListFileBadges(", "\n}\n"));
     assert.ok(badgeRule.includes("title: QUOTE_EXCEL_MISSING_NOTICE"), "딱지가 그 상수를 쓰지 않는다");
+    // 🔴 딱지 슬롯은 **한 글자도 안 바뀌었다** — 이 조각이 가장 조심한 자리다.
+    assert.ok(
+      flat(slotsSource).includes("renderFileBadges={(row) => <QuoteFileBadges row={row} />}"),
+      "딱지 슬롯이 바뀌었다 — 「엑셀 없음」을 말하는 마지막 자리다"
+    );
 
-    // 🔴 **서버 문장을 화면이 끌어다 쓰지 않는다.** 까닭은 ㉢ 이다 — 팝업과 딱지가
-    //    한 글자여야 하므로 화면은 제 상수를 쓴다. `QUOTE_EXCEL_MISSING_MESSAGE`
-    //    (api/quotes/[id]/xlsx/download-source.ts — A/S 와 바이트 동일)는 **받기를
-    //    거절하는 말**(「다시 받아 주세요」)이라 쓰임 자체가 다르고, 그 파일은 저쪽과
-    //    바이트가 같아야 해서 여기 사정으로 고칠 수도 없다.
+    // 🔴 **서버 문장을 화면이 끌어다 쓰지 않는다.** 화면 문장은 딱지 쪽 상수 하나다.
+    //    `QUOTE_EXCEL_MISSING_MESSAGE`(api/quotes/[id]/xlsx/download-source.ts — A/S 와
+    //    바이트 동일)는 **받기를 거절하는 말**(「다시 받아 주세요」)이라 쓰임 자체가 다르고,
+    //    그 파일은 저쪽과 바이트가 같아야 해서 여기 사정으로 고칠 수도 없다.
     assert.equal(
-      codeOf(slotsSource).includes("QUOTE_EXCEL_MISSING_MESSAGE"),
+      slotsCode.includes("QUOTE_EXCEL_MISSING_MESSAGE"),
       false,
       "서버의 거절 문장을 목록 화면이 그대로 보이고 있다 — 화면 문장은 딱지와 한 글자여야 한다"
     );

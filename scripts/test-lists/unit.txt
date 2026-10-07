@@ -756,3 +756,29 @@ src/lib/storage/quote-archive-entries-source.test.ts
 #    조회보다 앞이며, 조회 뒤에는 403 이 없다(존재 여부를 흘리지 않는다).
 #    🔴 시험 파일은 `[id]` **밖**에 둔다 — 대괄호 경로는 실행기가 거절한다.
 src/app/api/quotes/archive-folder-entries-route-source.test.ts
+
+# ── 조각 PO 4e — 목록 줄의 [Excel 보기] · [견적서 받기]는 뺀다 (2026-10-07) ──
+# A/S 가 2026-10-06 에 한 것을 가져왔다(저쪽 commit 「견적서 목록에 [Excel 보기]」 ·
+# 「견적서를 내려받는 길을 화면에서 걷어낸다」). 🔴 **서버 쪽은 이미 다 있었다**(조각
+# PO 4b·4c·4d) — 이 조각은 **화면에 이어 붙이는 일**이다.
+# 🔴 **vendor/dss-core 는 한 글자도 건드리지 않았다** — 목록 화면이 열어 둔
+#    `renderRowActions` 슬롯에 끼웠다(components/quotes/QuoteListSlots.tsx).
+#
+# ① 파일 이름 → 발행번호. A/S 와 **바이트 동일**(원본 · 시험 둘 다). 「번호가 맞는
+#    파일만 연다」가 이 함수 하나에 걸려 있다 — 어긋나면 **남의 견적서**를 연다.
+src/lib/domain/quote-archive-file-number.test.ts
+# ② 공유폴더 안 목록을 받아 오는 길. 🔴 **A/S 의 `QuoteArchiveFolderSection.tsx` 에서
+#    그리지 않는 부분만** 떼어 왔다 — 저쪽의 「구역을 그리는 부분」은 이 사이트에 없는
+#    사슬 셋(연락서 단추 둘 · formatBytes)을 물고 있고, 이 조각이 쓰지도 않는다.
+#    그래서 **파일 이름만 다르고 들어 있는 글자는 저쪽과 같다**(상수 이름까지).
+#    시험은 저쪽 시험의 「통로를 부르는 길」 묶음 + 문장이 저쪽과 같은지 + 읽기 전용인지.
+src/components/quotes/quote-archive-folder-entries.test.ts
+# ③ 파일 하나를 PC 의 프로그램으로 여는 장치. 🔴 **A/S 와 바이트 동일**(원본 · 시험
+#    둘 다, 경로까지 같다). 숨은 iframe · 도우미 감지 · 「예전 도우미는 파일 열기를
+#    모른다」 안내가 전부 여기 있다 — **베껴 두 벌을 만들지 않으려고** 저쪽 경로 그대로
+#    두었다(설치되는 도우미는 PC 당 한 벌이다).
+src/components/repair-cases/files/contact-folder-file-open.test.ts
+# ④ [Excel 보기] 한 번의 흐름 — 폴더 안 목록 받기 → **번호가 맞는** 엑셀 고르기 →
+#    여는 장치에 넘기기. A/S 와 바이트 동일이고 고친 곳은 ② 의 파일 이름 한 줄뿐이다.
+#    🔴 엑셀이 없으면 「저장된 파일이 없습니다.」 — 사용자가 마침표까지 말한 문장이다.
+src/components/quotes/quote-archive-excel-open.test.ts
