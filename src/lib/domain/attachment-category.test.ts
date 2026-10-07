@@ -89,7 +89,7 @@ test("검사 상태 기본값은 DB enum에 실재하는 값이다", () => {
 
 // ───────────────────────────────────────────────────── 목록 자체의 무결성
 
-test("분류 코드는 18종이고 중복이 없다", () => {
+test("분류 코드는 22종이고 중복이 없다", () => {
   // 개수를 적어 두는 이유는 **DB enum과 함께 움직이기 때문**이다. 코드에만
   // 더하고 마이그레이션을 잊으면 화면에서는 고를 수 있는데 저장할 때 서버가
   // 거절한다 — 그 어긋남이 이 줄에서 먼저 걸린다.
@@ -98,8 +98,13 @@ test("분류 코드는 18종이고 중복이 없다", () => {
   // 14 → 15: 견적서를 더했다(마이그레이션 0083).
   // 15 → 16: 스크린샷을 더했다(마이그레이션 0097 — 개선 요청 글의 화면 사진).
   // 16 → 18: 결재 견적서 PDF · 수기 견적서 엑셀을 더했다(마이그레이션 0099 — 견적서 첨부).
-  assert.equal(ATTACHMENT_CATEGORY_CODES.length, 18);
-  assert.equal(new Set(ATTACHMENT_CATEGORY_CODES).size, 18);
+  // 18 → 21: 파라미터 · 통전검사 · 점검표를 더했다(마이그레이션 0106 — 모델 기본 자료).
+  // 21 → 22: 통문증을 더했다(마이그레이션 0109 — 고객사 반출·환입 서류).
+  //   🔴 마이그레이션 번호는 **A/S 쪽 번호**다. 이 사이트에는 `drizzle/` 이 없고
+  //   칸을 고치는 일은 언제나 A/S 가 한다 — 이 사이트는 서브모듈
+  //   (`vendor/dss-core`) 포인터를 올려 그 결과를 받는다(2026-10-07: 9a50e23).
+  assert.equal(ATTACHMENT_CATEGORY_CODES.length, 22);
+  assert.equal(new Set(ATTACHMENT_CATEGORY_CODES).size, 22);
 });
 
 test("스크린샷은 회로도 뒤에 있고 이름표는 「스크린샷」이다", () => {
@@ -113,17 +118,50 @@ test("스크린샷은 회로도 뒤에 있고 이름표는 「스크린샷」이
   assert.ok(attachmentCategoryEnum.enumValues.includes("SCREENSHOT"));
 });
 
-test("견적서 두 칸은 스크린샷 뒤·기타 앞에 결재 PDF · 엑셀 차례로 있다", () => {
+test("견적서 두 칸은 스크린샷 뒤에 결재 PDF · 엑셀 차례로 있다", () => {
   // 0099 가 둘 다 `ADD VALUE ... BEFORE 'OTHER'` 로 더한다 — DB enum 과 같은 차례인지는
-  // 위 enum 대조가 따로 본다.
+  // 위 enum 대조가 따로 본다. 엑셀 바로 뒤는 이제 기타가 아니라 모델 전용 셋이다
+  // (아래 시험) — 기타는 여전히 맨 끝이고, 그것은 '기타는 언제나 목록의 맨 끝이다'
+  // 가 따로 못박는다.
   assert.equal(attachmentCategoryLabels.SIGNED_QUOTE_PDF, "결재 견적서 PDF");
   assert.equal(attachmentCategoryLabels.QUOTE_EXCEL, "수기 견적서 엑셀");
   const index = ATTACHMENT_CATEGORY_CODES.indexOf("SIGNED_QUOTE_PDF");
   assert.equal(ATTACHMENT_CATEGORY_CODES[index - 1], "SCREENSHOT");
   assert.equal(ATTACHMENT_CATEGORY_CODES[index + 1], "QUOTE_EXCEL");
-  assert.equal(ATTACHMENT_CATEGORY_CODES[index + 2], "OTHER");
   assert.ok(attachmentCategoryEnum.enumValues.includes("SIGNED_QUOTE_PDF"));
   assert.ok(attachmentCategoryEnum.enumValues.includes("QUOTE_EXCEL"));
+});
+
+// ─────────────────────── 모델 기본 자료 셋 (2026-09-30) · 통문증 (2026-10-01)
+
+test("모델 기본 자료 셋은 수기 견적서 엑셀 뒤·기타 앞에 파라미터 · 통전검사 · 점검표 차례로 있다", () => {
+  // A/S 쪽 같은 이름 시험에서 **차례 단언만** 가져왔다(2026-10-07 서브모듈 9a50e23).
+  // 주인을 가리는 단언들(PRODUCT_MODEL_ONLY_CATEGORIES …)은 그 좁히기 자체를 이
+  // 사이트가 가져오지 않았으므로 함께 오지 않았다 — 까닭은 attachment-category.ts
+  // 의 그 목록 주석에 있다. 화면의 고르는 차례가 이 배열 순서이므로 자리가 곧
+  // 사람이 보는 목록의 자리다.
+  assert.equal(attachmentCategoryLabels.PARAMETER, "파라미터");
+  assert.equal(attachmentCategoryLabels.POWER_TEST, "통전검사");
+  assert.equal(attachmentCategoryLabels.CHECKLIST, "점검표");
+  const index = ATTACHMENT_CATEGORY_CODES.indexOf("PARAMETER");
+  assert.equal(ATTACHMENT_CATEGORY_CODES[index - 1], "QUOTE_EXCEL");
+  assert.equal(ATTACHMENT_CATEGORY_CODES[index + 1], "POWER_TEST");
+  assert.equal(ATTACHMENT_CATEGORY_CODES[index + 2], "CHECKLIST");
+  // 점검표 바로 뒤는 2026-10-01 부터 기타가 아니라 통문증이다(아래 시험).
+  assert.equal(ATTACHMENT_CATEGORY_CODES[index + 3], "PASS_SLIP");
+  for (const code of ["PARAMETER", "POWER_TEST", "CHECKLIST"] as const) {
+    assert.ok(attachmentCategoryEnum.enumValues.includes(code), `DB enum 에 ${code} 가 없다`);
+  }
+});
+
+test("통문증은 점검표 뒤·기타 앞에 있고 이름표는 「통문증」이다", () => {
+  // 새 분류를 끝에 붙이지 않는다(아래 '기타는 언제나 목록의 맨 끝이다'). DB enum 과
+  // 같은 차례인지는 위 enum 대조가 따로 본다.
+  assert.equal(attachmentCategoryLabels.PASS_SLIP, "통문증");
+  const index = ATTACHMENT_CATEGORY_CODES.indexOf("PASS_SLIP");
+  assert.equal(ATTACHMENT_CATEGORY_CODES[index - 1], "CHECKLIST");
+  assert.equal(ATTACHMENT_CATEGORY_CODES[index + 1], "OTHER");
+  assert.ok(attachmentCategoryEnum.enumValues.includes("PASS_SLIP"));
 });
 
 test("업무 순서대로 늘어놓는다 — 화면의 고르는 차례가 이 순서다", () => {

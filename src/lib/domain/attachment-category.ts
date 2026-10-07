@@ -14,9 +14,13 @@
  *   · DB enum — `vendor/dss-core/src/schema/attachments.ts`(서브모듈). 이 사이트의
  *     스키마는 `@dss/core/schema` 로 들어온다(`src/lib/db/index.ts`).
  *
- * ── 🔴 18개 분류값 · 5개 검사상태를 **하나도 줄이지 않았다** ──────────────
+ * ── 🔴 22개 분류값 · 5개 검사상태를 **하나도 줄이지 않았다** ──────────────
+ * 2026-10-07 서브모듈(`vendor/dss-core`)을 9a50e23 으로 올리며 넷이 더해졌다
+ * (PARAMETER · POWER_TEST · CHECKLIST · PASS_SLIP) — 18 → 22. **값과 라벨만
+ * 가져왔고 A/S 쪽 주인 좁히기(PRODUCT_MODEL_ONLY_CATEGORIES ·
+ * REPAIR_CASE_ONLY_CATEGORIES)는 가져오지 않았다** — 까닭은 아래 목록의 주석에 있다.
  * 이 사이트가 실제로 쓰는 분류는 `SIGNED_QUOTE_PDF` · `QUOTE_EXCEL` **둘뿐**이고,
- * 나머지 16개는 A/S 것이다(인수 사진 · 회로도 · 펌웨어 …). 그래도 줄이지 않는
+ * 나머지 20개는 A/S 것이다(인수 사진 · 회로도 · 펌웨어 …). 그래도 줄이지 않는
  * 까닭은 **두 사이트가 같은 `dss_as` 를 보기 때문**이다 — 이 목록은
  * `vendor/dss-core` 의 `attachmentCategoryEnum` 과 **값도 차례도 똑같아야** 하고,
  * 그 어긋남을 잡는 장치는 곁의 `attachment-category.test.ts` 가 둘을 줄 단위로
@@ -98,6 +102,25 @@ export const ATTACHMENT_CATEGORY_CODES = [
   // 바꾸지 않는다. 기타 **앞**에 둔다(기타는 언제나 맨 끝). 데모 파일에는 없다.
   "SIGNED_QUOTE_PDF",
   "QUOTE_EXCEL",
+  // 제품 모델의 기본 자료 셋(2026-09-30) — 파라미터 · 통전검사 · 점검표. 모델마다
+  // 한 벌 두는 자료라 건마다 다시 올리는 것이 아니다. 기타 **앞**이고 A/S 가
+  // `ADD VALUE ... BEFORE 'OTHER'` 로 더했다(마이그레이션 0106).
+  //
+  // 🔴 **A/S 에서는 주인이 좁혀져 있다** — 파라미터 · 통전검사는 제품 모델 전용이고
+  // 점검표만 수리 건에도 붙는다(A/S 의 PRODUCT_MODEL_ONLY_CATEGORIES). 이 사이트는
+  // 그 좁히기를 가져오지 않았다: 여기서 만들어지는 첨부는 **견적서 주인 하나뿐**이라
+  // (createAttachmentRecord 를 부르는 두 자리가 모두 `kind: "QUOTE"` 다) 좁히기가
+  // 닿는 길이 없다. 이 사이트에서 접수 건 · 제품 모델 첨부를 만들게 되는 날
+  // A/S 쪽 그 목록을 함께 가져와야 한다.
+  "PARAMETER",
+  "POWER_TEST",
+  "CHECKLIST",
+  // 통문증(2026-10-01) — 고객사가 발행하는 반출·환입 서류이고 장비와 함께 들어온다.
+  // **고객사를 가리지 않는다**(주성 것이 대표적일 뿐이다 — 「주성 건에서만 보이게」
+  // 좁히지 말 것). A/S 에서는 수리 건 전용이고(REPAIR_CASE_ONLY_CATEGORIES), 이
+  // 사이트가 그것을 가져오지 않은 까닭은 바로 위 셋과 같다. 기타 **앞**이고
+  // `ADD VALUE ... BEFORE 'OTHER'` 로 더해졌다(마이그레이션 0109).
+  "PASS_SLIP",
   "OTHER",
 ] as const;
 
@@ -124,6 +147,10 @@ export const attachmentCategoryLabels: Record<AttachmentCategory, string> = {
   SCREENSHOT: "스크린샷",
   SIGNED_QUOTE_PDF: "결재 견적서 PDF",
   QUOTE_EXCEL: "수기 견적서 엑셀",
+  PARAMETER: "파라미터",
+  POWER_TEST: "통전검사",
+  CHECKLIST: "점검표",
+  PASS_SLIP: "통문증",
   OTHER: "기타",
 };
 
