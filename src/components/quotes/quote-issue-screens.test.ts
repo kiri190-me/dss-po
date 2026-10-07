@@ -37,8 +37,9 @@ import { readFileSync } from "node:fs";
  * ── 🔴 안 가져온 묶음과 까닭 ────────────────────────────────────────────
  * 저쪽 파일의 나머지 셋은 이 사이트에 **없는 화면**을 읽는다:
  *   · 「목록 — 표와 카드 두 곳 모두」 · 「(a) 보기 권한자 화면」의 목록 갈래 —
- *     `QuoteListScreen.tsx` 가 없다(이 사이트의 목록은 서버 컴포넌트다. 그 자리는
- *     quote-list-screen-source.test.ts 가 이어받았다).
+ *     이 저장소에 `QuoteListScreen.tsx` 가 없다(목록 화면은 서브모듈
+ *     `vendor/dss-core` 의 것이다). 그 자리는 quote-list-screen-source.test.ts 가
+ *     이어받았다.
  *   · 「겹쳐 뜬 미리보기」 갈래 — `QuotePrintView.tsx` 는 **조각 3f** 의 것이다.
  *   · 「단추 · 조각」 — 조각 3c-3 이 QuoteIssueButton.test.tsx 로 가져왔다.
  * 🔴 **3f 가 오는 날 이 파일에 저쪽의 남은 묶음을 되돌려 놓는다.** 조각 3c-3 이
@@ -48,8 +49,10 @@ import { readFileSync } from "node:fs";
  * 이 파일 맨 아래에 **둘을 되돌려 놓았다**(그 자리의 머리말에 무엇을 왜 했는지 적었다).
  * 🔴 그러면서 **위 셋째 줄이 틀렸다는 것도 드러났다** — 「단추 · 조각」은 조각 3c-3 이
  * 가져가지 않았고 이 사이트 어디에도 없었다. 이제 여기 있다.
- * 🔴 **남은 하나(「목록」)는 3f 와 무관하다** — 저쪽 `QuoteListScreen.tsx` 자체가
- * 이 사이트에 없고, 그 자리는 `quote-list-screen-source.test.ts` 가 이어받았다.
+ * 🔴 **남은 하나(「목록」)는 3f 와 무관하다** — 목록 화면이 이 저장소의 파일이 아니라
+ * 서브모듈(vendor/dss-core)의 것이고, 그 자리는 `quote-list-screen-source.test.ts` 가
+ * 이어받았다. 🔴 **2026-10-07 부터 저쪽도 같다** — A/S 도 제 복사본을 지우고 같은
+ * 서브모듈 화면을 쓰며, 저쪽의 그 묶음이 읽는 것은 이제 저쪽 `QuoteListSlots.tsx` 다.
  *
  * 화면을 그려 볼 수 없는 자리다 — QuoteEditForm · QuoteAttachmentsSection 은 서버 액션을
  * 부르는 클라이언트 컴포넌트라(`server-only` 사슬) 이 시험 환경에서 렌더되지 않는다.
@@ -240,9 +243,11 @@ describe("결재 PDF 올리기 — 공유폴더 결과를 같은 문장 함수�
  *     그려 보는 시험이고 이 소스 단언들은 오지 않았다**(2026-09-28 확인). 그래서
  *     여기 세운다 — 위 머리말의 그 줄은 그때의 기록이다.
  *
- * 🔴 **남은 하나는 여전히 안 온다** — 「목록 — 표와 카드 두 곳 모두」. 저쪽의
- * `QuoteListScreen.tsx` 는 이 사이트에 없고(목록이 서버 컴포넌트다) 그 자리는
+ * 🔴 **남은 하나는 여전히 안 온다** — 「목록 — 표와 카드 두 곳 모두」. 목록 화면이
+ * 이 저장소의 파일이 아니라 서브모듈(vendor/dss-core)의 것이고, 그 자리는
  * `quote-list-screen-source.test.ts` 가 이어받았다. **3f 와 무관한 사실**이다.
+ * 🔴 2026-10-07 부터 **저쪽도 같은 서브모듈 화면을 쓴다** — 저쪽의 그 묶음이 읽는
+ * 것은 이제 저쪽 `QuoteListSlots.tsx` 다.
  *
  * 🔴 「단추 · 조각」의 셋째 시험(「검사·수리 보고서는 공용 이름 모듈을 부른다」)도
  * 못 가져왔다 — `components/repair-cases/report/service-report/ServiceReportForm.tsx`

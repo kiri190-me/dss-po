@@ -18,10 +18,13 @@ import type { QuoteIssueNoticeLine, QuoteIssueNoticeTone } from "./quote-issue-m
  * ============================================================================
  * 줄마다의 [Excel 보기] — 그 줄의 엑셀을 공유폴더에서 찾아 이 PC 의 엑셀로 연다
  * ============================================================================
- * 🔴 **A/S 에서 가져왔다**(2026-10-07). 저쪽에서는 이 조각이 목록 화면 원본 안에 들어
- * 있다(`RF_Service_System/src/components/quotes/QuoteListScreen.tsx` 의
- * `ArchiveExcelOpenButton` · `ExcelNoticeLines` — 2026-10-07 실측 744~868줄).
- * 🔴 **이 사이트의 목록 화면은 서브모듈(vendor/dss-core)이라 한 글자도 고칠 수 없다** —
+ * 🔴 **A/S 에서 가져왔다**(2026-10-07). 저쪽도 **같은 이름 · 같은 자리의 제 파일**이다
+ * (`RF_Service_System/src/components/quotes/QuoteArchiveExcelOpenButton.tsx` — 안의
+ * `ExcelNoticeLines` 까지 같다). 🔴 **2026-10-07 전까지는** 저쪽에서 이 조각이 목록 화면
+ * 원본 안에 박혀 있었다(옛 `QuoteListScreen.tsx` 의 `ArchiveExcelOpenButton` ·
+ * `ExcelNoticeLines` — 742~868줄, A/S 커밋 `287bb09` 로 지워졌다). 그날 저쪽 목록이
+ * **공용 묶음의 화면**으로 바뀌면서 박아 둘 자리가 없어져, 저쪽도 이쪽과 같은 모양이 되었다.
+ * 🔴 **두 사이트의 목록 화면은 서브모듈(vendor/dss-core)이라 한 글자도 고칠 수 없다** —
  * 그 화면이 열어 둔 `renderRowActions` 슬롯에 이 조각을 끼운다(QuoteListSlots.tsx).
  * 그래서 **파일만 따로 섰고 안의 글자는 저쪽 그대로**다.
  *

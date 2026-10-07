@@ -46,10 +46,14 @@ import {
  * 같은 이름 파일(499줄)이고 **단언은 하나도 빼지 않았다.**
  *  ① 폴더 안 목록을 받아 오는 쪽의 **파일 이름** — 저쪽 `./QuoteArchiveFolderSection` →
  *    이쪽 `./quote-archive-folder-entries`(그 파일 머리말에 까닭이 있다).
- *  ② ⑥ 을 어디서 보는가 — 저쪽은 목록 화면이 제 저장소 파일이라 `QuoteListScreen.test.ts`
- *    가 봤다. 🔴 **이 사이트의 목록 화면은 서브모듈(vendor/dss-core)이라 손댈 수 없고**,
- *    단추가 따로 선다(QuoteArchiveExcelOpenButton.tsx) — 그래서 그 곁 시험이 본다
+ *  ② ⑥ 을 어디서 보는가 — 가져올 당시 저쪽은 목록 화면이 제 저장소 파일이라
+ *    `QuoteListScreen.test.ts` 가 봤다. 🔴 **이 사이트의 목록 화면은
+ *    서브모듈(vendor/dss-core)이라 손댈 수 없고**, 단추가 따로 선다
+ *    (QuoteArchiveExcelOpenButton.tsx) — 그래서 그 곁 시험이 본다
  *    (QuoteArchiveExcelOpenButton.test.tsx).
+ *    🔴 **2026-10-07 에 저쪽도 이쪽과 같아졌다** — 저쪽 목록 화면이 공용 묶음 것으로
+ *    바뀌면서 단추가 같은 이름의 제 파일로 나왔고, ⑥ 은 저쪽
+ *    `quote-list-screen-source.test.ts` 가 본다(옛 `QuoteListScreen.test.ts` 는 지워졌다).
  * ============================================================================
  */
 

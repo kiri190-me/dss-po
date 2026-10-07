@@ -73,9 +73,11 @@ src/components/domestic-orders/domestic-order-trash.test.ts
 
 # ── 조각 3a — 견적서 목록 · 휴지통(A/S 에서 옮겨 옴) ──────────────────────
 # 🔴 목록 **화면 자체**는 이 저장소에 없다. `vendor/dss-core` 에 한 벌로 두고
-#    A/S 의 수리 건 상세 [견적서] 탭과 나눠 쓴다(설계서 F절 5번). 아래
+#    A/S 의 [견적서] 목록 · 수리 건 상세 [견적서] 탭과 나눠 쓴다(설계서 F절 5번 —
+#    🔴 저쪽이 실제로 이 한 벌을 쓰기 시작한 것은 2026-10-07 이다). 아래
 #    quote-list-screen-source.test.ts 가 **그 서브모듈 원본을 글자로 읽는다** —
-#    복사본이 생기지 않았는지까지 함께 본다.
+#    복사본이 생기지 않았는지까지 함께 본다. 🔴 저쪽에도 **같은 이름의 시험**이
+#    생겼고 같은 원본을 읽는다 — 그 원본을 고치면 두 저장소를 다 돌려 볼 것.
 #
 # 🔴 A/S 의 통합 시험 둘(1,428줄)은 여기 없다. 조각 1·2 와 **같은 이유**다 —
 #    진짜 DB 에 쓰는 시험인데 이 저장소에는 시험용 DB 장치가 없고, 이 사이트의
@@ -88,7 +90,9 @@ src/components/domestic-orders/domestic-order-trash.test.ts
 #    벌이다(mutations/quote-trash.ts 머리말). 조각 4 에서 푼다.
 #
 # 🔴 A/S 의 `components/quotes/QuoteListScreen.test.ts`(326줄)도 그대로 옮기지
-#    못했다. 그 시험의 절반이 **이 조각에 없는 것**을 못 박는다 — 줄 링크가
+#    못했다(🔴 그 파일은 **2026-10-07 에 지워졌다** — 저쪽도 목록 화면이 공용
+#    묶음 것으로 바뀌면서 `quote-list-screen-source.test.ts` 로 다시 쓰였다).
+#    그 시험의 절반이 **이 조각에 없는 것**을 못 박는다 — 줄 링크가
 #    가는 수정 화면(3b) · [미리보기 · PDF](3f) · [새 견적서] 팝업(3b) · 수리 건
 #    상세 탭(A/S 화면). 아래 시험이 **이 조각에 있는 것**으로 다시 적은 것이고,
 #    나머지는 그 조각이 올 때 함께 온다.
@@ -607,9 +611,11 @@ src/app/api/quotes/issue-route-source.test.ts
 # A/S 의 같은 이름 시험(200줄)에서 **두 묶음만** 가져왔다. 남은 셋은 이 사이트에
 # 없는 화면(QuoteListScreen · QuotePrintView)을 읽는다 — 조각 3f 가 되돌려 놓는다.
 # ⚠️ 🔴 **조각 3f 가 둘을 되돌려 놓았다**(2026-09-28) — 「인쇄 미리보기」와
-#    「단추 · 조각」. 남은 하나(「목록」)는 저쪽 QuoteListScreen 자체가 이 사이트에
-#    없어서이고 **3f 와 무관하다**(그 자리는 quote-list-screen-source.test.ts 가
-#    이어받았다). 그 파일 머리말에 자세히 적었다.
+#    「단추 · 조각」. 남은 하나(「목록」)는 목록 화면이 이 저장소의 파일이 아니라
+#    서브모듈(vendor/dss-core)의 것이어서이고 **3f 와 무관하다**(그 자리는
+#    quote-list-screen-source.test.ts 가 이어받았다). 그 파일 머리말에 자세히 적었다.
+#    🔴 2026-10-07 부터 **저쪽도 같은 서브모듈 화면을 쓴다** — 저쪽의 그 묶음이
+#    읽는 것은 이제 저쪽 QuoteListSlots.tsx 다.
 src/components/quotes/quote-issue-screens.test.ts
 
 # ── 조각 PO 3f — 인쇄 · 미리보기 ([미리보기 · PDF] 단추) (2026-09-28) ────

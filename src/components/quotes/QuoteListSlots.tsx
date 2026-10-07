@@ -86,9 +86,10 @@ import { QuoteFileBadges } from "./QuoteAttachmentParts";
  * `page.tsx` 가 하고(서버), 저장은 서버 액션이 세션부터 다시 본다. 여기서 보는
  * `canEdit` 은 **링크를 걸지 말지**를 정할 뿐이다 — 관문이 아니다.
  *
- * 🔴 **서브모듈(vendor/dss-core)은 손대지 않는다.** 그 화면은 A/S 의 수리 건
- * 상세 [견적서] 탭도 쓰게 될 한 벌이고, 사이트마다 다른 주소를 그 안에 적으면
- * 「한 벌」이 깨진다(설계서 F절 5번 · 그쪽 README 4절).
+ * 🔴 **서브모듈(vendor/dss-core)은 손대지 않는다.** 그 화면은 A/S 의 [견적서]
+ * 목록 · 수리 건 상세 [견적서] 탭도 **함께 쓰는** 한 벌이고(2026-10-07 부터),
+ * 사이트마다 다른 주소를 그 안에 적으면 「한 벌」이 깨진다
+ * (설계서 F절 5번 · 그쪽 README 4절).
  * ============================================================================
  */
 
@@ -97,9 +98,11 @@ import { QuoteFileBadges } from "./QuoteAttachmentParts";
  * 🔴 줄마다의 [견적서 받기]는 **없앴다** — 받는 곳은 공유폴더 하나다 (2026-10-07)
  * ============================================================================
  * 사용자 지시(2026-10-07): 「견적서 목록에 [Excel 보기]를 넣고 [견적서 받기]를 뺀다.」
- * A/S 가 2026-10-06 에 똑같이 했고(저쪽 `QuoteListScreen.tsx` 의
- * `DocumentUnsupportedNote` 머리말 — 「받기가 있던 자리」), 이 조각이 그것을 이 사이트로
- * 가져온 것이다.
+ * A/S 가 2026-10-06 에 똑같이 했고(저쪽 `QuoteListSlots.tsx` 의
+ * `DocumentUnsupportedNote` 머리말 — 「이 자리에는 받기가 있었다」), 이 조각이 그것을
+ * 이 사이트로 가져온 것이다. 🔴 그 조각은 2026-10-07 까지 저쪽
+ * `QuoteListScreen.tsx` 안에 있었고, 그날 저쪽 목록이 공용 묶음 것으로 바뀌면서
+ * 저쪽 `QuoteListSlots.tsx` 로 옮겨 갔다.
  *
  * ── 🔴 무엇이 사라졌나 ──────────────────────────────────────────────────
  * 이 자리에는 조각 셋이 있었고 **셋 다 글자가 「견적서 받기」였다.** 셋이 함께 빠졌다:
@@ -132,7 +135,7 @@ import { QuoteFileBadges } from "./QuoteAttachmentParts";
 /**
  * 앱 양식이 아직 없는 종류의 곁말 — 🔴 **내려받기 링크는 없앴다**(2026-10-07).
  *
- * 🔴 저쪽(A/S `QuoteListScreen.tsx` 의 `DocumentUnsupportedNote` — 2026-10-07 실측)과
+ * 🔴 저쪽(A/S `QuoteListSlots.tsx` 의 `DocumentUnsupportedNote` — 2026-10-07 실측)과
  * **한 글자까지 같다.** 문장은 통로 · 미리보기 화면 · 편집 화면과 **같은 하나**다
  * (domain/quote-document-support.ts).
  *
@@ -156,7 +159,9 @@ function DocumentUnsupportedNote({ row }: { row: QuoteListItem }) {
  * ============================================================================
  * 🔴 줄마다의 [미리보기 · PDF] — **링크 한 줄** (조각 PO 3j)
  * ============================================================================
- * A/S 의 같은 자리(`QuoteListScreen.tsx` 의 `PreviewLink` — 2026-09-28 실측)를 그대로
+ * A/S 의 같은 자리(`PreviewLink` — 2026-09-28 실측. 🔴 그때는 저쪽
+ * `QuoteListScreen.tsx` 안이었고, 2026-10-07 부터는 저쪽 `QuoteListSlots.tsx` 에
+ * 있다)를 그대로
  * 옮겼다. 🔴 **다른 것은 `href` 하나뿐**이다 — 글자도 상자 모양(className)도 한 글자까지
  * 같다. 두 화면을 나란히 놓고 보는 사람에게 같아 보여야 한다는 것이 사용자 지시였다.
  *
@@ -203,9 +208,11 @@ function QuotePreviewLink({ row }: { row: QuoteListItem }) {
  * 넘어가도 되므로 **page.tsx 가 이 조각을 그려 넘긴다** — 주소(`/quotes/new`)를 아는
  * 곳은 그대로 page.tsx 한 곳이다.
  *
- * 🔴 **서브모듈(vendor/dss-core)은 손대지 않는다.** A/S 는 같은 일을 그 화면 **안**에서
- * 하지만(저쪽 QuoteListScreen.tsx 의 `isNewQuoteDialogOpen`), 이 사이트의 그 화면은 두
- * 사이트가 함께 쓰는 한 벌이라 팝업을 그 안에 박을 수 없다. 그 화면이 `newQuoteControl`
+ * 🔴 **서브모듈(vendor/dss-core)은 손대지 않는다.** 그 화면은 두 사이트가 함께 쓰는
+ * 한 벌이라 팝업을 그 안에 박을 수 없다. 🔴 A/S 는 2026-10-07 **전까지** 같은 일을
+ * 제 복사본 화면 **안**에서 했지만(옛 `QuoteListScreen.tsx` 의 `isNewQuoteDialogOpen`),
+ * 그날 공용 화면으로 넘어오면서 이쪽과 같은 모양이 되었다 — 저쪽도 제
+ * `QuoteListSlots.tsx` 의 `NewQuoteControl` 이 그 상태를 든다. 그 화면이 `newQuoteControl`
  * 을 ReactNode 슬롯으로 열어 둔 것이 바로 이 자리다(그 파일의 그 프롭 머리말 — 「단추와
  * 그것이 여는 팝업의 상태는 **넣는 쪽이 소유한다**」).
  *
@@ -306,7 +313,8 @@ export default function QuoteListSlots({ asAppBaseUrl, ...props }: QuoteListSlot
        *  · **[미리보기](3f, 2026-09-28)** — 🔴 **일부러 안 세웠다.** 미리보기 화면 자체는
        *    이 조각이 세웠고(`/quotes/{id}/print`) 편집 화면에 단추도 섰다. 여기 안 세운
        *    까닭 둘:
-       *      ① 저쪽의 그 링크(`QuoteListScreen.tsx` 의 `PreviewLink`)는 주소를
+       *      ① 저쪽의 그 링크(`PreviewLink` — 당시 저쪽 `QuoteListScreen.tsx`,
+       *         2026-10-07 부터 저쪽 `QuoteListSlots.tsx`)는 주소를
        *         `quotePrintHref({ quoteId, repairCaseId })` 로 짓는다 — **수리 건을 싣는
        *         함수**이고 이 사이트에는 그 몫이 없다(조각 3e-3 이 뺐다). 베껴 오면
        *         「돌아가기는 시스템을 건너가지 않는다」(2026-09-28 원칙)가 깨진다.
