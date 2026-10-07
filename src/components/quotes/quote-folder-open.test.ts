@@ -182,14 +182,21 @@ describe("① 폴더 위치를 묻는다", () => {
     assert.deepEqual(opened, []);
   });
 
-  test("not-found → [견적서 받기]를 먼저 누르라고", async () => {
+  test("not-found → [저장]을 먼저 누르라고", async () => {
     const { outcome, opened } = await run({ folder: { status: 200, json: { status: "not-found" } } });
     assert.equal(outcome.kind, "NOT_FOUND");
     assert.deepEqual(outcome.lines, [{ text: QUOTE_FOLDER_NOT_FOUND_TEXT, tone: "warning" }]);
+    /**
+     * 🔴 **가리키는 단추가 2026-10-07 에 바뀌었다.** 그때까지는 「[견적서 받기]를 먼저
+     * 눌러 주세요」였는데 그 단추를 없앴다 — 폴더를 세우는 일은 이제 [저장]이 한다
+     * (server/actions/quotes.ts 의 archiveQuoteDocumentOnSave). 없는 단추를 가리키면
+     * 사람이 화면을 뒤진다.
+     */
     assert.equal(
       QUOTE_FOLDER_NOT_FOUND_TEXT,
-      "아직 공유폴더에 이 견적서의 폴더가 없습니다 — [견적서 받기]를 먼저 눌러 주세요"
+      "아직 공유폴더에 이 견적서의 폴더가 없습니다 — [저장]을 먼저 눌러 주세요"
     );
+    assert.ok(!QUOTE_FOLDER_NOT_FOUND_TEXT.includes("견적서 받기"), "없어진 단추를 가리킨다");
     assert.deepEqual(opened, []);
   });
 

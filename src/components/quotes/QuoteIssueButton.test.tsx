@@ -108,6 +108,18 @@ describe("결과 줄", () => {
  * 🔴 「겹쳐 뜬 미리보기」 묶음도 여기 있다 — **돌아가기가 링크가 아니라 닫기 단추**다.
  * 이 사이트에는 수리 건 화면이 없어 사이트를 건너가는 주소를 한 줄도 만들지 않는데,
  * 그 단언이 그것을 함께 지킨다(`!html.includes("/xlsx")`).
+ *
+ * ── ⚠️ 위는 **그때의 기록**이다 — 🔴 **미리보기에 받기가 없다** (2026-10-07) ────
+ * 사용자가 다시 정했다 — 「PO 의 [견적서 받기] 나머지 세 자리도 빼자」. 그래서 미리보기
+ * 두 갈래(앱 양식 · 엑셀 전용) 모두 **받는 길이 없다.** 견적서 엑셀은 [저장]이 사내
+ * 공유폴더에 넣는다(server/actions/quotes.ts). 아래 두 묶음이 그것을 못 박는다 —
+ * 링크든 단추든 되살아나면 깨진다. A/S 가 2026-10-06 에 같게 했다.
+ *
+ * 🔴 **[인쇄 · PDF로 저장]은 그대로다** — 미리보기는 없앤 기능이 아니다.
+ *
+ * 🔴 조각(QuoteIssueButton · QuoteIssueNoticeLines)은 **지우지 않았다** — 통로와 서비스가
+ * 살아 있고, 결과 줄은 결재 PDF 올리기 · [폴더 열기]가 그대로 쓴다. 그래서 위 두 묶음
+ * (단추 · 결과 줄)은 한 글자도 바뀌지 않았다.
  * ============================================================================
  */
 
@@ -149,51 +161,47 @@ function render(overrides: Partial<Props> & { quote: QuotePrintData }): string {
   return renderToStaticMarkup(<QuotePrintView header={HEADER} quoteId="q-1" {...overrides} />);
 }
 
+/** 🔴 받는 길이 하나도 없다 — 주소 · 글자 · 저장 전 곁말 · 발행 단추 넷을 함께 본다. */
+function assertNoDownload(html: string) {
+  assert.ok(!html.includes("/xlsx"), "받기 주소가 되살아났다");
+  assert.ok(!html.includes("Excel 받기"), "[Excel 받기]가 되살아났다");
+  assert.ok(!html.includes("견적서 받기"), "[견적서 받기]가 되살아났다");
+  // 받을 것이 없으니 「저장한 뒤에 받을 수 있습니다」도 가리킬 데가 없다.
+  assert.ok(!html.includes("Excel 은 저장한 뒤에"), "옛 곁말이 남았다");
+  assert.ok(!html.includes("data-quote-issue"), "발행 단추가 남았다");
+}
+
 describe("인쇄 미리보기 — 앱 양식", () => {
-  test("🔴 수정 권한(canIssue)이면 「Excel 받기」가 발행 단추다 — 링크가 없다", () => {
-    const html = render({ quote: NORMAL, canIssue: true });
-    assert.ok(html.includes("data-quote-issue"), html);
-    assert.ok(html.includes(">Excel 받기</button>"), html);
-    assert.ok(!html.includes("/xlsx"), "보기 권한자의 링크가 함께 그려졌다");
+  test("🔴 받는 길이 없다 — 인쇄만 남는다", () => {
+    const html = render({ quote: NORMAL });
+    assertNoDownload(html);
+    assert.ok(html.includes(">인쇄 · PDF로 저장</button>"), html);
   });
 
-  test("🔴 권한을 안 주거나 거짓이면 지금 링크 그대로 — 보기 권한자 화면에 부작용 단추가 없다", () => {
-    for (const html of [render({ quote: NORMAL }), render({ quote: NORMAL, canIssue: false })]) {
-      assert.ok(html.includes('href="/api/quotes/q-1/xlsx"'), html);
-      assert.ok(!html.includes("data-quote-issue"), html);
-    }
-    assert.equal(render({ quote: NORMAL, canIssue: false }), render({ quote: NORMAL }), "안 준 것과 거짓은 같은 화면이다");
+  test("🔴 저장 전(quoteId 없음)에도 같다 — 갈리던 갈래 자체가 없어졌다", () => {
+    const html = render({ quote: NORMAL, quoteId: null, onClose: () => {} });
+    assertNoDownload(html);
+    assert.ok(html.includes(">인쇄 · PDF로 저장</button>"), html);
   });
 
-  test("저장 전(quoteId 없음)에는 수정 권한이어도 받을 수 없다고 적는다", () => {
-    const html = render({ quote: NORMAL, quoteId: null, onClose: () => {}, canIssue: true });
-    assert.ok(html.includes("Excel 은 저장한 뒤에 받을 수 있습니다"), html);
-    assert.ok(!html.includes("data-quote-issue"), html);
-  });
-
-  test("겹쳐 뜬 미리보기(편집 폼 안)에서도 같은 단추다 — 돌아가기는 닫기 단추 그대로", () => {
-    const html = render({ quote: NORMAL, onClose: () => {}, canIssue: true, hasUnsavedChanges: true });
-    assert.ok(html.includes("data-quote-issue"), html);
+  test("겹쳐 뜬 미리보기(편집 폼 안)도 같다 — 돌아가기는 닫기 단추 그대로", () => {
+    const html = render({ quote: NORMAL, onClose: () => {} });
+    assertNoDownload(html);
     assert.ok(html.includes("← 편집으로 돌아가기"), html);
-    assert.ok(!html.includes("/xlsx"), html);
   });
 });
 
 describe("인쇄 미리보기 — 엑셀 전용 갈래도 같다", () => {
-  test("🔴 수정 권한이면 「견적서 받기」가 발행 단추다", () => {
-    const html = render({ quote: EXCEL_ONLY, canIssue: true, signedPdf: null, hasExcel: true });
-    assert.ok(html.includes("data-quote-issue"), html);
-    assert.ok(html.includes(">견적서 받기</button>"), html);
-    assert.ok(!html.includes("/api/quotes/q-1/xlsx"), html);
-    // 올리기 · 지우기 단추는 여전히 없다 — 받기 단추 하나만 바뀌었다.
+  test("🔴 받는 길이 없다 — 올리기 · 지우기도 여전히 없다", () => {
+    const html = render({ quote: EXCEL_ONLY, signedPdf: null, hasExcel: true });
+    assertNoDownload(html);
     for (const absent of ['type="file"', ">지우기<", ">파일 올리기<", ">바꾸기<"]) {
       assert.ok(!html.includes(absent), `미리보기에 '${absent}' 가 있다`);
     }
   });
 
-  test("권한을 안 주면 링크 그대로", () => {
-    const html = render({ quote: EXCEL_ONLY, signedPdf: null, hasExcel: true });
-    assert.ok(html.includes('href="/api/quotes/q-1/xlsx"'), html);
-    assert.ok(!html.includes("data-quote-issue"), html);
+  test("🔴 저장 전(quoteId 없음)에도 같다", () => {
+    const html = render({ quote: EXCEL_ONLY, quoteId: null, onClose: () => {}, signedPdf: null, hasExcel: true });
+    assertNoDownload(html);
   });
 });

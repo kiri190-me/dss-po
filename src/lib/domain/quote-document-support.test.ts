@@ -90,7 +90,18 @@ describe("㉠ 판정 — 앱 양식이 있는 종류만 지나간다", () => {
   });
 
   test("거절 문장은 「오류」가 아니라 아직 안 되는 일이라고 말한다", () => {
-    assert.match(QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE, /미리보기 · 견적서 받기/);
+    assert.match(QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE, /미리보기/);
+    /**
+     * 🔴 **없어진 기능을 가리키지 않는다**(2026-10-07). 「견적서 받기」는 화면에서 모두
+     * 걷어냈다 — 그 말이 남아 있으면 사람이 있지도 않은 단추를 찾는다. 지금의 사실은
+     * 「저장해도 파일이 만들어지지 않는다」다(services/quote-issue.ts 의
+     * archiveQuoteDocumentOnSave 가 이 판정에 걸리는 장을 건너뛴다).
+     *
+     * 🔴 「받기」를 **그냥 빼지 않았다** — 그러면 「미리보기만 안 된다」로 읽혀, 저장했는데
+     * 공유폴더가 비어 있는 까닭을 사람이 못 찾는다.
+     */
+    assert.ok(!QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE.includes("견적서 받기"), QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE);
+    assert.match(QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE, /저장해도 견적서 파일이 만들어지지 않습니다/);
     assert.match(QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE, /다음 차례/);
     // 지금 할 수 있는 일도 말한다 — 사람이 적어 둔 것이 사라진 줄 알면 안 된다.
     assert.match(QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE, /저장/);
@@ -256,7 +267,13 @@ describe("㉡ 막는 자리 — 받기 통로 · 목록 · 발행 통로 · 미�
 
   test("🔴 편집 화면 — 화면도 같은 판정을 본다(엑셀 전용 케이블은 열려 있다)", () => {
     assert.ok(editForm.includes("const canGetDocument = canRenderQuoteDocument({ kind, isExcelOnly });"), "판정을 안 부른다");
-    assert.ok(editForm.includes("{savedQuote && canGetDocument && ( <QuoteIssueButton"), "발행 단추가 그 값을 안 본다");
+    /**
+     * ⚠️ 여기 있던 「발행 단추가 그 값을 본다」(`{savedQuote && canGetDocument && ( <QuoteIssueButton`)
+     * 는 🔴 **2026-10-07 에 뒤집었다** — 받기를 화면에서 모두 걷어냈으므로 그 단추가 없다.
+     * 🔴 **단언을 지우지 않고 방향을 바꿨다**: 받기가 그 조건으로 **되살아나면** 깨진다.
+     */
+    assert.ok(!editForm.includes("{savedQuote && canGetDocument && ( <QuoteIssueButton"), "발행 단추가 되살아났다");
+    assert.ok(!editForm.includes("{savedQuote && canGetDocument && ( <a href="), "받기 링크가 되살아났다");
     // 안내 문장도 서버가 돌려주는 그 하나다 — 두 벌이면 화면과 통로가 다른 말을 한다.
     assert.ok(editForm.includes("{!canGetDocument && ( <p"), "감춘 까닭을 말하지 않는다");
     assert.ok(editForm.includes("{QUOTE_DOCUMENT_UNSUPPORTED_MESSAGE} </p>"));

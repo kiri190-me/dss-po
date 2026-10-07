@@ -521,7 +521,11 @@ describe("목록 표시", () => {
         ["EXCEL_MISSING", "엑셀 없음", "warning"],
       ]
     );
-    assert.ok(badges[1].title.includes("[견적서 받기]"), badges[1].title);
+    // 🔴 2026-10-07 — 곁말이 **없어진 [견적서 받기]를 가리키지 않는다.** 그 장에 파일이
+    //    없다는 사실과, 어디서 붙이는지를 말한다(엑셀 전용 장은 [저장]도 엑셀을 안 만든다).
+    assert.ok(!badges[1].title.includes("견적서 받기"), badges[1].title);
+    assert.ok(badges[1].title.includes("이 장에는 견적서 파일이 없습니다"), badges[1].title);
+    assert.ok(badges[1].title.includes("견적서 수정 화면에서 붙여 주세요"), badges[1].title);
     // 🔴 곁말과 팝업이 **한 글자**다 — 그 약속은 quote-list-screen-source.test.ts 가
     //    팝업 쪽에서도 잰다.
     assert.equal(badges[1].title, QUOTE_EXCEL_MISSING_NOTICE);

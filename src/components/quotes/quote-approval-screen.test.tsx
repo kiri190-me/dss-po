@@ -93,9 +93,12 @@ const editFormSource = read("src/components/quotes/QuoteEditForm.tsx");
 const issueButtonSource = read("src/components/quotes/QuoteIssueButton.tsx");
 /** 🔴 단추가 부르는 곳 — 발행 통로(POST …/issue)를 부르는 자리는 이 파일 하나다. */
 const issueDownloadSource = read("src/components/quotes/quote-issue-download.ts");
-/** 🔴 보기 권한자가 파일을 받는 길 — 목록 줄의 [견적서 받기] 링크(GET …/xlsx). */
+/**
+ * 🔴 보기 권한자가 파일을 받는 길 — 목록 줄의 **[Excel 보기]**(공유폴더의 그 엑셀을 연다).
+ * ⚠️ 2026-10-07 까지는 같은 자리의 [견적서 받기] 링크(GET …/xlsx)였고, 그것은 없앴다.
+ */
 const listSlotsSource = read("src/components/quotes/QuoteListSlots.tsx");
-/** 🔴 보기 권한자의 받기 링크가 사는 자리 — 2026-10-07 에 목록에서 여기로 옮겨 잰다. */
+/** 🔴 받기가 있던 또 한 자리 — 지금은 비어 있고, 아래가 그 「없음」을 잰다. */
 const printViewSource = read("src/components/quotes/QuotePrintView.tsx");
 const editPageSource = read("src/app/(app)/quotes/[id]/page.tsx");
 const newPageSource = read("src/app/(app)/quotes/new/page.tsx");
@@ -281,10 +284,18 @@ describe("🔴 결재는 아무 문도 잠그지 않는다 — 화면 쪽", () =
     assert.doesNotMatch(editFormSource, /QuoteApproval/);
   });
 
-  test("🔴 파일이 나가는 길([견적서 받기])도 결재를 보지 않는다", () => {
-    // 목록 줄의 받기 링크(GET …/xlsx)와 발행 단추(POST …/issue) 둘 다.
+  test("🔴 파일이 나가는 길도 결재를 보지 않는다 — 목록 · 미리보기 · 발행 조각", () => {
+    // 목록 줄의 [Excel 보기] · 발행 단추 조각(POST …/issue) 둘 다.
     assert.doesNotMatch(listSlotsSource, /approval/i);
     assert.doesNotMatch(issueButtonSource, /approval/i);
+    /**
+     * 🔴 인쇄 미리보기는 **주석을 뺀 코드**로 본다 — 그 화면의 머리말이 「결재를 한 글자도
+     * 읽지 않는다」는 사실과 그것을 잠그는 시험 이름(`quote-approval-rules.test.ts`)을
+     * **일부러** 적어 두었다. 재는 것은 「누가 결재를 **읽는가**」이지 「누가 이름을
+     * **말하는가**」가 아니다(quote-folder-open-screens.test.ts 와 같은 도구).
+     */
+    const printCode = printViewSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+    assert.doesNotMatch(printCode, /approval/i);
   });
 
   /**
@@ -293,11 +304,15 @@ describe("🔴 결재는 아무 문도 잠그지 않는다 — 화면 쪽", () =
    * 되었다(그 전에는 단추가 없어 뺐다). 조건이 둘뿐임을 글자로 재는 것이 요점이다 —
    * 결재 상태가 끼어들면 여기서 걸린다.
    */
-  test("[견적서 받기] 단추의 조건이 그대로다 — 저장 여부와 문서 종류 둘뿐", () => {
+  test("[미리보기 · PDF] 의 조건이 그대로다 — 문서 종류 하나뿐", () => {
+    // 🔴 곁에 있던 [견적서 받기]는 2026-10-07 에 없앴다(quote-issue-screens.test.ts).
+    // 남은 단추가 결재 상태를 보기 시작하지 않았는지를 여기서 지킨다.
     assert.ok(
-      flat(editFormSource).includes("{savedQuote && canGetDocument && ( <QuoteIssueButton"),
-      "발행 단추의 조건이 바뀌었다 — 결재 상태가 끼어들지 않았는지 확인할 것"
+      flat(editFormSource).includes('{canGetDocument && ( <button type="button" onClick={() => setShowPreview(true)}'),
+      "미리보기 단추의 조건이 바뀌었다 — 결재 상태가 끼어들지 않았는지 확인할 것"
     );
+    assert.ok(!flat(editFormSource).includes("savedQuote.id}/xlsx"), "받기 링크가 되살아났다");
+    assert.ok(!flat(editFormSource).includes("<QuoteIssueButton"), "발행 단추가 되살아났다");
   });
 
   test("페이지가 편집 폼에 결재 값을 넘기지 않는다", () => {
@@ -325,6 +340,16 @@ describe("🔴 결재는 아무 문도 잠그지 않는다 — 화면 쪽", () =
    * 있다고 말하지 않는다」였다. 🔴 **이제 발행이 있다** — 그래서 재는 것이
    * 뒤집힌다: 두 문장이 저쪽 말(발행)로 돌아왔고, **그 말이 가리키는 길이 실제로
    * 있는가**를 본다. 문장만 되돌리고 단추를 안 세우면 여기서 걸린다.
+   *
+   * ── ⚠️ 🔴 **「발행」이 가리키는 길이 2026-10-07 에 바뀌었다** ───────────────
+   * 사용자 결정으로 [견적서 받기]를 **네 자리에서 모두** 걷어냈다(목록 · 수정 화면 머리 ·
+   * 인쇄 미리보기 두 갈래). 🔴 **그래도 문장은 그대로 참이다** — 그 탭에서 [저장]을 누르면
+   * 견적서 엑셀이 **사내 공유폴더**에 들어간다(server/actions/quotes.ts 의
+   * archiveQuoteDocumentOnSave). 그것이 지금의 「발행」이다. A/S 도 이 두 문장을 한 글자도
+   * 안 고쳤다(저쪽 quote-approval-texts.ts — 2026-10-07 실측).
+   *
+   * 🔴 **그래서 재는 곳을 옮겼다**: 「발행 단추가 있는가」 → 「**저장이 공유폴더에 넣는가**」.
+   * 단언을 지운 것이 아니라 **지금 사실을 재도록** 옮긴 것이고, 그 길이 끊기면 여기서 걸린다.
    */
   test("🔴 화면이 말하는 일이 실제로 되는 일이다 — 발행 · 받기 둘 다 길이 있다", () => {
     // 저쪽 글자 그대로다 — 「[견적서 수정] 탭에서 그대로 발행할 수 있습니다」.
@@ -332,28 +357,54 @@ describe("🔴 결재는 아무 문도 잠그지 않는다 — 화면 쪽", () =
     assert.match(QUOTE_APPROVAL_DOES_NOT_BLOCK_ISSUE_NOTICE, /\[견적서 수정\] 탭/);
     assert.match(QUOTE_APPROVAL_ROUTE_MISSING_NOTICE, /견적서 발행은 그대로 됩니다/);
 
-    // 🔴 그 탭에 발행 단추가 실제로 있다 — 없으면 위 두 문장이 거짓이 된다.
+    // 🔴 그 탭의 [저장]이 공유폴더에 엑셀을 넣는다 — 없으면 위 두 문장이 거짓이 된다.
+    const saveAction = flat(read("src/lib/server/actions/quotes.ts"));
     assert.ok(
-      flat(editFormSource).includes("{savedQuote && canGetDocument && ( <QuoteIssueButton"),
-      "[견적서 수정] 탭의 발행 단추가 사라졌다 — 위 문장이 거짓이 된다"
+      saveAction.includes('import { archiveQuoteDocumentOnSave } from "@/lib/server/services/quote-issue";'),
+      "저장이 공유폴더에 넣는 길이 사라졌다 — 위 문장이 거짓이 된다"
     );
-    // 그리고 그 단추가 부르는 통로가 있다.
+    assert.ok(
+      saveAction.includes("await archiveQuoteDocumentOnSave({ quoteId, actorUserId });"),
+      "저장이 그 길을 부르지 않는다"
+    );
+    // 🔴 그 길이 **견적서 결재**를 읽지 않는다 — 읽으면 결재가 발행을 막기 시작한다.
+    //    (계정 승인 `approvalStatus` 는 다른 것이라 `quote-approvals` 쪽만 본다.)
+    assert.doesNotMatch(saveAction, /quote-approvals?/i);
+    assert.doesNotMatch(saveAction, /QuoteApproval/);
+
+    // 발행 통로(POST …/issue)도 살아 있다 — 지금 부르는 화면은 없지만 지우지 않았다.
     assert.ok(
       flat(issueDownloadSource).includes("return `/api/quotes/${encodeURIComponent(quoteId)}/issue`;"),
       "발행 통로를 부르는 자리가 사라졌다"
     );
-    // 보기 권한자의 받기 링크(GET …/xlsx)도 그대로다 — 발행과 다른 길이다.
+
+    // 🔴 **받는 길** — 보기 권한자(수정 화면에 못 들어가는 사람)가 파일을 받을 수 있는가.
     //
-    // ⚠️ 🔴 **읽는 파일이 2026-10-07 에 바뀌었다.** 그때까지는 **목록**(QuoteListSlots)의
-    //    줄마다 선 그 링크를 봤는데, 🔴 **목록의 [견적서 받기]가 빠졌다**(사용자 지시 —
-    //    받는 곳을 사내 공유폴더 하나로 모은다. A/S 가 2026-10-06 에 먼저 했다).
+    // ⚠️ 🔴 **읽는 파일이 2026-10-07 에 두 번 바뀌었다.** 처음에는 **목록**(QuoteListSlots)의
+    //    줄마다 선 받기 링크였고, 그다음 **인쇄 미리보기**의 같은 링크였다. 🔴 **둘 다
+    //    없앴다** — 받는 곳을 사내 공유폴더 하나로 모은다는 사용자 결정이다.
     //    🔴 **재는 뜻은 그대로다**: 보기 권한자가 발행과 **다른 길**로 파일을 받을 수
-    //    있는가. 그 길은 이제 **인쇄 미리보기 화면**의 같은 링크다(QuotePrintView —
-    //    수정 권한자에게는 발행 단추, 보기 권한자에게는 이 링크다).
+    //    있는가. 그 길은 이제 목록 줄의 **[Excel 보기]** 다 — 공유폴더에 저장된 그 엑셀을
+    //    이 PC 의 엑셀로 연다. 🔴 **권한 갈래가 없다**(아래) — 그래서 보기 권한자에게도 선다.
     assert.ok(
-      flat(printViewSource).includes("href={`/api/quotes/${quoteId}/xlsx`}"),
-      "[견적서 받기] 링크가 사라졌다 — 보기 권한자가 파일을 받을 길이 없다"
+      flat(listSlotsSource).includes("<QuoteArchiveExcelOpenButton row={row} />"),
+      "[Excel 보기]가 사라졌다 — 보기 권한자가 파일을 받을 길이 없다"
     );
+    const rowActions = flat(listSlotsSource).slice(
+      flat(listSlotsSource).indexOf("renderRowActions={(row) =>"),
+      flat(listSlotsSource).indexOf("renderFileBadges=")
+    );
+    assert.ok(rowActions.length > 0, "줄 단추 슬롯을 찾지 못했다");
+    assert.ok(!rowActions.includes("canEdit"), "[Excel 보기]가 수정 권한으로 갈린다");
+    // 그 단추가 쓰는 통로의 문턱도 읽기 권한이다 — 결재도 권한도 그 길을 막지 않는다.
+    const entriesRoute = read("src/app/api/quotes/[id]/archive-folder/entries/route.ts");
+    assert.ok(
+      flat(entriesRoute).includes('hasPermission(actingUser, "quotes", "READ")'),
+      "[Excel 보기] 통로의 문턱이 READ 가 아니다"
+    );
+    // 🔴 그 통로도 **견적서 결재**를 읽지 않는다(계정 승인은 다른 것이라 빼고 본다).
+    assert.doesNotMatch(entriesRoute, /quote-approvals?/i);
+    assert.doesNotMatch(entriesRoute, /QuoteApproval/);
   });
 });
 

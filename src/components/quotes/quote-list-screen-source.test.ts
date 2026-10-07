@@ -401,10 +401,23 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
    * ==========================================================================
    * 목록 줄의 받기 단추를 뗀 조각이라, 「그래서 사람이 파일을 못 받게 됐나」를 여기서
    * 못 박는다. 🔴 **통로도, 다른 화면의 받기도 한 줄도 안 건드렸다.**
+   *
+   * ── ⚠️ 위는 **그때의 기록**이다 — 🔴 **넷이 둘이 되었다** (2026-10-07 같은 날) ──
+   * 사용자 지시가 이어졌다 — 「PO 의 [견적서 받기] 나머지 세 자리도 빼자」. 그래서 남아
+   * 있던 받기 셋(③ 수정 화면 머리 · ④ 인쇄 미리보기 두 갈래)을 모두 걷어냈다. A/S 가
+   * 2026-10-06 에 한 것과 같다.
+   *
+   * 🔴 **단언을 지우지 않고 새 사실로 뒤집어 적었다.** ①②는 그대로 「있는가」를 재고,
+   * ③④는 「**없는가**」를 잰다 — 슬그머니 되살아나면 여기서 깨진다. 받는 길이 정말로
+   * 남아 있는지(①②)를 재는 것이 이 시험의 본래 몫이고, 그것은 더 중요해졌다.
+   *
+   * 🔴 **권한을 따라가 보았다**(2026-10-07): 보기 권한자(quotes READ)는 수정 화면
+   * (`/quotes/{id}`)에 못 들어가므로 ② [폴더 열기]를 못 본다. **그 사람의 길은 ① 하나**이고,
+   * ① 은 목록 줄에 **권한 갈래 없이** 서며 그 통로의 문턱도 READ 다 — 아래가 그 둘을 잰다.
    * ==========================================================================
    */
-  test("🔴 2026-10-07 — 받는 길은 그대로 넷이다. 통로도 살아 있다", () => {
-    // ① 줄의 [Excel 보기] — 이 조각이 세운 길. 공유폴더의 그 엑셀을 PC 의 엑셀로 연다.
+  test("🔴 2026-10-07 — 받는 길은 둘이고, 화면의 받기는 하나도 없다. 통로는 살아 있다", () => {
+    // ① 줄의 [Excel 보기] — 앞 조각이 세운 길. 공유폴더의 그 엑셀을 PC 의 엑셀로 연다.
     const open = read("src/components/quotes/quote-archive-excel-open.ts");
     assert.ok(open.includes("export async function runQuoteArchiveExcelOpen("), "[Excel 보기] 흐름이 없다");
     assert.ok(
@@ -418,20 +431,59 @@ describe("조각 3a·3b-1 이 채우는 것과 비워 두는 것", () => {
       "수정 화면의 [폴더 열기]가 사라졌다 — A/S 가 받는 두 길 가운데 하나다"
     );
 
-    // ③ 견적서 수정 화면 머리의 [견적서 받기] — 🔴 **이 조각은 목록만 건드렸다.**
-    assert.ok(codeOf(editFormSource).includes("<QuoteIssueButton"), "수정 화면의 [견적서 받기]가 사라졌다");
+    // 🔴 ③ 수정 화면 머리의 [견적서 받기] — **없다.** 되살아나면 여기서 깨진다.
+    const editCode = codeOf(editFormSource);
+    assert.equal(editCode.includes("<QuoteIssueButton"), false, "수정 화면에 [견적서 받기]가 되살아났다");
+    assert.equal(editCode.includes("/xlsx"), false, "수정 화면에 받기 주소가 되살아났다");
 
-    // ④ 인쇄 미리보기 화면의 [견적서 받기].
-    assert.ok(
-      codeOf(read("src/components/quotes/QuotePrintView.tsx")).includes("href={`/api/quotes/${quoteId}/xlsx`}"),
-      "인쇄 미리보기의 받기 링크가 사라졌다"
+    // 🔴 ④ 인쇄 미리보기의 [견적서 받기] 두 갈래(앱 양식 · 엑셀 전용) — **없다.**
+    const printCode = codeOf(read("src/components/quotes/QuotePrintView.tsx"));
+    assert.equal(
+      printCode.includes("href={`/api/quotes/${quoteId}/xlsx`}"),
+      false,
+      "인쇄 미리보기에 받기 링크가 되살아났다"
     );
+    assert.equal(printCode.includes("<QuoteIssueButton"), false, "인쇄 미리보기에 발행 단추가 되살아났다");
 
-    // 🔴 통로 자체도 그대로다 — 화면 한 자리에서만 뗐다.
+    // 🔴 통로 자체는 그대로다 — 화면에서만 뗐다(지우는 것은 되돌리기 어렵다).
     assert.equal(
       existsSync(fileURLToPath(new URL("src/app/api/quotes/[id]/xlsx/route.ts", repoUrl))),
       true,
       "받기 통로가 사라졌다"
+    );
+    assert.equal(
+      existsSync(fileURLToPath(new URL("src/app/api/quotes/[id]/issue/route.ts", repoUrl))),
+      true,
+      "발행 통로가 사라졌다"
+    );
+  });
+
+  /**
+   * ==========================================================================
+   * 🔴 **보기 권한자도 받을 수 있다** — ① 이 그 사람의 유일한 길이다 (2026-10-07)
+   * ==========================================================================
+   * 받기를 걷어낼 때 가장 조심할 것은 「수정 못 하는 사람이 파일을 못 받게 되는 것」이었다.
+   * 수정 화면(`/quotes/{id}`)은 quotes WRITE 가 있어야 들어가므로 ② [폴더 열기]는 그 사람에게
+   * 보이지 않는다. 그래서 **목록 줄의 [Excel 보기] 하나**가 남는데, 그것이 정말 보이는지를
+   * 두 자리에서 잰다 — 화면 쪽(권한으로 가르지 않는다)과 통로 쪽(문턱이 READ 다).
+   * ==========================================================================
+   */
+  test("🔴 2026-10-07 — [Excel 보기]는 보기 권한자에게도 선다. 통로 문턱도 READ 다", () => {
+    // 화면 — 줄 단추 슬롯이 `canEdit` 을 보지 않는다(위 「줄의 값으로 갈리지 않는다」와 짝).
+    const rowActions = sliceBetween(codeOf(slotsSource), "renderRowActions={(row) =>", "renderFileBadges=");
+    assert.equal(rowActions.includes("canEdit"), false, "[Excel 보기]가 수정 권한으로 갈린다");
+
+    // 통로 — 폴더 안을 읽는 그 통로의 문턱이 quotes READ 다(WRITE 로 올리면 보기 권한자가 막힌다).
+    const entries = codeOf(read("src/app/api/quotes/[id]/archive-folder/entries/route.ts"));
+    assert.ok(entries.includes('hasPermission(actingUser, "quotes", "READ")'), "폴더 목록 통로가 READ 가 아니다");
+    assert.equal(entries.includes('"quotes", "WRITE"'), false, "폴더 목록 통로가 쓰기 권한을 요구한다");
+
+    // 그 통로를 부르는 쪽도 그 주소 하나다 — 다른 문턱의 통로로 갈아타지 않았다.
+    assert.ok(
+      codeOf(read("src/components/quotes/quote-archive-folder-entries.ts")).includes(
+        "`/api/quotes/${encodeURIComponent(quoteId)}/archive-folder/entries`"
+      ),
+      "[Excel 보기]가 다른 통로를 본다"
     );
   });
 

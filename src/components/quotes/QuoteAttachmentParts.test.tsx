@@ -297,7 +297,9 @@ describe("엑셀 전용 스위치 · 줄 비우기 확인", () => {
     assert.ok(!off.includes('checked=""'), off);
     assert.ok(on.includes("엑셀 전용 견적서"), on);
     assert.ok(on.includes("공급가액을 직접"), on);
-    assert.ok(on.includes("[견적서 받기]"), on);
+    // 🔴 2026-10-07 — 곁말이 [견적서 받기] 대신 **그 파일이 있는 칸**을 가리킨다(그 단추를 없앴다).
+    assert.ok(on.includes("「수기 견적서 엑셀」 칸에 붙인 파일이 곧 보낸 견적서입니다"), on);
+    assert.ok(!on.includes("[견적서 받기]"), "없어진 단추를 가리킨다");
   });
 
   test("🔴 줄 비우기 확인 — 줄이 있으면 저장이 거절된다고, 무엇을 비우는지, 끄면 돌아온다고", () => {

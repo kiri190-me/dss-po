@@ -460,11 +460,16 @@ export function isQuoteExcelAttachedOrQueued(params: {
 
 /**
  * 엑셀 전용인데 엑셀이 없을 때의 안내 — 저장은 된다(새 견적서는 저장한 뒤에야 올릴 수
- * 있다). 다만 그 장의 [견적서 받기]가 내줄 파일이 없으므로 눈에 띄게 알린다.
+ * 있다). 다만 그 장에는 보낼 문서 자체가 없으므로 눈에 띄게 알린다.
+ *
+ * 🔴 [견적서 받기]를 가리키지 않는다(2026-10-07) — 그 단추도 그 링크도 화면에서 없앴다.
+ * 엑셀 전용 장은 [저장]도 앱 양식을 만들지 않으므로(services/quote-issue.ts 의
+ * archiveQuoteDocumentOnSave 가 isExcelOnly 를 먼저 거른다), 붙인 엑셀이 없으면 그
+ * 견적서에는 파일이 하나도 없다.
  */
 export function excelOnlyMissingExcelNotice(params: { isExcelOnly: boolean; excelAttachedOrQueued: boolean }): string | null {
   if (!params.isExcelOnly || params.excelAttachedOrQueued) return null;
-  return "수기 견적서 엑셀을 붙여 주세요 — 엑셀 전용 견적서의 [견적서 받기]는 붙인 엑셀을 내려줍니다. 붙이기 전에는 받을 파일이 없습니다(저장은 됩니다).";
+  return "수기 견적서 엑셀을 붙여 주세요 — 엑셀 전용 견적서는 붙인 엑셀이 곧 보낸 견적서입니다. 붙이기 전에는 이 장에 견적서 파일이 없습니다(저장은 됩니다).";
 }
 
 // ────────────────────────────────────────────────── 목록 표시
@@ -505,6 +510,10 @@ export type QuoteListFileBadge = {
  *    받기 통로가 갈라져 붙어 있는 엑셀을 그대로 흘려보낸다
  *    (api/quotes/[id]/xlsx/route.ts 의 6번 갈래). 3c-2 가 쓰던 「이 사이트에서는 받을
  *    수 없다」 문장과 그 상수 파일(domain/quote-excel-only-download.ts)은 사라졌다.
+ *    ⚠️ **그때의 기록이다** — 🔴 **2026-10-07 에 [견적서 받기]를 화면에서 다 없앴다**
+ *    (저쪽도 2026-10-06 에 같게 했다). 그래서 두 곁말이 **가리키는 곳만** 바뀌었다:
+ *    「그 엑셀은 「수기 견적서 엑셀」 칸에 붙어 있습니다」 · 「이 장에는 견적서 파일이
+ *    없습니다」. 색조도 이름도 그대로이고, 저쪽 문장과도 여전히 같다.
  *  · **「엑셀 없음」** — 🔴 **저쪽 문장으로 돌아왔다**(조각 3d-4, 2026-09-28). 그 전까지
  *    이 자리는 「이 사이트에는 아직 파일을 붙이는 칸이 없어, A/S 관리 시스템에서 붙여
  *    주세요」였다 — 붙이는 칸이 서지 않았으므로 저쪽 문장(「견적서 **수정 화면에서
@@ -526,6 +535,10 @@ export type QuoteListFileBadge = {
  *     (components/quotes/QuoteListSlots.tsx → common/NoticePopup.tsx)
  * 같은 사실을 두 곳에 따로 적으면 한쪽만 고쳐지는 날이 오고, 그때 사람은 마우스를
  * 올렸을 때와 눌렀을 때 **다른 말**을 듣는다.
+ *
+ * ⚠️ 위는 **그때의 기록**이다 — 🔴 **쓰는 자리가 다시 하나다**(2026-10-07). 목록 줄의
+ * [견적서 받기]와 그 알림 팝업이 앞 조각에서 함께 빠졌다(QuoteListSlots.tsx 머리말).
+ * 🔴 **그래도 상수로 둔다** — 곁의 시험이 딱지가 이 값을 쓰는지를 잰다.
  *
  * ── 🔴 저쪽 문장으로 돌아왔다 (조각 3d-4, 2026-09-28) ───────────────────
  * 그 전까지 이 값은 「이 사이트에는 아직 파일을 붙이는 칸이 없어, **A/S 관리
@@ -549,7 +562,7 @@ export type QuoteListFileBadge = {
  * ============================================================================
  */
 export const QUOTE_EXCEL_MISSING_NOTICE =
-  "엑셀 전용인데 수기 견적서 엑셀이 붙지 않아 [견적서 받기]가 내줄 파일이 없습니다. 견적서 수정 화면에서 붙여 주세요.";
+  "엑셀 전용인데 수기 견적서 엑셀이 붙지 않아 이 장에는 견적서 파일이 없습니다. 견적서 수정 화면에서 붙여 주세요.";
 
 export function quoteListFileBadges(row: {
   isExcelOnly: boolean;
@@ -561,7 +574,7 @@ export function quoteListFileBadges(row: {
     badges.push({
       key: "EXCEL_ONLY",
       label: "엑셀 전용",
-      title: "품목 없이 손으로 만든 엑셀이 곧 보낸 견적서입니다 — [견적서 받기]가 붙인 엑셀을 내려줍니다.",
+      title: "품목 없이 손으로 만든 엑셀이 곧 보낸 견적서입니다 — 그 엑셀은 「수기 견적서 엑셀」 칸에 붙어 있습니다.",
       tone: "info",
     });
   }
@@ -630,5 +643,12 @@ export function signedPdfForPreview(params: {
   return null;
 }
 
-/** 엑셀 전용 미리보기에 결재 PDF 가 없을 때의 문장 — 사용자 결정(2026-09-15) 그대로. */
-export const EXCEL_ONLY_NO_SIGNED_PDF_TEXT = "결재 PDF 가 아직 없습니다 — [견적서 받기]로 붙인 엑셀을 받으세요";
+/**
+ * 엑셀 전용 미리보기에 결재 PDF 가 없을 때의 문장.
+ *
+ * 🔴 **가리키는 곳이 바뀌었다**(2026-10-07). 사용자 결정(2026-09-15)의 원래 문장은
+ * 「[견적서 받기]로 붙인 엑셀을 받으세요」였는데, 그 링크를 화면에서 없앴다. 엑셀 전용
+ * 장의 엑셀은 첨부 칸에만 있으므로(저장은 엑셀 전용 장을 건너뛴다) 그 칸을 가리킨다.
+ */
+export const EXCEL_ONLY_NO_SIGNED_PDF_TEXT =
+  "결재 PDF 가 아직 없습니다 — 붙인 엑셀은 견적서 수정 화면의 「수기 견적서 엑셀」 칸에서 받으세요";

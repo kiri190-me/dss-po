@@ -105,8 +105,12 @@ export function quoteArchiveFolderUrl(quoteId: string): string {
 // ── 문장 ─────────────────────────────────────────────────────────────────
 
 export const QUOTE_FOLDER_DISABLED_TEXT = "공유폴더 저장이 꺼져 있습니다";
+/**
+ * 🔴 가리키는 단추가 2026-10-07 에 바뀌었다 — 폴더를 세우는 일은 이제 [저장]이 한다
+ * (server/actions/quotes.ts). 폴더를 만들던 [견적서 받기]는 화면에서 없앴다.
+ */
 export const QUOTE_FOLDER_NOT_FOUND_TEXT =
-  "아직 공유폴더에 이 견적서의 폴더가 없습니다 — [견적서 받기]를 먼저 눌러 주세요";
+  "아직 공유폴더에 이 견적서의 폴더가 없습니다 — [저장]을 먼저 눌러 주세요";
 export const QUOTE_FOLDER_MULTIPLE_TEXT = "맞는 폴더가 여럿이라 이름순 첫째를 엽니다 — 폴더를 확인해 주세요";
 
 /**
