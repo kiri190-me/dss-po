@@ -6,10 +6,13 @@ import {
   isValidExpectedVersion,
   isValidQuoteId,
   validateQuoteFields,
+  type QuoteFields,
 } from "@/lib/validation/quote-input";
 import { createQuote, updateQuote } from "@/lib/db/mutations/quotes";
 import { permanentlyDeleteQuote, restoreQuote, softDeleteQuote } from "@/lib/db/mutations/quote-trash";
 import { lookupIntakeForQuote, type QuoteIntakeLookup } from "@/lib/db/queries/quotes";
+import { archiveQuoteDocumentOnSave } from "@/lib/server/services/quote-issue";
+import { createQuoteArchiveFolder } from "@/lib/storage/quote-archive";
 
 /**
  * ============================================================================
@@ -126,6 +129,97 @@ async function resolveWritingUser() {
 }
 
 /**
+ * ============================================================================
+ * 🔴 새 견적서를 저장하면 그 순간 **공유폴더에 폴더가 선다** (2026-10-07)
+ * ============================================================================
+ * 전에는 [견적서 받기] · 결재 PDF 저장이 파일을 쓸 때 폴더가 함께 생겼다. 그래서 견적서를
+ * 적어 두기만 한 건은 서류함에 자리가 없었고, 사람이 그 사이에 받은 서류를 넣을 곳이 없었다.
+ * 이제 **만드는 순간**(고치는 순간이 아니다) 빈 폴더를 세운다.
+ *
+ *  · 🔴 **DB 트랜잭션 바깥이다** — mutation 이 돌아온 **뒤**, `if (result.ok)` 블록 안.
+ *    파일시스템 작업은 롤백되지 않는다.
+ *  · 🔴 **폴더를 못 만들어도 견적서 저장은 그대로다.** 이 토막에 `return` 도 `throw` 도
+ *    없고, 끝은 늘 아래의 `return result;` 하나다. 창고가 늦거나 꺼져 있다고 사람이 적은
+ *    견적서가 사라지면 안 된다.
+ *  · 🔴 **고치기(updateQuoteAction)에는 붙이지 않는다.** 이름 재료가 바뀌었다고 폴더를
+ *    하나 더 세우면 같은 견적서의 서류가 두 폴더로 갈라진다(찾기는 번호만 보므로 기존
+ *    폴더를 그대로 쓴다 — 고칠 때 할 일이 없다).
+ *  · 🔴 **로그에 폴더 이름 · 경로 · 오류 message 를 적지 않는다.** 폴더 이름에는 공급처와
+ *    S/N 이, fs 오류 message 에는 경로가 들어 있다. 남기는 것은 견적서 id 와 상태 코드,
+ *    그리고 storage 가 경로 없이 만든 짧은 사유뿐이다.
+ *  · `created` · `found` · `disabled` 는 정상 상태라 조용히 지나간다.
+ *
+ * 폴더를 만드는 일 자체(루트를 만들지 않기 · 본 번호로 먼저 찾기 · 파일을 쓰지 않기)는
+ * storage/quote-archive.ts 의 createQuoteArchiveFolder 한 자리에만 있다.
+ * ============================================================================
+ */
+
+/**
+ * 폴더 이름을 짓는 재료.
+ *
+ * ⚠️ **A/S 는 여기에 `faultDescription: fields.faultDescriptionText` 를 한 줄 더
+ * 넘긴다**(저쪽은 2026-10-06 에 폴더 · 파일 이름의 꼬리를 신고증상으로 바꿨다). 이
+ * 사이트의 `domain/quote-archive-naming.ts` 는 아직 그 칸을 받지 않는 옛 판이라
+ * 넘겨도 버려진다 — 넣어 두면 「넘기는 줄 알았는데 아무도 안 읽는」 자리가 되므로
+ * 넣지 않았다. 🔴 이름 규칙을 맞추는 것은 **이미 서 있는 사내 폴더 이름이 걸린
+ * 별건**이라 따로 결정할 일이다. 지금은 이 사이트 안에서 [견적서 받기](services/
+ * quote-issue.ts 의 archiveNamingOf)와 **같은 재료 · 같은 이름**을 쓴다.
+ */
+function archiveNamingOfFields(fields: QuoteFields) {
+  return {
+    quoteNumber: fields.quoteNumber,
+    kind: fields.kind,
+    customerName: fields.customerNameText,
+    modelName: fields.modelNameText,
+    lotNumber: fields.lotNumberText,
+    serialNumber: fields.serialNumberText,
+  };
+}
+
+/**
+ * ============================================================================
+ * 🔴 저장하면 그것만으로 견적서 엑셀이 공유폴더에 들어간다 (2026-10-07)
+ * ============================================================================
+ * 위 폴더 만들기와 **같은 자리 · 같은 규율**이다(트랜잭션 바깥 · 독립 try · 경로를 적지 않는
+ * 로그). 다른 점은 둘이다:
+ *
+ *  · 🔴 **만들기와 고치기 둘 다**에 붙는다. 폴더는 한 번만 서면 되지만 견적서 엑셀은
+ *    **고칠 때마다 내용이 달라진다** — 마지막 판이 서류함에 있어야 한다.
+ *  · 내용이 그대로면 공유폴더에 아예 쓰지 않는다(storage/quote-archive.ts 의 「내용이
+ *    같으면 새로 쓰지 않는다」). ⚠️ 다만 이 사이트의 저장 모듈에는 아직 A/S 의
+ *    **`QUOTE_FILE` 덮어쓰기**가 없어, 내용이 달라지면 ` (2)`, ` (3)` 으로 비켜 간다
+ *    (그 파일 머리말의 「2026-10-07 — 바이트 동일은 여기서 끝난다」 ②).
+ *
+ * 무엇을 만들고 어디에 넣는지는 **services/quote-issue.ts 한 자리**에 있다
+ * (archiveQuoteDocumentOnSave). [견적서 받기]와 같은 도우미를 지나므로 두 벌이 되지 않는다.
+ * 🔴 이 액션은 공유폴더 위치도 파일 이름도 알지 못한다 — 견적서 id 와 행위자만 넘긴다.
+ *
+ * 🔴 **실패해도 저장은 되돌아가지 않는다.** 아래 함수에 `return` 도 `throw` 도 없고, 남기는
+ * 것은 견적서 id + 상태 코드 + 사유 코드뿐이다(파일 이름 · 폴더 이름 · 경로 · 오류 message 를
+ * 적지 않는다 — 폴더 이름에는 공급처와 S/N 이, fs 오류에는 경로가 들어 있다).
+ * ============================================================================
+ */
+async function archiveDocumentAfterSave(quoteId: string, actorUserId: string): Promise<void> {
+  try {
+    const archived = await archiveQuoteDocumentOnSave({ quoteId, actorUserId });
+    // 건너뛴 장(엑셀 전용 · 앱 양식이 없는 종류)과 끝난 장은 정상이라 조용히 지나간다.
+    if (archived.status === "failed") {
+      console.error("견적서 엑셀을 공유폴더에 남기지 못했습니다", {
+        quoteId,
+        status: archived.status,
+        reason: archived.reason,
+      });
+    }
+  } catch (documentError) {
+    // 🔴 오류의 message 를 적지 않는다 — fs · DB 오류에는 경로와 입력값이 들어 있다.
+    console.error("견적서 엑셀을 남기는 중 예상치 못한 오류", {
+      quoteId,
+      name: documentError instanceof Error ? documentError.name : typeof documentError,
+    });
+  }
+}
+
+/**
  * 새 견적서 한 장.
  *
  * 🔴 **이 사이트에는 아직 [새 견적서] 화면이 없다**(조각 3b-2). 그런데도 이 액션을
@@ -153,14 +247,41 @@ export async function createQuoteAction(input: {
     };
   }
 
+  let result: QuoteActionResult;
   try {
-    return await createQuote({ fields: validation.data, actorUserId: auth.actingUser.id });
+    result = await createQuote({ fields: validation.data, actorUserId: auth.actingUser.id });
   } catch (err) {
     // 값 자체는 절대 로그에 담지 않는다 — 품명·신고증상에 고객사 사정이 섞일 수
     // 있다(schema/quotes.ts 의 PII 항목).
     console.error("createQuoteAction: unexpected DB error", err);
     return { ok: false, code: "DATABASE_UNAVAILABLE", message: DATABASE_UNAVAILABLE_MESSAGE };
   }
+
+  if (result.ok) {
+    try {
+      const folder = await createQuoteArchiveFolder({
+        quoteDate: validation.data.quoteDate,
+        naming: archiveNamingOfFields(validation.data),
+      });
+      // 만들었다 · 이미 있었다 · 꺼져 있다는 정상 상태라 시끄럽게 굴지 않는다.
+      if (folder.status !== "created" && folder.status !== "found" && folder.status !== "disabled") {
+        console.error("새 견적서의 공유폴더 폴더를 만들지 못했습니다", {
+          quoteId: result.id,
+          status: folder.status,
+          reason: folder.reason,
+        });
+      }
+    } catch (folderError) {
+      // 🔴 오류의 message 를 적지 않는다 — fs 오류에는 경로가 들어 있다.
+      console.error("새 견적서의 공유폴더 폴더에서 예상치 못한 오류", {
+        quoteId: result.id,
+        name: folderError instanceof Error ? folderError.name : typeof folderError,
+      });
+    }
+    await archiveDocumentAfterSave(result.id, auth.actingUser.id);
+  }
+
+  return result;
 }
 
 /**
@@ -197,8 +318,9 @@ export async function updateQuoteAction(input: {
     };
   }
 
+  let updated: QuoteActionResult;
   try {
-    return await updateQuote({
+    updated = await updateQuote({
       id: input.id,
       expectedVersion: input.expectedVersion,
       fields: validation.data,
@@ -208,6 +330,14 @@ export async function updateQuoteAction(input: {
     console.error("updateQuoteAction: unexpected DB error", err);
     return { ok: false, code: "DATABASE_UNAVAILABLE", message: DATABASE_UNAVAILABLE_MESSAGE };
   }
+
+  // 🔴 고친 내용으로 견적서 엑셀을 다시 만들어 서류함에 남긴다(위 머리말).
+  //    폴더 만들기는 여기 붙지 않는다 — 번호로 찾으므로 만들 때 선 폴더를 그대로 쓴다.
+  if (updated.ok) {
+    await archiveDocumentAfterSave(updated.id, auth.actingUser.id);
+  }
+
+  return updated;
 }
 
 /**

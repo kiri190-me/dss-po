@@ -22,7 +22,8 @@ import type {
   QuoteIssueAttachmentResult,
   QuoteIssueResult,
 } from "@/lib/domain/quote-issue-result";
-import { saveToQuoteArchive } from "@/lib/storage/quote-archive";
+import { getAttachmentStorage } from "@/lib/storage/local-fs-adapter";
+import { resolveQuoteArchiveRoot, saveToQuoteArchive } from "@/lib/storage/quote-archive";
 import { QuoteTemplateError } from "@/lib/storage/quote-template";
 import { AttachmentTooLargeError, type StorageAdapter } from "@/lib/storage/storage-adapter";
 import { isValidQuoteId } from "@/lib/validation/quote-input";
@@ -66,6 +67,21 @@ import { renderQuoteWorkbook } from "./quote-workbook";
  * 🔴 **이 파일은 그날 주석 한 문단만 늘었다 — 코드는 여전히 A/S 와 바이트 동일이다.**
  * 부르는 쪽이 생겼을 뿐 불리는 쪽은 한 글자도 고칠 것이 없었다. 위 머리말의 「이
  * 블록 아래로는 한 글자도 고치지 않았다」는 그대로 참이다.
+ *
+ * ── 🔴 2026-10-07 — 「바이트 동일」은 여기서 끝난다 ──────────────────────
+ * 이 조각이 A/S 의 **2026-10-06 판**에서 `archiveQuoteDocumentOnSave`(저장에 딸려
+ * 나가는 견적서 엑셀) 한 덩이를 가져왔다. 가져온 것은 **그 함수와 두 타입, 그리고
+ * import 두 줄**(`getAttachmentStorage` · `resolveQuoteArchiveRoot`)뿐이고 —
+ * 🔴 **[견적서 받기](issueQuoteFile) · 결재 PDF 복사(archiveSignedQuotePdf) · 아래
+ * 도우미 전부는 한 글자도 건드리지 않았다.**
+ *
+ * ⚠️ **A/S 와 다른 것이 하나 더 있다 — 이 사이트의 `archiveNamingOf` 에는
+ * `faultDescription` 이 없다.** 저쪽은 2026-10-06 에 폴더 · 파일 이름의 꼬리를
+ * 신고증상으로 바꿨는데, 그 재료를 받는 `domain/quote-archive-naming.ts` 가 이
+ * 사이트에는 아직 옛 판이라 받을 칸이 없다(그 파일에 `faultDescription` 이 0 건).
+ * 이름 규칙을 고치는 것은 이 조각의 일이 아니다 — 고치면 **이미 서 있는 사내
+ * 폴더 이름과 갈라지므로** 따로 결정할 일이다. 지금은 [견적서 받기]와 저장이
+ * **이 사이트 안에서 서로 같은 이름**을 쓴다.
  * ============================================================================
  */
 
@@ -325,6 +341,127 @@ export async function archiveSignedQuotePdf(input: {
       code: errorCodeOf(error),
     });
     return { status: "failed", reason: SIGNED_PDF_READ_FAILED_REASON };
+  }
+}
+
+// ─────────────────────────────────────────── 저장에 딸린 견적서 엑셀 (2026-10-07)
+
+/**
+ * ============================================================================
+ * 🔴 견적서를 [저장]하면 그것만으로 견적서 엑셀이 공유폴더에 들어간다
+ * ============================================================================
+ * 전에는 사람이 [견적서 받기]를 눌러야 서류함에 파일이 꽂혔다. 그래서 적고 저장만 한 건은
+ * 폴더만 서 있고 안이 비어 있었다. 이제 **저장이 그 일을 함께 한다.**
+ *
+ * 🔴 **[견적서 받기](issueQuoteFile)는 한 글자도 바뀌지 않았다.** 이 함수는 그 통로의
+ * ①채우기 · ②공유폴더 · ③첨부 칸을 **같은 도우미로 그대로** 지나간다(renderQuoteWorkbook ·
+ * copyToArchive · placeInExcelSlot). 다른 것은 셋뿐이다:
+ *
+ *  · 🔴 **바이트를 돌려주지 않는다** — 저장은 화면 이동이라 받을 곳이 없다(받기의 ④).
+ *  · 🔴 **감사(EXCEL_EXPORT)를 남기지 않는다.** 그 기록의 뜻은 「사람이 견적서 파일을 받아
+ *    갔다」이고, 저장은 받아 간 것이 아니다. 저장마다 남기면 그 표가 저장 횟수로 가득 차
+ *    「누가 이 견적서를 받아 갔나」를 더 이상 답할 수 없게 된다. 저장에 딸려 첨부 칸이
+ *    바뀌면 그것은 createAttachmentRecord 가 남기는 FILE_UPLOAD 감사로 이미 보인다.
+ *  · 🔴 **실패해도 던지지 않는다** — 값으로만 돌려준다. 공유폴더가 늦거나 꺼져 있다고 사람이
+ *    적은 견적서가 되돌아가면 안 된다(부르는 쪽인 server/actions/quotes.ts 의 규율).
+ *
+ * ── 🔴 조용히 건너뛰는 장 ───────────────────────────────────────────────
+ *  · `isExcelOnly` — **사람이 붙인 엑셀이 그 장의 문서다.** 앱이 만들지 않는다.
+ *  · `canRenderQuoteDocument` 가 false — 앱 양식이 아직 없는 종류. **오류가 아니다**
+ *    (「지금은 적고 저장해 둘 수 있다」가 그 상태의 정상이다 — quote-document-support.ts).
+ *
+ * ── ⚠️ A/S 와 다른 한 가지 — 공유폴더에 **덮어쓰지 않는다** ─────────────
+ * 저쪽은 2026-10-06 에 같은 조각을 넣으면서 `storage/quote-archive.ts` 의 쓰기를
+ * **`QUOTE_FILE` 만 덮어쓰도록** 함께 고쳤다(결재본은 그대로 `wx`). 이 사이트의 저장
+ * 모듈은 아직 옛 판이라 **내용이 달라질 때마다 ` (2)`, ` (3)` 으로 비켜 간다** — 같은
+ * 바이트면 아예 쓰지 않는 규칙(findSameContentFile)은 그대로라 「저장만 반복」은 쌓이지
+ * 않지만, **고쳐 저장하면 장이 는다.** 🔴 그 쓰기 규칙을 바꾸는 것은 사내 공유폴더의
+ * 결재본 수백 장이 걸린 별건이라 이 조각에서 하지 않았다.
+ *
+ * ── 로그 ────────────────────────────────────────────────────────────────
+ * 견적서 id + 단계 + 오류 코드만. 파일 이름 · 폴더 이름 · 경로 · 오류 message 는 적지 않는다.
+ * ============================================================================
+ */
+
+export type QuoteSaveArchiveResult =
+  /** 할 일이 없었다 — **오류가 아니다.** */
+  | { status: "skipped"; reason: "EXCEL_ONLY" | "KIND_NOT_SUPPORTED" }
+  /** 둘 다 시도했다. 각각의 결과는 안에 있다(공유폴더가 `disabled` · `failed` 일 수 있다). */
+  | { status: "done"; archive: QuoteIssueArchiveResult; attachment: QuoteIssueAttachmentResult }
+  /** 엑셀을 만들지 못했다 · 견적서가 사라졌다 · 예상 밖. 🔴 견적서 저장 자체는 그대로다. */
+  | { status: "failed"; reason: "QUOTE_MISSING" | "TEMPLATE_UNAVAILABLE" | "RENDER_FAILED" | "UNEXPECTED" };
+
+export type ArchiveQuoteDocumentOnSaveInput = {
+  quoteId: string;
+  actorUserId: string;
+  /**
+   * 공유폴더 루트. 🔴 주지 않으면(`undefined`) 설정에서 읽는다 — 비어 있으면 공유폴더 쪽은
+   * `disabled` 로 끝나고 **디스크를 한 번도 보지 않는다**. 시험은 임시 폴더를 준다.
+   */
+  archiveRoot?: string | null;
+  /** 첨부 저장소. 주지 않으면 설정에서 연다(시험은 임시 폴더의 어댑터를 준다). */
+  storage?: StorageAdapter;
+};
+
+/**
+ * 저장이 끝난 견적서의 엑셀을 만들어 공유폴더와 「수기 견적서 엑셀」 칸에 남긴다.
+ * **던지지 않는다** — 모든 끝이 위 세 가지 값 가운데 하나다.
+ */
+export async function archiveQuoteDocumentOnSave(
+  input: ArchiveQuoteDocumentOnSaveInput
+): Promise<QuoteSaveArchiveResult> {
+  try {
+    // 형식이 틀린 id 로 DB 를 때리지 않는다(받기 통로와 같은 관문).
+    const quote = isValidQuoteId(input.quoteId) ? await getQuoteForEdit(input.quoteId) : null;
+    if (!quote) {
+      // 방금 저장한 장이라 일어나지 않아야 한다 — 그 사이 휴지통으로 갔을 때뿐이다.
+      console.error("[quote-issue] 저장에 딸린 견적서 엑셀 — 견적서를 다시 읽지 못했다", { quoteId: input.quoteId });
+      return { status: "failed", reason: "QUOTE_MISSING" };
+    }
+    // 🔴 붙인 엑셀이 그 장의 문서다 — 앱이 만들지 않는다(위 머리말). 종류보다 먼저 본다:
+    //    canRenderQuoteDocument 는 엑셀 전용이면 종류와 무관하게 참이기 때문이다.
+    if (quote.isExcelOnly) return { status: "skipped", reason: "EXCEL_ONLY" };
+    if (!canRenderQuoteDocument(quote)) return { status: "skipped", reason: "KIND_NOT_SUPPORTED" };
+
+    let workbook: Buffer;
+    try {
+      workbook = await renderQuoteWorkbook(quote);
+    } catch (err) {
+      // 🔴 오류의 message 를 적지 않는다 — 품명 · 신고증상 · 양식 경로가 섞인다.
+      console.error("[quote-issue] 저장에 딸린 견적서 엑셀을 만들지 못했다", {
+        quoteId: quote.id,
+        code: errorCodeOf(err),
+      });
+      return { status: "failed", reason: err instanceof QuoteTemplateError ? "TEMPLATE_UNAVAILABLE" : "RENDER_FAILED" };
+    }
+
+    const naming = archiveNamingOf(quote);
+    const archive = await copyToArchive({
+      quoteId: quote.id,
+      // 🔴 설정이 비면 null — copyToArchive 가 디스크를 보기 전에 disabled 로 끝낸다.
+      archiveRoot: input.archiveRoot === undefined ? resolveQuoteArchiveRoot() : input.archiveRoot,
+      quoteDate: quote.quoteDate,
+      naming,
+      bytes: workbook,
+      target: { fileKind: "QUOTE_FILE", extension: "xlsx" },
+    });
+
+    const attachment = await placeInExcelSlot({
+      quoteId: quote.id,
+      actorUserId: input.actorUserId,
+      storage: input.storage ?? getAttachmentStorage(),
+      bytes: workbook,
+      originalFileName: slotFileName(archive, naming, quote),
+    });
+
+    return { status: "done", archive, attachment };
+  } catch (error) {
+    // 저장소 설정이 비었다 · 조회가 터졌다 — 여기까지 올라온 것은 전부 값으로 바꿔 돌려준다.
+    console.error("[quote-issue] 저장에 딸린 견적서 엑셀에서 예상치 못한 오류", {
+      quoteId: input.quoteId,
+      code: errorCodeOf(error),
+    });
+    return { status: "failed", reason: "UNEXPECTED" };
   }
 }
 

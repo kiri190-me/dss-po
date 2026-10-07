@@ -694,3 +694,23 @@ src/app/api/quote-folder-helper/install-command/route-source.test.ts
 #    울타리를 이 조각이 **긍정 단언으로 바꿨다**).
 src/lib/domain/as-app-link.test.ts
 src/components/domestic-orders/domestic-order-intake-link.test.ts
+
+# ── 조각 PO 4b — [저장]이 견적서 엑셀을 공유폴더와 첨부 칸에 넣는다 (2026-10-07) ──
+# A/S 가 2026-10-06 에 넣은 것을 가져왔다(저쪽 `server/services/quote-issue.ts` 의
+# `archiveQuoteDocumentOnSave` · `storage/quote-archive.ts` 의
+# `createQuoteArchiveFolder` · 액션 두 곳의 이음). 🔴 **화면은 건드리지 않았다** —
+# [견적서 받기] 단추를 떼는 것은 다음 조각이다.
+#
+# 여기 적는 둘은 **끼운 자리를 글자로 지키는** 시험이다. 실제 동작(공유폴더에 파일이
+# 생기는가 · 첨부 칸이 바뀌는가 · 감사가 안 쌓이는가)은 db.txt 의
+# `server/services/quote-issue.integration.test.ts` 가 시험 DB 와 임시 폴더에서 본다.
+#
+# ⚠️ **A/S 와 일부러 다르게 한 둘**(각 파일 머리말에 크게 적어 두었다):
+#  ① 저쪽 `storage/quote-archive.ts` 의 **`QUOTE_FILE` 덮어쓰기**를 가져오지 않았다 —
+#    이 사이트는 아직 `wx` 로만 써서 내용이 달라지면 ` (2)` 로 비켜 간다. 사내
+#    공유폴더의 결재본이 걸린 별건이라 따로 결정할 일이고, 들어오는 날
+#    `quote-save-archive-source.test.ts` 의 그 묶음이 **반드시 걸리게** 해 두었다.
+#  ② 이름 꼬리 `faultDescription` — 이 사이트의 `domain/quote-archive-naming.ts` 가
+#    아직 그 칸을 받지 않는 옛 판이라 넘기지 않는다(넘겨도 버려진다).
+src/lib/server/actions/quote-save-archive-source.test.ts
+src/lib/server/actions/quote-archive-folder-source.test.ts
