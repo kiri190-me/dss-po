@@ -865,3 +865,28 @@ src/lib/server/services/quote-workbook-active-sheet.test.ts
 #    **이 사이트의 `QuoteArchiveNamingInput` 에는 그 칸이 아예 없다.** 그래서 대신
 #    **이웃 목록 통로와 같은 다섯 칸**을 넘기는지를 두 원본을 견주어 본다(같은 뜻이다).
 src/app/api/quotes/archive-folder-pdf-route-source.test.ts
+
+# ── 조각 PO 4h — 결재 탭의 「공유폴더」 구역 (2026-10-12) ─────────────────
+# 결재하는 사람이 **승인을 누르기 전에** 그 견적서 폴더에 무엇이 들어 있는지 보는 자리다
+# (A/S 가 2026-10-08 에 세운 구역 · 2026-10-12 의 번호 거르기를 함께 가져왔다).
+# 🔴 **통로는 한 줄도 안 건드렸다** — 화면이 뜬 뒤 이미 있던 길(quote-archive-folder-entries.ts)을
+#    그대로 부른다. 🔴 도우미 스크립트도 그대로다.
+#
+# ① 줄 하나의 곁말과 **표의 생김새** — 크기 · 수정날짜를 따로 내고 열 넷의 길이를 한 자리에
+#    모은다. A/S 와 셈·클래스 글자가 같다. 🔴 저쪽은 창이 넷이라 「넷이 다 쓰는가」를 재지만
+#    이 사이트의 창은 **하나**라 마지막 묶음만 「그 하나가 쓰는가」로 바뀌었다.
+src/lib/domain/share-folder-entry-meta.test.ts
+# ② 🔴 **그 장의 파일만 남긴다.** 공유폴더의 폴더는 **본 번호** 단위라 `DSS 2026-089` 와
+#    `DSS 2026-089-1` 이 한 폴더를 쓴다 — 거르지 않으면 결재하는 사람에게 **다른 장의 파일**이
+#    보인다. 🔴 견주는 규칙은 **[Excel 보기]와 한 벌**이고(domain/quote-archive-file-number.ts 의
+#    quoteArchiveNumberKey — 이 조각이 그 셈을 excel-open 에서 도메인으로 올렸다, A/S 와 같다),
+#    마지막 묶음이 두 화면의 판단이 어긋나지 않는 것을 **값으로** 견준다.
+#    🔴 **키를 못 뽑으면 거르지 않는다**(전부 보인다) — 「맞는 것이 없다」로 보면 파일이
+#    통째로 사라진다. A/S 시험과 재는 것이 같다.
+src/components/quotes/quote-archive-folder-number-filter.test.ts
+# ③ 구역 맨 아래 [폴더 열기]의 흐름 — 받아 둔 상대 경로로 도우미 주소를 열고 초점으로
+#    반응을 본다. 🔴 **서버에 묻지 않는다**(fetch 가 없다) · 🔴 숨은 iframe 은 공용 함수를
+#    가져다 쓴다(quote-folder-open.ts) · 🔴 편집 화면 머리 단추의 울타리를 건드리지 않는다.
+#    ⚠️ A/S 는 결과 타입을 연락서 쪽 것으로 쓰는데 **이 사이트에 그 모듈이 없어**
+#    같은 모양의 `QuoteFolderOpenOutcome` 을 쓴다(그 까닭은 원본 머리말).
+src/components/repair-cases/files/contact-folder-place-open.test.ts

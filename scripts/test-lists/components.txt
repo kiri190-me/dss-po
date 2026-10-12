@@ -117,3 +117,21 @@ src/components/quotes/QuoteSavePdfNotice.test.tsx
 # 고치기는 그 가지 안 · 둘 다 저장 팝업 **앞** · 읽을 것이 남으면 넘어가지 않는다 · 폼이 주소를
 # 제 손으로 만들지 않는다 · 흐름이 던져도 저장은 되돌아가지 않는다.
 src/components/quotes/quote-save-pdf-screens.test.ts
+
+# ── 조각 PO 4h — 결재 탭의 「공유폴더」 구역 (2026-10-12) ─────────────────
+# 🔴 `react-dom/server` 로 **상태를 넣어 실제로 그려 본다** — 그래서 unit 이 아니라 여기다.
+# 구역 — 상태 여섯 · 표 네 칸(이름 · 수정날짜 · 크기 · 동작) · **그 장의 번호로 거르기**
+# (가지 번호가 숨는다 · 숨긴 개수를 한 줄로 알린다 · 거른 뒤 0 줄은 빈 폴더와 **다른 글자** ·
+# 키를 못 뽑으면 전부 보인다) · 줄의 [열기]는 허용 목록 확장자에만 · 맨 아래 [폴더 열기]는
+# **폴더를 찾았을 때만** · 자리는 [견적서 결재] 탭의 「견적서 승인」 **위**.
+# 🔴 저쪽 시험에서 뺀 것은 **저쪽에만 있는 화면** 몫뿐이다(수리 건 「견적서」 탭 · 머리에 본
+# 번호를 적는 `label` — 이 사이트는 한 화면에 구역이 하나다).
+src/components/quotes/QuoteArchiveFolderSection.test.tsx
+# 줄의 [열기] 단추 — 흐름(contact-folder-file-open.ts)은 조각 PO 4b 가 이미 가져왔고 **단추만**
+# 이 조각이 세웠다. 🔴 A/S 의 같은 단추에 있는 [그만 보기]는 **없다** — 저쪽 흐름 모듈의
+# 세대별 표시 기능이 이쪽에 아직 없어서다. 마지막 시험이 그 사실을 못 박아, 모듈이 올라오는
+# 날 **먼저 깨져** 알려 준다.
+src/components/repair-cases/files/ContactFolderEntryOpenButton.test.tsx
+# 구역 맨 아래 [폴더 열기] 단추 — 🔴 **[위치 복사]는 없다**(서버에 묻지 않아 전체 주소를
+# 모른다) · 설치 **파일**을 주지 않는다 · Windows 가 아니면 스스로 안 그린다 · 인쇄에 안 찍힌다.
+src/components/repair-cases/files/ContactFolderPlaceOpenButton.test.tsx

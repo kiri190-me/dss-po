@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 
 /**
  * ============================================================================
@@ -43,6 +43,35 @@ import { useState, type ReactNode } from "react";
  *    붙으면 **작성자 스타일이 이겨서 그대로 보인다.**
  *  · `hidden` class(Tailwind 의 `display:none`) — 작성자 스타일이라 그 싸움에서
  *    진 적이 없다. 실제로 감추는 것은 이쪽이다.
+ *
+ * ── 🔴 [견적서 결재] 칸에는 **두 구역**이 선다 (조각 PO 4h) ───────────────
+ * 결재하는 사람이 **승인을 누르기 전에 그 견적서 폴더를 열어 확인**할 수 있어야
+ * 한다(사용자 요구). 그래서 이 칸은 위에서부터 **공유폴더 구역 → 「견적서 승인」**
+ * 두 덩이다. 🔴 A/S 가 2026-10-08 에 같은 자리에 같은 슬롯을 더했다.
+ *
+ * 🔴 **승인 패널 안에 끼워 넣지 않는다.** 뜻이 다른 둘이다 — 하나는 폴더를 보는
+ * 곳, 하나는 결재하는 곳이다. 한 상자로 보이면 안 되므로 **슬롯을 하나 더 두고**
+ * (`archiveFolderSection`) 사이를 띄우는 상자에 나란히 담는다. 둘 다 서버가 그려
+ * 넘긴다 — 이 껍데기는 여전히 어느 쪽도 import 하지 않는다(위 머리말).
+ *
+ * 🔴 감추는 class 를 **바깥 칸에 그대로 둔다** — 띄우는 상자(`flex`)를 안쪽에
+ * 하나 더 두는 까닭이 이것이다. 배치용 class 를 감출 칸에 직접 붙이면 작성자
+ * 스타일이 `hidden` 속성을 이겨 **안 보여야 할 칸이 그대로 보인다**(바로 위 규율).
+ *
+ * ── 🔴 한 칸에 서버 슬롯이 둘이면 **key 를 얹는다** ──────────────────────
+ * 공유폴더 구역과 승인 패널은 둘 다 **서버 컴포넌트가 만들어 넘긴 요소**다. 그
+ * 둘을 한 상자에 나란히 놓으면 React 는 그 자리를 「목록」으로 보고 자식마다
+ * key 를 요구한다 — 서버에서 건너온 요소에는 jsx 가 「확인했다」 표시를 남기지
+ * 못하기 때문이다(전달 과정에서 한 겹 감싸여 오고, 표시는 그 겉껍질에만 찍힌다).
+ * 그래서 브라우저가 그릴 때
+ * 「Each child in a list should have a unique "key" prop」 경고가 뜬다.
+ *
+ * 동작은 멀쩡하다. 다만 콘솔이 더러워지면 진짜 오류가 묻히므로 두 덩이를
+ * `Fragment` 로 감싸고 거기에 key 를 얹었다. `Fragment` 는 **아무것도 그리지
+ * 않아서** DOM 도 간격(`gap-4`)도 그대로다.
+ *
+ * ⚠️ 슬롯을 하나 더 더하는 사람에게 — [견적서 수정] 칸이 지금 멀쩡한 것은 자식이
+ * `editForm` **하나뿐**이라 목록이 아니기 때문이다.
  * ============================================================================
  */
 
@@ -50,10 +79,20 @@ export type QuoteEditTab = "edit" | "approval";
 
 export default function QuoteEditTabs({
   editForm,
+  archiveFolderSection = null,
   approvalPanel,
 }: {
   /** [견적서 수정] — 지금까지의 편집 폼 그대로다. 서버가 그려 넘긴다. */
   editForm: ReactNode;
+  /**
+   * [견적서 결재] 칸의 **첫 덩이** — 그 견적서의 공유폴더를 보는 구역(조각 PO 4h).
+   * 「견적서 승인」 **바로 위**에 선다. 결재하기 전에 폴더를 열어 보라고 둔 자리다.
+   *
+   * 🔴 비워 둘 수 있다 — 주지 않으면 이 칸은 예전처럼 승인 구역 하나다. 설정이
+   * 꺼져 있거나 폴더가 없을 때 아무것도 그리지 않는 일은 **그 구역이 스스로** 한다.
+   * 이 껍데기는 그 판단을 다시 쓰지 않는다.
+   */
+  archiveFolderSection?: ReactNode;
   /**
    * [견적서 결재] — 결재를 올리고 처리하고 되짚는 자리.
    *
@@ -96,7 +135,24 @@ export default function QuoteEditTabs({
         hidden={tab !== "approval"}
         className={tab === "approval" ? undefined : "hidden"}
       >
-        {approvalPanel}
+        {/*
+          🔴 공유폴더 구역이 **위**, 「견적서 승인」이 아래다(사용자 요구 — 승인하기 전에
+          그 폴더를 열어 확인한다). 사이를 띄우는 상자는 **안쪽**에 둔다 — 배치용 class 를
+          바깥 칸에 붙이면 감추는 장치가 진다(위 머리말).
+        */}
+        {/*
+          🔴 두 덩이에 key 를 얹는다 — 둘 다 서버가 그려 넘긴 요소라 여기서 나란히
+          놓이는 순간 React 가 목록으로 보고 key 를 요구한다(머리말의 마지막 절).
+          감싸개는 아무것도 그리지 않으므로 보이는 모양은 그대로다.
+        */}
+        <div className="flex flex-col gap-4">
+          <Fragment key="archive-folder-section">
+            {archiveFolderSection}
+          </Fragment>
+          <Fragment key="approval-panel">
+            {approvalPanel}
+          </Fragment>
+        </div>
       </div>
     </div>
   );

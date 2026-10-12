@@ -1455,7 +1455,7 @@ describe("🔴 서버 컴포넌트가 프롭으로 건네는 요소 — key", ()
     );
   });
 
-  test("🔴 서버 컴포넌트가 건네는 요소 가운데 key 없는 것은 **다섯**이다", () => {
+  test("🔴 서버 컴포넌트가 건네는 요소 가운데 key 없는 것은 **여섯**이다", () => {
     const keyless: string[] = [];
     let scanned = 0;
     const walk = (relativeDir: string) => {
@@ -1486,13 +1486,21 @@ describe("🔴 서버 컴포넌트가 프롭으로 건네는 요소 — key", ()
 
     keyless.sort();
     assert.deepEqual(keyless, [
-      // 다섯 다 **혼자 놓이는 자리**다(메뉴바 · 화면 메뉴 · 알림 종 · 편집 폼 · 결재 칸).
+      // 앞의 넷은 **혼자 놓이는 자리**다(메뉴바 · 화면 메뉴 · 알림 종 · 편집 폼).
       // 지금은 경고가 나지 않는다 — 2026-09-28 에 두 화면을 띄워 콘솔로 확인했다.
       // 🔴 여기에 하나가 늘면 **그 자리가 여럿 중 하나인지** 먼저 보라.
+      //
+      // 🔴 **마지막 둘은 한 자리에 나란히 선다**(조각 PO 4h, 2026-10-12) — 결재 칸이
+      //    「공유폴더 구역 → 견적서 승인」 두 덩이가 되었다. 그런데도 여기에 key 가 없는
+      //    것은, **key 를 받는 쪽이 껍데기**이기 때문이다: QuoteEditTabs 가 두 덩이를
+      //    `<Fragment key=…>` 로 하나씩 감싸 놓았다(그 파일 머리말의 마지막 절). 그래서
+      //    page.tsx 쪽 요소에는 key 가 없고, 그래도 경고가 나지 않는다.
+      //    🔴 셋째 덩이를 그 칸에 더하는 사람에게 — 껍데기에서 그것도 감싸야 한다.
       "src/app/(app)/layout.tsx · notificationBell",
       "src/app/(app)/layout.tsx · screenNav",
       "src/app/(app)/layout.tsx · serviceMenu",
       "src/app/(app)/quotes/[id]/page.tsx · approvalPanel",
+      "src/app/(app)/quotes/[id]/page.tsx · archiveFolderSection",
       "src/app/(app)/quotes/[id]/page.tsx · editForm",
     ]);
   });
