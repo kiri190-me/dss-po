@@ -296,7 +296,13 @@ async function openAndWatch(
 /** 숨은 iframe 을 늦게 치운다 — 곧바로 떼면 주소 넘기기가 취소될 수 있다. */
 const HIDDEN_FRAME_RELEASE_MS = 10_000;
 
-function openLinkInHiddenFrame(link: string): void {
+/**
+ * 🔴 **2026-10-12 에 내보내기만 더했다 — 본문은 한 글자도 바뀌지 않았다.**
+ * [저장] 뒤의 PDF 변환(quote-save-pdf-convert.ts)이 **같은 방법으로** 도우미 주소를 열어야
+ * 하는데, 베껴 적으면 이 저장소에 사본이 한 벌 더 생긴다. 가져다 쓴다.
+ * (A/S 는 2026-10-08 에 같은 한 줄을 같은 까닭으로 고쳤다.)
+ */
+export function openLinkInHiddenFrame(link: string): void {
   const frame = document.createElement("iframe");
   frame.setAttribute("aria-hidden", "true");
   frame.tabIndex = -1;
