@@ -47,9 +47,10 @@ import {
  * 파일로 만들어 두면 그 값이 저장소 · 이미지에 남는다. 그래서 부를 때마다 환경변수로 만든다.
  * 값은 로그 · 오류 응답에 싣지 않는다(설정이 비었거나 틀렸다는 사실만 알린다).
  *
- * ── 🔴 루트는 여럿일 수 있다 (2026-10-07 — 도우미 한 벌 맞추기) ────────────
- * 견적서 루트(QUOTE_ARCHIVE_UNC_ROOT)와 그 다른 주소(_ALT), 그리고 A/S 쪽 기능의 루트들
- * (CUSTOMER_PORTAL_ARCHIVE_UNC_ROOT · 그 _ALT · CONTACT_FOLDER_ARCHIVE_UNC_ROOT)을 **한 벌에
+ * ── 🔴 루트는 여럿일 수 있다 (2026-10-07 — 도우미 한 벌 맞추기 · 2026-10-12) ──
+ * 견적서 루트(QUOTE_ARCHIVE_UNC_ROOT)와 그 다른 주소(_ALT), 그리고 아직 이 사이트에 화면이
+ * 없는 루트들(CUSTOMER_PORTAL_ARCHIVE_UNC_ROOT · 그 _ALT · CONTACT_FOLDER_ARCHIVE_UNC_ROOT ·
+ * REPAIR_DOCS_ARCHIVE_UNC_ROOT · PURCHASE_ORDER_ARCHIVE_UNC_ROOT)을 **한 벌에
  * 함께** 심는다 — 도우미는 PC 당 한 벌이라 따로 설치할 수 없고, 따로 설치하면 그 PC 의 다른
  * 사이트 [폴더 열기]가 죽는다(server/quote-folder-helper.ts 의 requireRoots · 머리말).
  * 어느 것이 설정됐는지는 resolveQuoteFolderHelperInstallRoots 가 가리고, 이 통로는 그 목록을
