@@ -135,3 +135,16 @@ src/components/repair-cases/files/ContactFolderEntryOpenButton.test.tsx
 # 구역 맨 아래 [폴더 열기] 단추 — 🔴 **[위치 복사]는 없다**(서버에 묻지 않아 전체 주소를
 # 모른다) · 설치 **파일**을 주지 않는다 · Windows 가 아니면 스스로 안 그린다 · 인쇄에 안 찍힌다.
 src/components/repair-cases/files/ContactFolderPlaceOpenButton.test.tsx
+
+# ── 조각 PO 4i — 견적서 목록의 결재 승인 체크(✔️) (2026-10-12) ───────────
+# 🔴 **`APPROVED` 에만 붙고 `APPROVED_OUTDATED` 에는 붙지 않는다**(A/S 2026-10-08 결정) —
+# 승인을 받은 **뒤에 견적서를 고친** 장이라, 체크가 남으면 화면이 「승인 완료」라고
+# 거짓말을 한다. 결재 상태 다섯을 **실제 결재 줄로 만들어** 판정에 넣고 그 답을 공용
+# 목록 화면에 실어 **렌더한 HTML 로** 잰다 — 그래서 unit 이 아니라 여기다
+# (`react-dom/server`). 체크를 그리는 조각은 서브모듈(QuoteListScreen.tsx)의 것이고
+# 이 사이트는 **값 하나를 실어 보낼 뿐**이다(queries/quotes.ts 의 loadApprovedQuoteIds).
+# 판정 자체(여러 장을 한 번에 가리기)는 unit 목록의 lib/domain/quote-list.test.ts 가 잰다.
+# 🔴 A/S 의 같은 이름 시험과 **바이트 동일**이다 — 들여오는 줄까지 그대로 맞는다
+#    (`@/lib/domain/quote-list` · `@/lib/domain/quote-approval-rules` 둘 다 이 사이트에 있고,
+#    서브모듈 원본을 읽는 상대 경로도 같은 자리다).
+src/components/quotes/quote-list-approved-check.test.tsx

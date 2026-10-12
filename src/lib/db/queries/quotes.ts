@@ -14,6 +14,7 @@ import {
   partUnitPrices,
   parts,
   products,
+  quoteApprovals,
   quoteItems,
   quoteRepairTasks,
   quoteWorkScopeLines,
@@ -22,6 +23,7 @@ import {
 } from "@dss/core/schema";
 import { db } from "@/lib/db";
 import {
+  approvedQuoteIdsForCurrentContent,
   buildQuoteSummaryLine,
   isQuoteAmountItemLine,
   quoteSupplyAmountOf,
@@ -130,6 +132,8 @@ export async function listQuotes(): Promise<QuoteListItem[]> {
   const itemsByQuoteId = await loadItemsByQuoteId(quoteIds);
   // 결재 PDF · 엑셀이 붙어 있는가 — 부품 줄과 같이 **질의 한 번으로**(N+1 없음).
   const attachmentFlagsByQuoteId = await loadAttachmentFlagsByQuoteId(quoteIds);
+  // 지금 내용 그대로 승인된 장 — 이것도 **질의 한 번**이다(2026-10-08).
+  const approvedQuoteIds = await loadApprovedQuoteIds(rows);
 
   return rows.map((row) => {
     const items = itemsByQuoteId.get(row.id) ?? [];
@@ -138,6 +142,7 @@ export async function listQuotes(): Promise<QuoteListItem[]> {
       isExcelOnly: row.isExcelOnly,
       hasSignedPdf: attachmentFlags?.hasSignedPdf ?? false,
       hasExcel: attachmentFlags?.hasExcel ?? false,
+      isApprovedForCurrentContent: approvedQuoteIds.has(row.id),
       id: row.id,
       kind: row.kind,
       version: row.version,
@@ -172,6 +177,40 @@ export async function listQuotes(): Promise<QuoteListItem[]> {
       itemCount: items.filter(isQuoteAmountItemLine).length,
     };
   });
+}
+
+/**
+ * 지금 내용 그대로 승인된 장의 id 들 — 🔴 **질의 한 번으로**(2026-10-08).
+ *
+ * 🔴 **줄마다 묻지 않는다.** 한 장을 묻는 길은 이미 있지만
+ * (queries/quote-approvals.ts 의 getQuoteApprovalProgress), 그것을 목록에서 줄마다
+ * 부르면 스무 장짜리 목록에 스무 번의 왕복이 생긴다. 부품 줄 · 첨부 칸이 같은 이유로
+ * 같은 모양을 쓴다. 그래서 **그 장들의 결재 행을 한 뭉치로 읽고**, 「가장 최근 행이
+ * 무엇이며 그것이 지금 판에 대한 것인가」는 순수 함수가 가린다
+ * (domain/quote-list.ts 의 approvedQuoteIdsForCurrentContent).
+ *
+ * `requested_at` 내림차순으로 읽는 것은 한 장을 묻는 그 조회와 **같은 답**이 나오게
+ * 하기 위해서다(그쪽은 같은 정렬에 limit 1 이다).
+ *
+ * 판 번호는 이미 읽어 둔 목록 줄의 것을 그대로 쓴다 — 다시 읽지 않는다.
+ */
+async function loadApprovedQuoteIds(
+  quoteRows: readonly { id: string; version: number }[]
+): Promise<Set<string>> {
+  if (quoteRows.length === 0) return new Set();
+
+  const approvals = await db
+    .select({
+      quoteId: quoteApprovals.quoteId,
+      status: quoteApprovals.status,
+      quoteVersionAtRequest: quoteApprovals.quoteVersionAtRequest,
+      requestedAt: quoteApprovals.requestedAt,
+    })
+    .from(quoteApprovals)
+    .where(inArray(quoteApprovals.quoteId, quoteRows.map((row) => row.id)))
+    .orderBy(desc(quoteApprovals.requestedAt));
+
+  return approvedQuoteIdsForCurrentContent(approvals, quoteRows);
 }
 
 type QuoteAttachmentFlags = { hasSignedPdf: boolean; hasExcel: boolean };
