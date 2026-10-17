@@ -58,9 +58,18 @@ import OverhaulBadge from "@/components/common/OverhaulBadge";
  * 🔴 **규칙을 여기 다시 적지 않는다** — 고르면 단가도 채우고(덮지 않는다 · null 은
  * 빈칸 · O/H 줄은 O/H 단가로만) 그 판단 전부가 `partPickUnitPrice` 안에 있다.
  */
+/* 🔴 **적힐 이름을 정하고 · 담을 수 있는지 가르는 자는 고르개의 것 하나다**(2026-10-17).
+   불러온 줄(출고 부품 · O/H 템플릿)에 그 판정을 다시 적으면 자가 두 벌이 되어, 한쪽은
+   담을 수 있다고 그리고 다른 쪽은 빈 이름을 넣는다.
+   🔵 **이 사이트는 `nameSource` 를 넘기지 않는다**(기본값 `"part"` — 우리 품명). A/S 는
+      2026-10-16 부터 `"customer"` 를 넘기는데, 그것은 저쪽 견적서가 내린 결정이고 이
+      사이트에는 아직 그 결정이 없다(고르개 자체는 한 벌이라 넘기기만 하면 된다). */
 import {
   PartSuggestionList,
+  canPickPartOption,
   filterPartOptions,
+  partOptionDetail,
+  partPickName,
   partPickPatch,
 } from "@dss/core/ui/inventory/part-picker";
 /* 줄의 생김새는 고르개 곁(서브모듈)에 있다 — 형 선언만 가져오므로 번들에는 아무것도
@@ -76,12 +85,21 @@ import type {
    A/S 와 **한 글자도 다르지 않아야** 같은 사고가 두 화면에서 같은 일로 보인다.
    🔵 이 모듈은 react 도 DB 도 망도 물지 않는 순수 쪽이라 클라이언트에서 불러도 된다. */
 import { inventoryUnreachableMessage, type InventoryResult } from "@/lib/domain/inventory-gateway";
+/* 🔴 불러온 두 목록도 2026-10-17 부터 **재고 관리**에서 온다(2026-10 에 옮겨갔다) —
+   받아 오는 길은 lib/server/quote-intake-lookup.ts, 읽는 규칙은 아래 순수 모듈에 있다. */
+import {
+  OH_TEMPLATE_PART_NOT_LINKED_MESSAGE,
+  USED_PART_NOT_IN_INVENTORY_MESSAGE,
+  type QuoteOhTemplate,
+  type QuoteOhTemplatePart,
+  type QuoteUsedPart,
+} from "@/lib/domain/quote-intake-parts";
 /* 단가를 칸에 넣을 글자로 바꾸는 규약도 고르개 곁에 있다 — 🔴 `null` 은 빈칸이고
    `"0"` 은 "무상 부품"이라는 실제 값이다. 참고 목록 둘이 그 구분을 그대로 보인다. */
 import { isPriceUnset, toPriceFieldValue } from "@dss/core/ui/inventory/part-price-field";
 import { quoteTemplateKey } from "@/lib/domain/quote-template-variant";
 import type { QuoteAttachmentSlots } from "@/lib/db/queries/attachments";
-import type { QuoteEditData, QuoteIntakeLookup } from "@/lib/db/queries/quotes";
+import type { QuoteEditData } from "@/lib/db/queries/quotes";
 import {
   createQuoteAction,
   lookupIntakeForQuoteAction,
@@ -337,6 +355,28 @@ const SUPPRESSED_SCOPE_NOTICES: Record<QuoteWorkScopeSection, string> = {
 type ItemRow = {
   key: string;
   partId: string | null;
+  /**
+   * ==========================================================================
+   * 🔴 이 줄이 **어느 재고 관리 부품에서 왔는가** — 번호 하나 (2026-10-17)
+   * ==========================================================================
+   * 고르개로 집어 넣었거나 불러오기로 담은 줄이 그 **번호(No.)** 를 들고 다닌다. 고르개의
+   * 열쇠가 글자라 여기서도 **글자**로 둔다 — 저장할 때 검증이 정수로 잰다
+   * (validation/quote-input.ts 의 inventoryPartNo). 손으로 적은 줄은 null 이다.
+   *
+   * 🔴 **바로 위 `partId` 와 다른 값이다.** 저쪽은 **이 DB 의 부품 표**를 가리키는
+   *    UUID(FK)이고, 이것은 **다른 시스템의 번호**다. 🔴 **섞으면 저장이 통째로 막힌다** —
+   *    2026-10-17 에 실제로 그랬다. 고르개가 돌려주는 `option.id`(= 재고 관리의 번호)를
+   *    `partId` 에 그대로 부어서, 고르개로 고른 줄이 하나라도 있는 견적서가 저장할 때
+   *    「N번째 부품의 재고 연결을 확인할 수 없습니다」로 거절됐다. 그래서 고르개가 준
+   *    조각은 **언제나 `pickedPartPatch` 를 거쳐** 제 칸으로 간다.
+   * 🔴 **문서로 나가지 않는다.** 저장에만 실린다 — 미리보기 · 인쇄 · 엑셀이 받는 줄의
+   *    형에는 이 칸이 **아예 없다**(queries/quotes.ts 의 QuotePrintableItemLine).
+   * 🔵 **품명을 고쳐도 지우지 않는다.** `partId` 는 글자를 치면 푸는데(그 자리의 주석)
+   *    이것은 남긴다 — 이름을 손봐도 **그 줄이 그 부품에서 온 것은 사실**이고, A/S 도 같다
+   *    (저쪽 quote-part-pick.ts 의 `quotePartNameEditPatch`).
+   * ==========================================================================
+   */
+  inventoryPartNo: string | null;
   /** `2) OH 부품 비용` 칸으로 갈 줄인가. OH 견적서에만 그 칸이 있다. */
   isOverhaulPart: boolean;
   /**
@@ -371,6 +411,7 @@ function emptyItem(): ItemRow {
   return {
     key: generateClientUuid(),
     partId: null,
+    inventoryPartNo: null,
     isOverhaulPart: false,
     lineKind: "ITEM",
     partNameText: "",
@@ -390,6 +431,8 @@ function emptyNoteItem(): ItemRow {
   return {
     key: generateClientUuid(),
     partId: null,
+    // 설명 줄에는 부품이 없다 — DB 의 CHECK 도 같은 말을 한다.
+    inventoryPartNo: null,
     isOverhaulPart: false,
     lineKind: "NOTE",
     partNameText: "",
@@ -432,55 +475,58 @@ function lineOrdinalsOf(rows: readonly ItemRow[]): number[] {
 }
 
 /**
- * 출고 부품 목록의 한 줄을 가리키는 키. **부품 하나가 아니라 (부품, 소유구분)**
- * 이다 — 같은 부품이 DSS 것과 교산 것으로 따로 나갔으면 목록에 두 줄로 보이고,
- * 그 둘은 따로 담기고 따로 세어야 한다(queries/quotes.ts 의 같은 판단).
- * 단가가 달라서가 아니다 — 단가는 부품마다 하나다(2026-09-17 사용자 정정).
+ * ============================================================================
+ * 🔴 불러온 줄을 **담을 수 있는가** — 자는 고르개의 것 하나다 (2026-10-17)
+ * ============================================================================
+ * 견적서 줄에 적히는 이름과 「그 이름이 없는 줄은 고를 수 없다」는 판정은 고르개가
+ * 쥐고 있다(`partPickName` · `canPickPartOption`). 불러온 줄도 **같은 잣대**로 가른다 —
+ * 두 벌로 적으면 언젠가 갈려, 한쪽은 담을 수 있다고 그리고 다른 쪽은 빈 이름을 넣는다.
+ * 🔵 **목록에서 감추지는 않는다** — 나간 부품이 목록에서 사라지면 사람은 청구를
+ * 빠뜨린다(그 까닭은 lib/domain/quote-intake-parts.ts 머리말).
+ *
+ * `option` 이 `null` 인 줄은 애초에 잴 것이 없다 — 재고 마스터에서 못 찾았거나(출고 줄)
+ * 재고에 안 이어진 줄(템플릿)이고, 적을 이름도 붙일 금액도 없다.
+ * ============================================================================
  */
-function usedPartKey(part: QuoteIntakeLookup["usedParts"][number]): string {
-  return `issued:${part.partId}|${part.owner ?? ""}`;
-}
-
-/**
- * O/H 템플릿 목록의 한 줄을 가리키는 키. 출고 줄과 **접두사로 갈라 둔다** —
- * 같은 부품이 양쪽에 다 있을 수 있고, 그 둘은 단가가 다른 별개의 줄이다.
- * 차례(index)로 세는 것은 템플릿 줄에 재고 연결이 없을 수 있어(part_id 가 NULL)
- * 부품 id 만으로는 줄을 가릴 수 없기 때문이다.
- */
-function ohTemplatePartKey(index: number): string {
-  return `ohtpl:${index}`;
+function canAddQuoteIntakeLine(option: PartPickerRow | null): option is PartPickerRow {
+  return option !== null && canPickPartOption(option);
 }
 
 /**
  * 출고 부품 한 줄 → 견적서 부품 줄.
  *
- * 단가는 **부품 상세에 적어 둔 일반 단가**다. 실제로 나간 물건이라 O/H 단가가
- * 아니라 이 값으로 청구한다(`@dss/core/ui/inventory/part-price-field.ts` 의
- * 「출처가 정한다」 — 🔴 견적서 종류가 아니라 **줄의 출처**가 고른다).
+ * 단가는 재고 관리에 적어 둔 **견적가**다. 실제로 나간 물건이라 O/H 견적가가 아니라 이
+ * 값으로 청구한다(`@dss/core/ui/inventory/part-price-field.ts` 의 「출처가 정한다」 —
+ * 🔴 견적서 종류가 아니라 **줄의 출처**가 고른다).
  *
  * `isOverhaulPart` 는 false — 양식의 `1) 부품 비용` 칸으로 간다.
+ *
+ * 🔴 **`partId` 는 null 이고, 번호는 제 칸으로 간다**(2026-10-17). 재고 관리의 부품 번호는
+ *    같은 DB 의 `parts.id` 가 아니라서 그 FK 칸에 넣으면 저장이 거절된다
+ *    (validation/quote-input.ts 가 UUID 를 본다). 적어 둘 자리는
+ *    `quote_items.inventory_part_no` 이고, 줄이 들고 다니는 칸이 `inventoryPartNo` 다.
  */
-function usedPartToItem(part: QuoteIntakeLookup["usedParts"][number]): ItemRow {
+function usedPartToItem(part: QuoteUsedPart, option: PartPickerRow): ItemRow {
   return {
     key: generateClientUuid(),
-    partId: part.partId,
+    partId: null,
+    inventoryPartNo: option.id,
     isOverhaulPart: false,
     lineKind: "ITEM",
-    partNameText: part.partSpec ? `${part.partName} (${part.partSpec})` : part.partName,
-    // 규격 칸은 케이블 견적서에만 있다. 여기(출고 부품)는 내자 · OH 의 길이라
-    // 지금까지처럼 품명 뒤에 괄호로 붙인 그대로 둔다 — 문구를 바꾸지 않는다.
+    partNameText: partPickName(option),
+    // 규격 칸은 케이블 견적서에만 있다. 여기(출고 부품)는 내자 · OH 의 길이다.
     partSpecText: "",
     quantity: String(part.quantity),
     unitPrice: toPriceFieldValue(part.unitPrice),
-    sourceKey: usedPartKey(part),
+    sourceKey: part.sourceKey,
   };
 }
 
 /**
  * O/H 템플릿 한 줄 → 견적서 부품 줄.
  *
- * 단가는 **템플릿 쪽에 적어 둔 O/H 단가**다. 아직 출고되지 않은 "쓸 예정인"
- * 부품이라 일반 단가와 다른 값으로 청구한다.
+ * 단가는 그 부품의 **O/H 견적가**다. 아직 출고되지 않은 "쓸 예정인" 부품이라 일반 견적가와
+ * 다른 값으로 청구한다. 🔴 **O/H 견적가가 없으면 빈칸이다** — 일반 견적가로 때우지 않는다.
  *
  * 🔴 `isOverhaulPart` 가 **true** 인 것이 핵심이다 — O/H 견적서 양식에는 부품
  * 칸이 둘이고(`1) 부품 비용` · `2) OH 부품 비용`), 템플릿에서 온 줄은 뒤쪽으로
@@ -489,48 +535,78 @@ function usedPartToItem(part: QuoteIntakeLookup["usedParts"][number]): ItemRow {
  * 작업비는 이 줄에 붙지 않는다. 작업비는 부품이 아니라 **수리 작업**에 붙고,
  * 아래 「수리 작업 목록」에서 고른 것들로 따로 셈한다(2026-08-31 사용자 정정).
  */
-function ohTemplatePartToItem(
-  part: QuoteIntakeLookup["ohTemplateParts"][number],
-  index: number
-): ItemRow {
+function ohTemplatePartToItem(part: QuoteOhTemplatePart, option: PartPickerRow): ItemRow {
   return {
     key: generateClientUuid(),
-    partId: part.partId,
+    // 🔴 위 출고 줄과 같은 까닭으로 FK 는 비우고, 번호는 제 칸에 담는다.
+    partId: null,
+    inventoryPartNo: option.id,
     isOverhaulPart: true,
     lineKind: "ITEM",
-    partNameText: part.partNameText,
+    partNameText: partPickName(option),
     partSpecText: "",
     quantity: String(part.quantity),
     unitPrice: toPriceFieldValue(part.overhaulUnitPrice),
-    sourceKey: ohTemplatePartKey(index),
+    sourceKey: part.sourceKey,
   };
 }
 
 /**
- * 출고 부품 줄의 소유구분 이름. **null 이 정상이다** — 이 칸이 생기기 전의 요청은
- * 영영 NULL 로 남으므로(queries/quotes.ts 의 그 항목) 「미지정」이라 그린다.
+ * ============================================================================
+ * 🔴 고르개가 준 조각을 **줄의 제 칸으로 옮긴다** (2026-10-17)
+ * ============================================================================
+ * 공용 고르개는 고른 줄에 부을 조각을 `{ partNameText, partId: option.id, unitPrice? }`
+ * 로 돌려준다. 그런데 이 사이트의 `option.id` 는 2026-10-17 부터 **재고 관리의 부품
+ * 번호**(`"1"` · `"2"` 같은 정수 글자)다 — 같은 DB 의 `parts.id`(UUID)가 아니다.
  *
- * 🔴 A/S 의 `domain/inventory-types.ts` 의 `stockOwnerLabelOrUnspecified` 와 같은
- * 규약이다. 그 파일을 옮겨 오지 않은 까닭은 그것이 재고 화면 전체(가용량 · 이동 ·
- * 요청 · 반품)의 형과 규칙을 담고 있고 그 화면들이 A/S 에 남기 때문이다 —
- * queries/quotes.ts 가 `StockOwner` 형을 스키마에서 좁혀 쓴 것과 같은 판단이다.
- * 🔴 **이넘은 스키마에서 좁혀 온다** — 소유구분이 하나 늘면 tsc 가 여기서 멈춘다.
+ * 🔴 **그대로 부으면 저장이 통째로 막힌다.** 실제로 그랬다 — 고르개로 고른 줄이 하나라도
+ *    있는 견적서는 저장할 때 「N번째 부품의 재고 연결을 확인할 수 없습니다」로 거절됐다
+ *    (validation/quote-input.ts 의 `isValidQuoteId` 는 UUID 만 통과시킨다).
+ * 🔴 **고르개를 고치지 않는다.** 그 조각은 별도 저장소(vendor/dss-core)이고 A/S 도 같이
+ *    쓴다. 「`partId` 는 고른 줄의 id 일 뿐, 어디에 저장할지는 폼이 정한다」가 그쪽의
+ *    규약이고(part-picker.tsx 의 `partPickPatch` 머리말), 이 함수가 이 사이트의 답이다.
+ * 🔵 **`unitPrice` 키는 있을 때만 따라간다** — 고르개의 규약 그대로다. 없는 키를 지어
+ *    넣으면(`unitPrice: undefined`) 사람이 적어 둔 금액이 지워진다.
+ * ============================================================================
  */
-const STOCK_OWNER_LABELS: Record<
-  NonNullable<QuoteIntakeLookup["usedParts"][number]["owner"]>,
-  string
-> = {
-  DSS: "DSS",
-  KYOSAN: "교산",
-  SERVICE_SPARE: "보수부재",
-  TEST: "TEST용",
-};
-
-function stockOwnerLabelOrUnspecified(
-  owner: QuoteIntakeLookup["usedParts"][number]["owner"]
-): string {
-  return owner ? STOCK_OWNER_LABELS[owner] : "미지정";
+function pickedPartPatch(patch: {
+  partNameText: string;
+  partId: string;
+  unitPrice?: string;
+}): Partial<ItemRow> {
+  const { partId: inventoryPartNo, ...rest } = patch;
+  return { ...rest, partId: null, inventoryPartNo };
 }
+
+/**
+ * 불러오기 결과 한 줄 — 🔴 **「못 받아 왔다」를 「없다」로 적지 않는다**.
+ *
+ * 재고 관리가 꺼져 있거나 통신이 끊긴 날 「이 건에 출고된 부품 기록은 없습니다」라고 적으면,
+ * 사람은 그 말을 믿고 **청구를 빠뜨린다.** 상단 정보(고객사 · 모델명 · L/N · S/N · 신고증상)는
+ * 이쪽 DB 의 값이라 그때도 그대로 채워진다 — 그래서 첫 글자가 「불러왔습니다」인 것이 맞다.
+ */
+function lookupResultMessage(
+  usedParts: InventoryResult<QuoteUsedPart[]>,
+  ohTemplate: InventoryResult<QuoteOhTemplate | null>
+): string {
+  if (usedParts.status !== "ok") {
+    return `불러왔습니다. 다만 이 건에 출고된 부품을 재고 관리에서 불러오지 못했습니다 — ${inventoryUnreachableMessage(usedParts.reason)} 나간 부품이 없는 것이 아니라 확인하지 못한 것입니다.`;
+  }
+  if (ohTemplate.status !== "ok") {
+    return `불러왔습니다. 다만 O/H 부품 템플릿을 재고 관리에서 불러오지 못했습니다 — ${inventoryUnreachableMessage(ohTemplate.reason)}`;
+  }
+  return usedParts.value.length > 0
+    ? `불러왔습니다. 이 건에 출고된 부품 ${usedParts.value.length}종이 아래 참고 목록에 있습니다.`
+    : "불러왔습니다. 이 건에 출고된 부품 기록은 없습니다.";
+}
+
+/**
+ * 아직 불러오지 않았을 때(그리고 불러오기가 값 없이 끝났을 때)의 두 사본.
+ * 🔵 **「받아 왔는데 없다」로 둔다** — 「못 받아 왔다」가 아니다. 저쪽을 부른 적이 없는 것을
+ *    통신 실패로 적으면 화면이 있지도 않은 사고를 알린다.
+ */
+const NO_USED_PARTS: InventoryResult<QuoteUsedPart[]> = { status: "ok", value: [] };
+const NO_OH_TEMPLATE: InventoryResult<QuoteOhTemplate | null> = { status: "ok", value: null };
 
 /** 작업 내역 한 줄. `key` 는 화면에서만 쓰는 값이고 저장되지 않는다. */
 type ScopeRow = { key: string; text: string };
@@ -952,6 +1028,17 @@ export default function QuoteEditForm({
       ? quote.itemLines.map((item) => ({
           key: generateClientUuid(),
           partId: item.partId,
+          /**
+           * 🔴 **저장된 줄의 기억을 되살린다**(2026-10-17). 전에는 여기가 늘 null 이었다 —
+           * 그 값을 적어 둘 칸이 없었기 때문이다. 그래서 저장한 견적서를 다시 열면 그 줄이
+           * 어느 재고 관리 부품에서 왔는지 알 길이 없었고, 그대로 저장하면 **번호가 영영
+           * 사라졌다**(다시 고르기 전에는 돌아오지 않는다).
+           *
+           * 🔵 **글자로 되돌린다** — 줄이 들고 다니는 열쇠가 글자다(고르개의 `option.id`).
+           *    여기서 모양을 맞춰 두지 않으면 되살린 줄만 `11 !== "11"` 로 어긋난다.
+           * 🔵 **0 으로 접지 않는다** — `null` 은 「집어 넣은 적 없음」이고 0번 부품은 없다.
+           */
+          inventoryPartNo: item.inventoryPartNo === null ? null : String(item.inventoryPartNo),
           // 저장된 줄에는 작업비를 싣지 않는다 — 그 값은 부품 마스터의 지금 값이고,
           // 이미 정해진 작업비를 다시 제안할 이유가 없다.
           isOverhaulPart: item.isOverhaulPart,
@@ -978,44 +1065,47 @@ export default function QuoteEditForm({
 
   /*
    * ============================================================================
-   * 🔴 불러온 값 셋 — 참고 목록 둘이 이것을 늘어놓는다 (3b-3 뒤쪽 절반)
+   * 🔴 불러온 값 둘 — 참고 목록 둘이 이것을 늘어놓는다 (3b-3 뒤쪽 절반)
    * ============================================================================
-   * `usedParts`(그 접수 건에 출고된 부품) · `ohTemplateCode` · `ohTemplateParts`
-   * (그 기종의 O/H 부품 템플릿). 셋 다 `lookupIntakeForQuote` 가 **한 번에** 돌려주는
-   * 값이다 — 조회를 쪼개면 A/S 와 두 벌이 되므로 그대로 옮겨 왔다(queries/quotes.ts
-   * 머리말).
+   * `usedParts`(그 접수 건에 출고된 부품) · `ohTemplate`(그 기종의 O/H 부품 템플릿).
+   * ⚠️ **2026-10-17 에 셋이 둘이 되었다** — 그 둘이 **재고 관리에서 오면서**
+   * `ohTemplateCode`(기종 코드)가 템플릿 안의 이름으로 바뀌었다.
    *
-   * 🔴 **셋 다 사람이 칠 수 없는 값이고, 직전 불러오기가 서버에서 받아 온 것의
+   * 🔴 **둘 다 사람이 칠 수 없는 값이고, 직전 불러오기가 서버에서 받아 온 것의
    * 사본이다.** 그 사본에는 **어느 인수번호의 것인지가 적혀 있지 않다** — 그래서
    * 불러오기가 못 찾거나 오류로 끝나면 함께 비운다(아래 handleLookup 의 두 갈래).
    * ============================================================================
    */
-  const [usedParts, setUsedParts] = useState<QuoteIntakeLookup["usedParts"]>([]);
   /**
-   * 이 장비의 기종에 정해 둔 O/H 부품 템플릿의 기종 코드.
+   * 이 건에 **출고된** 부품 — 🔴 **재고 관리에서 온다**(2026-10-17). 「반출이 확인된」 =
+   * 그 건의 신청 줄 중 나간 수량이 있는 것이다.
    *
-   * null 이면 **이 모델에 템플릿이 안 이어져 있다**는 뜻이다 — 그때 화면이
-   * "모델을 이어 주세요"를 그린다.
+   * 🔴 **목록이 아니라 갈래가 온다.** 「하나도 없다」와 「못 받아 왔다」는 다른 값이라,
+   * 뭉개면 저쪽이 꺼진 날 화면이 「이 건에 나간 부품이 없다」고 거짓말한다.
    */
-  const [ohTemplateCode, setOhTemplateCode] = useState<string | null>(null);
+  const [usedParts, setUsedParts] = useState<InventoryResult<QuoteUsedPart[]>>(NO_USED_PARTS);
   /**
-   * 그 기종의 O/H 부품 목록. **O/H 견적은 부품을 출고하기 전에 내므로** 위
-   * usedParts 가 비어 있는 것이 정상이고, 청구할 부품은 여기서 온다.
+   * 이 장비의 제품 모델에 이어 둔 **O/H 부품 템플릿**. 역시 재고 관리에서 온다.
+   *
+   * 🔵 `value: null` 은 **이어 둔 템플릿이 없다**는 뜻이고 오류가 아니다. `unreachable` 은
+   * 「못 받아 왔다」다 — 사람이 고쳐야 할 자리가 서로 달라서 화면이 둘을 다르게 말한다.
+   * **O/H 견적은 부품을 출고하기 전에 내므로** 위 usedParts 가 비어 있는 것이 정상이고,
+   * 청구할 부품은 여기서 온다.
    */
-  const [ohTemplateParts, setOhTemplateParts] = useState<QuoteIntakeLookup["ohTemplateParts"]>([]);
+  const [ohTemplate, setOhTemplate] = useState<InventoryResult<QuoteOhTemplate | null>>(NO_OH_TEMPLATE);
   /**
    * 🔴 **직전 불러오기가 값 없이 끝났는가**(못 찾음 · 오류). O/H 구역의 빈 상태 문구가
    * 이것으로 갈린다.
    *
    * 문구나 다른 값으로 가릴 수 없어 상태를 따로 두었다. `lookupMessage` 는 **찾았을
    * 때도 채워지고** 오류일 때는 서버가 준 글자가 그대로 들어온다 — 글자를 견주면
-   * 문구를 한 자 고치는 순간 조용히 틀린 안내가 뜬다. `ohTemplateCode === null` 로도
+   * 문구를 한 자 고치는 순간 조용히 틀린 안내가 뜬다. 템플릿이 `null` 인 것으로도
    * 못 가린다: 「못 불러와 비운 것」과 「찾았는데 모델에 템플릿이 안 이어진 것」이 둘 다
    * null 이다. `repairCaseId` 는 **사람이 칠 수 있는 칸이라 일부러 안 비우므로**
    * 앞 건의 값이 남아 그것으로도 갈라낼 수 없다.
    *
    * 🔴 **결과가 온 세 갈래에서만** 움직인다(오류 · 못 찾음 → 세움, 찾음 → 내림).
-   * 불러오기를 **시작할 때는 손대지 않는다** — 시작할 때 내리면 기다리는 동안 세
+   * 불러오기를 **시작할 때는 손대지 않는다** — 시작할 때 내리면 기다리는 동안 두
    * 사본이 아직 앞 건의 것이라 문구가 「모델에 템플릿이 없다」로 되돌아가 깜빡인다.
    */
   const [lookupMissed, setLookupMissed] = useState(false);
@@ -1653,17 +1743,34 @@ export default function QuoteEditForm({
     () => new Set(items.map((row) => row.sourceKey).filter((key): key is string => key !== null)),
     [items]
   );
+  /**
+   * 아직 **담을 수 있는** 출고 줄. 🔴 **「안 담은 것」과 「담을 수 있는 것」이 다르다**
+   * (2026-10-17) — 재고 마스터에서 못 찾은 줄은 목록에 보이지만 담기지 않는다. 일괄
+   * 담기의 수가 그 둘을 섞으면 「3종 전부 담기」를 눌렀는데 한 줄만 들어가고, 사람은
+   * 무엇이 빠졌는지 모른 채 다음으로 넘어간다.
+   */
   const unaddedUsedParts = useMemo(
-    () => usedParts.filter((part) => !addedSourceKeys.has(usedPartKey(part))),
+    () =>
+      (usedParts.status === "ok" ? usedParts.value : []).filter(
+        (part) => !addedSourceKeys.has(part.sourceKey)
+      ),
     [usedParts, addedSourceKeys]
   );
-  /** 아직 안 담은 템플릿 줄. 차례(index)를 함께 들고 다녀야 키를 만들 수 있다. */
+  const addableUsedParts = useMemo(
+    () => unaddedUsedParts.filter((part) => canAddQuoteIntakeLine(part.option)),
+    [unaddedUsedParts]
+  );
+  /** 지금 들고 있는 템플릿. 🔵 못 받아 왔으면 null 이고, 그때 화면은 까닭을 따로 그린다. */
+  const ohTemplateValue = ohTemplate.status === "ok" ? ohTemplate.value : null;
+  const ohTemplateParts = useMemo(() => ohTemplateValue?.parts ?? [], [ohTemplateValue]);
+  /** 아직 안 담은 템플릿 줄 · 그중 담을 수 있는 줄(위 출고 줄과 같은 가름). */
   const unaddedOhTemplateParts = useMemo(
-    () =>
-      ohTemplateParts
-        .map((part, index) => ({ part, index }))
-        .filter(({ index }) => !addedSourceKeys.has(ohTemplatePartKey(index))),
+    () => ohTemplateParts.filter((part) => !addedSourceKeys.has(part.sourceKey)),
     [ohTemplateParts, addedSourceKeys]
+  );
+  const addableOhTemplateParts = useMemo(
+    () => unaddedOhTemplateParts.filter((part) => canAddQuoteIntakeLine(part.option)),
+    [unaddedOhTemplateParts]
   );
 
   /**
@@ -1682,8 +1789,8 @@ export default function QuoteEditForm({
    * 담은 것이다 — 불러오기가 그것을 덮으면 「인수번호를 고쳐 다시 불렀더니 적어 둔
    * 줄이 사라진」다(A/S 의 quote-new-start.test.ts 가 같은 것을 못 박는다).
    *
-   * ── 🔴 받아 온 세 사본은 근거가 없어지면 함께 없어진다 ──────────────────
-   * `usedParts` · `ohTemplateCode` · `ohTemplateParts` 는 사람이 칠 수 없고 **직전
+   * ── 🔴 받아 온 두 사본은 근거가 없어지면 함께 없어진다 ──────────────────
+   * `usedParts` · `ohTemplate` 은 사람이 칠 수 없고 **직전
    * 불러오기가 서버에서 받아 온 것의 사본**이며, 그 사본에는 **어느 인수번호의
    * 것인지가 적혀 있지 않다.** 그래서 **못 찾음 · 오류 두 갈래에서 비운다** — 비우지
    * 않으면 앞 건의 부품이 [담기] 단추까지 살아 남아, 담으면 지금 칸에 적힌 번호와
@@ -1707,19 +1814,18 @@ export default function QuoteEditForm({
       if (!result.ok) {
         setLookupMessage(result.message);
         /**
-         * 🔴 **오류로 끝나도 받아 온 세 사본을 비운다.** 인수번호를 고쳐 다시
+         * 🔴 **오류로 끝나도 받아 온 두 사본을 비운다.** 인수번호를 고쳐 다시
          * 눌렀는데 조회가 인가 실패나 DB 오류로 끝나면, 화면에 남은 두 목록은 지금
          * 칸에 적힌 번호와 **아무 상관이 없는 앞 건의 부품**이 된다. 비우지 않으면
-         * [담기] 단추가 그대로 살아 있고, 담으면 관계없는 부품이 O/H 템플릿 단가까지
+         * [담기] 단추가 그대로 살아 있고, 담으면 관계없는 부품이 O/H 견적가까지
          * 달고 청구 줄로 들어간다.
          *
          * 🔴 **사람이 칠 수 있는 칸은 하나도 건드리지 않는다**(아래 갈래와 같다) —
          * 고객사명 · 모델명 · L/N · S/N · 신고증상 · 품명 · 종류 · 부품 줄 · 작업
          * 내역. 조회가 오류로 끝났다고 손으로 다듬어 둔 값을 지우면 안 된다.
          */
-        setUsedParts([]);
-        setOhTemplateCode(null);
-        setOhTemplateParts([]);
+        setUsedParts(NO_USED_PARTS);
+        setOhTemplate(NO_OH_TEMPLATE);
         setLookupMissed(true);
         return;
       }
@@ -1727,19 +1833,18 @@ export default function QuoteEditForm({
         // 오류가 아니다 — 아직 접수 전인 건으로 먼저 견적을 내는 일이 있다.
         setLookupMessage(`${intakeNumber} 로 접수된 건을 찾지 못했습니다. 아래 칸을 직접 입력해 주세요.`);
         /**
-         * 🔴 **비우는 것은 조회가 받아 온 세 사본뿐이다.** 위 갈래와 같은 논리이고,
+         * 🔴 **비우는 것은 조회가 받아 온 두 사본뿐이다.** 위 갈래와 같은 논리이고,
          * 사람이 칠 수 있는 칸은 여기서도 하나도 건드리지 않는다 — 못 찾았다고 손으로
          * 다듬어 둔 값을 지우면 안 된다.
          *
          * 🔴 **O/H 쪽을 비우지 않으면 청구 금액이 틀린다**(A/S 2026-09-22 실사용 결함).
-         * 출고 부품 구역은 `usedParts.length > 0` 일 때만 그려서 비우면 화면에서
-         * 사라지지만, O/H 구역은 `kind === "OVERHAUL"` 이기만 하면 값과 무관하게
-         * 그려진다 — 비우지 않으면 앞 건 기종의 부품 줄과 [담기] 단추가 그대로 살아
-         * 있다. 비워야 그 자리에 안내 문구만 남는다.
+         * 출고 부품 구역은 줄이 없으면 구역째 안 그려서 비우면 화면에서 사라지지만,
+         * O/H 구역은 `kind === "OVERHAUL"` 이기만 하면 값과 무관하게 그려진다 —
+         * 비우지 않으면 앞 건 기종의 부품 줄과 [담기] 단추가 그대로 살아 있다.
+         * 비워야 그 자리에 안내 문구만 남는다.
          */
-        setUsedParts([]);
-        setOhTemplateCode(null);
-        setOhTemplateParts([]);
+        setUsedParts(NO_USED_PARTS);
+        setOhTemplate(NO_OH_TEMPLATE);
         /**
          * 비운 까닭을 남긴다. 이것이 없으면 O/H 구역의 빈 상태 문구가 **「이 모델에
          * O/H 부품 템플릿이 이어져 있지 않습니다」**를 띄운다 — 사실은 인수번호를
@@ -1773,16 +1878,12 @@ export default function QuoteEditForm({
         );
       }
       setUsedParts(found.usedParts);
-      setOhTemplateCode(found.ohTemplateCode);
-      setOhTemplateParts(found.ohTemplateParts);
+      setOhTemplate(found.ohTemplate);
       // 받아 온 근거가 다시 생겼다 — 앞서 못 찾아 세워 둔 깃발을 내린다. 안 내리면
       // 이번엔 제대로 찾았는데도 「인수번호를 불러오지 못했다」는 문구가 남는다.
       setLookupMissed(false);
-      setLookupMessage(
-        found.usedParts.length > 0
-          ? `불러왔습니다. 이 건에 출고된 부품 ${found.usedParts.length}종이 아래 참고 목록에 있습니다.`
-          : "불러왔습니다. 이 건에 출고된 부품 기록은 없습니다."
-      );
+      // 🔴 「못 받아 왔다」를 「없다」로 적지 않는다 — 규칙은 lookupResultMessage 한 곳이다.
+      setLookupMessage(lookupResultMessage(found.usedParts, found.ohTemplate));
     } finally {
       setIsLookingUp(false);
     }
@@ -1878,31 +1979,38 @@ export default function QuoteEditForm({
    * 🔴 일괄 담기가 하나씩 담기를 여러 번 부르면 `setItems` 가 여러 번 돌아 "빈 첫 줄"
    * 처리가 중간 상태에 걸린다.
    */
-  function addUsedParts(list: readonly QuoteIntakeLookup["usedParts"][number][]) {
-    if (list.length === 0) return;
+  function addUsedParts(list: readonly QuoteUsedPart[]) {
+    /* 🔴 **여기서도 거른다.** 단추를 안 그리는 것은 편의이고, 빈 이름이 줄에 들어가지
+       않게 하는 울타리는 이 한 줄이다(고르개가 `disabled` 와 `if (pickable)` 를 둘 다
+       두는 그 까닭). */
+    const rows = list.flatMap((part) =>
+      canAddQuoteIntakeLine(part.option) ? [usedPartToItem(part, part.option)] : []
+    );
+    if (rows.length === 0) return;
     setItems((prev) => {
       // 빈 첫 줄이 남아 있으면 그 자리를 쓴다 — 담을 때마다 빈 줄이 밀려
       // 내려가면 저장할 때 "품명을 입력해 주세요"가 뜬다.
       const next = prev.filter(
         (row) => !(row.partNameText.trim() === "" && row.unitPrice.trim() === "")
       );
-      return [...next, ...list.map(usedPartToItem)];
+      return [...next, ...rows];
     });
   }
 
   /**
    * O/H 템플릿의 부품을 담는다. 출고 줄과 **다른 함수인 것이 요점이다** —
-   * 단가가 오는 곳도(O/H 단가) 양식에서 갈 자리도(`2) OH 부품 비용`) 다르다.
+   * 단가가 오는 곳도(O/H 견적가) 양식에서 갈 자리도(`2) OH 부품 비용`) 다르다.
    */
-  function addOhTemplateParts(
-    list: readonly { part: QuoteIntakeLookup["ohTemplateParts"][number]; index: number }[]
-  ) {
-    if (list.length === 0) return;
+  function addOhTemplateParts(list: readonly QuoteOhTemplatePart[]) {
+    const rows = list.flatMap((part) =>
+      canAddQuoteIntakeLine(part.option) ? [ohTemplatePartToItem(part, part.option)] : []
+    );
+    if (rows.length === 0) return;
     setItems((prev) => {
       const next = prev.filter(
         (row) => !(row.partNameText.trim() === "" && row.unitPrice.trim() === "")
       );
-      return [...next, ...list.map(({ part, index }) => ohTemplatePartToItem(part, index))];
+      return [...next, ...rows];
     });
   }
 
@@ -2211,6 +2319,15 @@ export default function QuoteEditForm({
              */
             quantity: isNote ? null : Number(row.quantity),
             unitPrice: isNote ? null : row.unitPrice,
+            /**
+             * 🔴 **줄이 어느 재고 관리 부품에서 왔는지**를 함께 보낸다(2026-10-17). 저장해
+             * 두지 않으면 다시 열었을 때 그 줄이 어느 부품에서 왔는지 알 길이 없다.
+             *
+             * 🔴 **`partId` 와 다른 칸이다** — 그 번호를 FK 칸으로 보내던 것이 바로
+             *    2026-10-17 에 저장을 막던 결함이다(위 `pickedPartPatch` 머리말).
+             * 🔴 **설명 줄에는 안 싣는다** — 그 줄에는 부품이 없다(DB 의 CHECK 와 같은 결).
+             */
+            inventoryPartNo: isNote ? null : row.inventoryPartNo,
           };
         }),
     };
@@ -3069,18 +3186,28 @@ export default function QuoteEditForm({
         <section className="rounded-lg border border-sky-200 bg-sky-50 p-4 dark:border-sky-900 dark:bg-sky-950/40">
           <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
             O/H 부품 템플릿
-            {ohTemplateCode && (
+            {ohTemplateValue && (
               <span className="ml-2 font-normal text-zinc-500 dark:text-zinc-400">
-                기종 {ohTemplateCode}
+                {ohTemplateValue.name || "이름 없음"}
               </span>
             )}
           </h2>
-          {ohTemplateParts.length === 0 ? (
+          {/* 🔴 **못 받아 온 것을 「없다」로 그리지 않는다**(2026-10-17). 템플릿은 이제 재고
+              관리에서 오므로, 저쪽이 꺼진 날 아래 빈 상태 문구를 그리면 「이 모델에 템플릿이
+              이어져 있지 않습니다」가 떠서 사람이 멀쩡히 이어 둔 설정을 뒤지러 간다. */}
+          {ohTemplate.status !== "ok" ? (
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+              O/H 부품 템플릿을 재고 관리에서 불러오지 못했습니다 —{" "}
+              {inventoryUnreachableMessage(ohTemplate.reason)} 이 기종에 템플릿이{" "}
+              <b>없는 것이 아니라 확인하지 못한 것</b>입니다. 부품은 아래 부품 비용 칸에 손으로
+              적을 수 있습니다.
+            </p>
+          ) : ohTemplateParts.length === 0 ? (
             // 못 담는 이유가 넷이고 **고쳐야 할 자리가 다 다르다.** 한 문장으로
             // 뭉치면 사람이 어디로 가야 하는지 알 수 없다.
             //
             // 🔴 **「직전 불러오기가 값 없이 끝났다」를 맨 앞에서 본다.** 못 찾거나
-            // 오류로 끝나면 세 사본을 비우는데 `repairCaseId` 는 사람이 칠 수 있는
+            // 오류로 끝나면 두 사본을 비우는데 `repairCaseId` 는 사람이 칠 수 있는
             // 칸이라 앞 건의 값이 남는다 — 그러면 아래 둘째 갈래가 열려 「모델에
             // 템플릿이 이어져 있지 않습니다」를 띄우고, 사람이 재고 관리 화면을
             // 헛되게 뒤진다. 처음 연 폼에서 없는 번호를 불러 본 경우
@@ -3095,60 +3222,80 @@ export default function QuoteEditForm({
                 ? "인수번호를 불러오지 못해 O/H 부품을 가져오지 못했습니다 — 위 인수번호 칸의 안내를 확인하고 번호를 고친 뒤 [불러오기]를 다시 눌러 주세요."
                 : repairCaseId === null
                   ? "인수번호를 먼저 불러오면 그 장비의 기종에 맞는 O/H 부품을 여기서 담을 수 있습니다."
-                  : ohTemplateCode === null
-                    ? "이 장비의 제품 모델에 O/H 부품 템플릿이 이어져 있지 않습니다 — A/S 관리 시스템의 재고 관리 › O/H 부품 템플릿에서 모델을 이어 주세요."
-                    : `기종 ${ohTemplateCode} 템플릿에 담긴 부품이 없습니다 — A/S 관리 시스템의 재고 관리 › O/H 부품 템플릿에서 부품을 넣어 주세요.`}
+                  : ohTemplateValue === null
+                    ? /* 🔴 이어 주는 자리가 **재고 관리 시스템**으로 옮겨갔다(2026-10-17) —
+                         A/S 안의 메뉴를 가리키던 문구를 그대로 두면 사람이 그 시스템을 뒤진다. */
+                      "이 장비의 제품 모델에 O/H 부품 템플릿이 이어져 있지 않습니다 — 재고 관리 시스템 › O/H 부품 템플릿에서 이 제품 모델을 이어 주세요."
+                    : `${ohTemplateValue.name || "이"} 템플릿에 담긴 부품이 없습니다 — 재고 관리 시스템 › O/H 부품 템플릿에서 부품을 넣어 주세요.`}
             </p>
           ) : (
             <>
               <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
-                단가는 <b>O/H 템플릿에 적어 둔 값</b>이 따라옵니다 — 출고된 부품이 부품 상세의 단가를 쓰는
-                것과 다릅니다. 담은 줄은 견적서의 <b>2) OH 부품 비용</b> 칸으로 갑니다.
+                단가는 재고 관리에 적어 둔 <b>O/H 견적가</b>가 따라옵니다 — 출고된 부품이 일반
+                견적가를 쓰는 것과 다릅니다. 담은 줄은 견적서의 <b>2) OH 부품 비용</b> 칸으로
+                갑니다. 재고 마스터에 이어져 있지 않은 줄은 담을 수 없습니다 — 재고 관리에서
+                이어 둔 뒤 [불러오기]를 다시 눌러 주세요.
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => addOhTemplateParts(unaddedOhTemplateParts)}
-                  disabled={disabled || unaddedOhTemplateParts.length === 0}
+                  onClick={() => addOhTemplateParts(addableOhTemplateParts)}
+                  disabled={disabled || addableOhTemplateParts.length === 0}
                   className="rounded border border-sky-500 bg-white px-2 py-1 text-xs font-medium text-sky-900 disabled:opacity-50 dark:border-sky-600 dark:bg-zinc-900 dark:text-sky-200"
                 >
-                  {unaddedOhTemplateParts.length === 0
-                    ? "전부 담았습니다"
-                    : `O/H 템플릿에서 불러오기 (${unaddedOhTemplateParts.length}종)`}
+                  {addableOhTemplateParts.length > 0
+                    ? `O/H 템플릿에서 불러오기 (${addableOhTemplateParts.length}종)`
+                    : unaddedOhTemplateParts.length === 0
+                      ? "전부 담았습니다"
+                      : "담을 수 있는 줄이 없습니다"}
                 </button>
                 <span className="text-xs text-zinc-600 dark:text-zinc-300">
                   이미 담은 것은 건너뜁니다. 담은 뒤에도 줄마다 고치거나 지울 수 있습니다.
                 </span>
               </div>
               <ul className="mt-2 flex flex-col gap-1">
-                {ohTemplateParts.map((part, index) => {
-                  const added = addedSourceKeys.has(ohTemplatePartKey(index));
+                {ohTemplateParts.map((part) => {
+                  const added = addedSourceKeys.has(part.sourceKey);
+                  const option = part.option;
+                  const addable = canAddQuoteIntakeLine(option);
                   return (
-                    <li key={ohTemplatePartKey(index)} className="flex flex-wrap items-center gap-2 text-sm">
-                      <span className="text-zinc-800 dark:text-zinc-200">{part.partNameText}</span>
+                    <li key={part.sourceKey} className="flex flex-wrap items-center gap-2 text-sm">
+                      {/* 🔴 줄에 **적힐 이름**은 고르개가 정한다. 되짚지 못한 줄은 적을 이름이
+                          없어 까닭을 적고 담기를 막되, 🔵 줄은 **감추지 않는다** — 목록에서
+                          사라지면 사람이 청구를 빠뜨린다. */}
+                      {addable ? (
+                        <span className="text-zinc-800 dark:text-zinc-200">{partPickName(option)}</span>
+                      ) : (
+                        <span className="text-amber-700 dark:text-amber-400">
+                          {OH_TEMPLATE_PART_NOT_LINKED_MESSAGE}
+                        </span>
+                      )}
+                      {/* 어느 부품인지 알아보는 자리 — 템플릿에 적힌 이름과 재고의 품명이 다를 수 있다. */}
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                        {option === null ? part.templateName : partOptionDetail(option)}
+                      </span>
                       <span className="text-xs text-zinc-500 dark:text-zinc-400">{part.quantity}개</span>
                       <span className="text-xs text-zinc-500 dark:text-zinc-400">
                         {isPriceUnset(part.overhaulUnitPrice) ? (
-                          <span className="text-amber-700 dark:text-amber-400">
-                            {part.partId === null
-                              ? "재고 미연결 — O/H 단가 없음"
-                              : "O/H 단가 미정"}
-                          </span>
+                          /* 🔴 「미정」이지 0원이 아니다 — 일반 견적가로 때우지도 않는다. */
+                          <span className="text-amber-700 dark:text-amber-400">O/H 견적가 미정</span>
                         ) : (
-                          `O/H 단가 ₩${AMOUNT_FORMAT.format(Number(part.overhaulUnitPrice))}`
+                          `O/H 견적가 ₩${AMOUNT_FORMAT.format(Number(part.overhaulUnitPrice))}`
                         )}
                       </span>
                       {added ? (
                         <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">담김 ✓</span>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => addOhTemplateParts([{ part, index }])}
-                          disabled={disabled}
-                          className="rounded border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-50 dark:border-zinc-700"
-                        >
-                          부품 줄에 담기
-                        </button>
+                        addable && (
+                          <button
+                            type="button"
+                            onClick={() => addOhTemplateParts([part])}
+                            disabled={disabled}
+                            className="rounded border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-50 dark:border-zinc-700"
+                          >
+                            부품 줄에 담기
+                          </button>
+                        )
                       )}
                     </li>
                   );
@@ -3165,14 +3312,26 @@ export default function QuoteEditForm({
 
           🔴 케이블 견적서에는 그리지 않는다 — 출고된 부품은 수리 건에 딸린 값이고, 그
           종류에는 수리 건이 없다. (내자로 불러온 뒤 종류만 바꾼 장에서도 감춘다.) */}
-      {!isCable && usedParts.length > 0 && (
+      {!isCable && (usedParts.status !== "ok" || usedParts.value.length > 0) && (
         <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
           <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
             이 접수 건에 출고된 부품 <span className="font-normal text-zinc-500 dark:text-zinc-400">(참고용)</span>
           </h2>
+          {/* 🔴 **못 받아 온 것을 「없다」로 그리지 않는다**(2026-10-17). 이 목록은 이제 재고
+              관리에서 오고, 저쪽이 꺼진 날 구역을 통째로 감추면 화면이 「이 건에 나간 부품이
+              없다」고 말한 것과 같다 — 사람은 그 말을 믿고 청구를 빠뜨린다. */}
+          {usedParts.status !== "ok" ? (
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+              이 건에 출고된 부품을 재고 관리에서 불러오지 못했습니다 —{" "}
+              {inventoryUnreachableMessage(usedParts.reason)} 나간 부품이{" "}
+              <b>없는 것이 아니라 확인하지 못한 것</b>입니다. 재고 관리에서 이 건의 반출 내역을
+              확인하고 아래 부품 비용 칸에 적어 주세요.
+            </p>
+          ) : (
+            <>
           <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
             재고에서 나간 것과 청구하는 것이 늘 같지는 않습니다. 담을 것만 골라 주세요. 단가는 재고 관리에
-            부품마다 적어 둔 값이 따라오고, 정해 두지 않았으면 빈칸으로 들어옵니다.
+            부품마다 적어 둔 <b>견적가</b>가 따라오고, 정해 두지 않았으면 빈칸으로 들어옵니다.
           </p>
           {/* 일괄 담기. 출고된 부품이 열 종을 넘는 일이 흔한데 하나씩 누르게
               두면 사람이 중간에 하나를 빠뜨리고, 빠뜨린 것은 청구에서 통째로
@@ -3181,35 +3340,49 @@ export default function QuoteEditForm({
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => addUsedParts(unaddedUsedParts)}
-              disabled={disabled || unaddedUsedParts.length === 0}
+              onClick={() => addUsedParts(addableUsedParts)}
+              disabled={disabled || addableUsedParts.length === 0}
               className="rounded border border-zinc-400 bg-white px-2 py-1 text-xs font-medium text-zinc-800 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
             >
-              {unaddedUsedParts.length === 0
-                ? "전부 담았습니다"
-                : `출고된 부품 ${unaddedUsedParts.length}종 전부 담기`}
+              {addableUsedParts.length > 0
+                ? `출고된 부품 ${addableUsedParts.length}종 전부 담기`
+                : unaddedUsedParts.length === 0
+                  ? "전부 담았습니다"
+                  : "담을 수 있는 줄이 없습니다"}
             </button>
             <span className="text-xs text-zinc-600 dark:text-zinc-300">
               담은 뒤에도 줄마다 고치거나 지울 수 있습니다.
             </span>
           </div>
           <ul className="mt-2 flex flex-col gap-1">
-            {usedParts.map((part) => {
-              const added = addedSourceKeys.has(usedPartKey(part));
+            {usedParts.value.map((part) => {
+              const added = addedSourceKeys.has(part.sourceKey);
+              const option = part.option;
+              const addable = canAddQuoteIntakeLine(option);
               return (
-              <li key={usedPartKey(part)} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="text-zinc-800 dark:text-zinc-200">{part.partName}</span>
-                {part.partSpec && (
-                  <span className="text-xs text-zinc-500 dark:text-zinc-400">{part.partSpec}</span>
+              <li key={part.sourceKey} className="flex flex-wrap items-center gap-2 text-sm">
+                {/* 🔴 줄에 **적힐 이름**은 고르개가 정한다. 되짚지 못한 줄은 적을 이름이 없어
+                    까닭을 적고 담기를 막되, 🔵 줄은 **감추지 않는다** — 나간 부품이 목록에서
+                    사라지면 사람이 청구를 빠뜨린다. */}
+                {addable ? (
+                  <span className="text-zinc-800 dark:text-zinc-200">{partPickName(option)}</span>
+                ) : (
+                  <span className="text-amber-700 dark:text-amber-400">
+                    {USED_PART_NOT_IN_INVENTORY_MESSAGE}
+                  </span>
                 )}
                 <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {stockOwnerLabelOrUnspecified(part.owner)} · {part.quantity}개 출고
+                  {option === null ? part.requestedName : partOptionDetail(option)}
+                </span>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {part.ownerLabel === "" ? "" : `${part.ownerLabel} · `}
+                  {part.quantity}개 출고
                 </span>
                 <span className="text-xs text-zinc-500 dark:text-zinc-400">
                   {isPriceUnset(part.unitPrice) ? (
-                    <span className="text-amber-700 dark:text-amber-400">단가 미정</span>
+                    <span className="text-amber-700 dark:text-amber-400">견적가 미정</span>
                   ) : (
-                    `단가 ₩${AMOUNT_FORMAT.format(Number(part.unitPrice))}`
+                    `견적가 ₩${AMOUNT_FORMAT.format(Number(part.unitPrice))}`
                   )}
                 </span>
                 {added ? (
@@ -3217,19 +3390,23 @@ export default function QuoteEditForm({
                   // 눌리지" 가 되고, 그건 A/S 가 이미 한 번 겪은 고장 신고다.
                   <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">담김 ✓</span>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => addUsedParts([part])}
-                    disabled={disabled}
-                    className="rounded border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-50 dark:border-zinc-700"
-                  >
-                    부품 줄에 담기
-                  </button>
+                  addable && (
+                    <button
+                      type="button"
+                      onClick={() => addUsedParts([part])}
+                      disabled={disabled}
+                      className="rounded border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-50 dark:border-zinc-700"
+                    >
+                      부품 줄에 담기
+                    </button>
+                  )
                 )}
               </li>
               );
             })}
           </ul>
+            </>
+          )}
         </section>
       )}
 
@@ -3403,11 +3580,18 @@ export default function QuoteEditForm({
                     onPick={(option) => {
                       updateItem(
                         row.key,
-                        partPickPatch(option, {
-                          prices: partPrices,
-                          isOverhaulPart: kind === "OVERHAUL" && row.isOverhaulPart,
-                          currentUnitPrice: row.unitPrice,
-                        })
+                        /**
+                         * 🔴 **고르개가 준 조각을 그대로 붓지 않는다** — `partId` 자리에
+                         * 온 값은 재고 관리의 부품 번호라 FK 칸에 넣으면 저장이 거절된다
+                         * (위 `pickedPartPatch` 머리말 — 2026-10-17 에 실제로 막혔다).
+                         */
+                        pickedPartPatch(
+                          partPickPatch(option, {
+                            prices: partPrices,
+                            isOverhaulPart: kind === "OVERHAUL" && row.isOverhaulPart,
+                            currentUnitPrice: row.unitPrice,
+                          })
+                        )
                       );
                       setPartPickerKey(null);
                     }}

@@ -1,18 +1,11 @@
 import "server-only";
 
-import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import {
   attachments,
   customers,
-  inventoryPartRequestItems,
-  inventoryPartRequests,
-  ohPartTemplateItems,
-  ohPartTemplateModels,
-  ohPartTemplates,
-  partOverhaulUnitPrices,
-  partUnitPrices,
-  parts,
+  productModels,
   products,
   quoteApprovals,
   quoteItems,
@@ -49,13 +42,14 @@ import {
  * 된다.
  *
  * 🔴 **`lookupIntakeForQuote` 가 들어왔다**(조각 3b-3). 인수번호 하나로 접수 건을
- * 찾아 폼 상단을 채우는 조회이고, 그 하나가 `customers` · `products` ·
- * `inventory_part_requests` · `oh_part_templates` · `part_unit_prices` 등 열한 표를
- * 읽는다(아래 그 함수). **A/S 의 같은 함수를 쪼개지 않고 그대로 옮겼다** — 출고 부품 ·
- * O/H 템플릿까지 한 번에 돌려주는 모양 그대로다. 그 값을 늘어놓는 **참고 목록 둘**과
- * 거기서 부품 줄로 담는 길은 뒤쪽 절반에서 들어왔다
- * (components/quotes/QuoteEditForm.tsx 의 addUsedParts · addOhTemplateParts).
- * 쪼개 옮기면 저쪽과 두 벌이 된다.
+ * 찾아 폼 상단을 채우는 조회다. ⚠️ **2026-10-17 에 그 함수가 215줄 줄었다** — 출고된
+ * 부품과 O/H 템플릿 부품까지 한 번에 돌려주던 모양이었는데, 그 둘이 2026-10 에
+ * **재고 관리로 옮겨가** 같은 DB 의 A/S 표에는 더 이상 아무것도 쌓이지 않는다. 그 표를
+ * 계속 읽으면 화면이 **「이 건에 나간 부품이 없다」고 거짓말**하고 사람은 청구를
+ * 빠뜨린다. 지금 이 함수가 읽는 것은 **그 건의 머리 몇 칸과 제품 개체 id** 뿐이고,
+ * 두 목록을 저쪽에서 받아 붙이는 일은 `lib/server/quote-intake-lookup.ts` 가 한다.
+ * 🔴 **여기서 바깥 시스템을 부르지 않는다** — 이 파일은 DB 질의 모듈이다(그 함수 주석).
+ * A/S 가 2026-10-16 에 같은 모양으로 먼저 끝냈다(저쪽 `d6ec03c`).
  *
  * 🔴 **`listQuotesForRepairCase` 도 아직 없다.** 저쪽에서 그것은 수리 건 상세의
  * [견적서] 탭이 쓰는 조회이고, 그 탭은 A/S 의 화면이다(설계서 F절 5번 — 화면은
@@ -502,6 +496,9 @@ export type QuoteEditData = {
    *     열었을 때 설명 줄이 사라지고, 저장하는 순간 영영 없어진다.
    *   · **규격**을 싣는다 — 케이블 양식의 셋째 칸이다.
    *   · 그래서 수량 · 단가가 **null 일 수 있다**(설명 줄).
+   *   · 🔴 **작성자만 보는 칸이 하나 더 있다**(2026-10-17 — 아래 QuoteEditItemLine 의
+   *     `inventoryPartNo`). 그래서 이 목록의 형은 문서 쪽이 받는 형보다 **넓다** —
+   *     인쇄 · 엑셀은 QuotePrintableItemLine 으로 받아 그 칸을 못 본다.
    *
    * 차례가 곧 뜻이다 — 설명 줄이 어느 품목 묶음 **위에** 붙는지가 그 줄의 내용이다.
    * 그래서 종류로 나누지 않고 line_no 순서 그대로 한 목록으로 준다.
@@ -510,15 +507,47 @@ export type QuoteEditData = {
    * 고치는 쪽이 필요로 하는 모양이 서로 다르고, 한쪽으로 합치면 문서 쪽이 설명
    * 줄을 만난다. 둘 다 같은 조회 결과(itemRows) 하나에서 갈라 나온다.
    */
-  itemLines: {
-    partId: string | null;
-    kind: QuoteItemKind;
-    partNameText: string;
-    partSpecText: string | null;
-    isOverhaulPart: boolean;
-    quantity: number | null;
-    unitPrice: string | null;
-  }[];
+  itemLines: QuoteEditItemLine[];
+};
+
+/**
+ * ============================================================================
+ * 품목 표 한 줄 중 **문서로 나가도 되는 칸만** (2026-10-17)
+ * ============================================================================
+ * 위 itemLines 의 줄에서 **작성자만 보는 칸을 뺀** 모양이다. 인쇄 화면(QuotePrintView)과
+ * 엑셀(server/services/quote-workbook.ts)이 **이 형으로 받는다** — 그래서 그 둘은 뺀 칸을
+ * 읽을 수조차 없고, 실수로 옮겨 적는 일이 **컴파일에서 막힌다.**
+ *
+ * 🔴 두 형을 하나로 합치지 않는다. 합치는 순간 「누가 무엇을 봐도 되는가」가 **아무 데도
+ *    적혀 있지 않은 규칙**이 되고, 지키는 것은 「지금 아무도 안 읽는다」뿐이다.
+ * ============================================================================
+ */
+export type QuotePrintableItemLine = {
+  partId: string | null;
+  kind: QuoteItemKind;
+  partNameText: string;
+  partSpecText: string | null;
+  isOverhaulPart: boolean;
+  quantity: number | null;
+  unitPrice: string | null;
+};
+
+/**
+ * 고치는 화면이 받는 한 줄 — 위 문서용 칸들에 **작성자만 보는 칸 하나**가 더 붙는다.
+ *
+ * 🔴 `inventoryPartNo` 는 그 줄을 **어느 재고 관리 부품에서 집어 왔는가**다
+ * (quote_items.inventory_part_no). 수정 화면이 이 값으로 줄의 기억을 되살려, 다시 열어도
+ * 그 줄이 어느 부품에서 왔는지 알고 단가가 그 부품의 값으로 남는다.
+ *
+ * 🔴 **null 이 정상이다** — 손으로 적은 줄 · 설명 줄 · 이 칸이 생기기 전에 저장된 줄이
+ *    전부 null 이고, null 은 「집어 넣은 적이 없다」는 뜻이다.
+ * 🔴 **문서로 나가지 않는다.** 견적서는 고객사로 나가는 종이이고 이 번호는 우리 쪽 열쇠다.
+ *    나가는 쪽은 바로 위 QuotePrintableItemLine 으로 받아 이 칸을 아예 못 본다.
+ * 🔴 **`partId` 와 다른 값이다** — 저쪽은 같은 DB 의 `parts.id`(UUID)이고 이 칸은 **다른
+ *    시스템의 번호**다. 고르개로 집어 넣은 줄에서는 `partId` 가 언제나 null 이다.
+ */
+export type QuoteEditItemLine = QuotePrintableItemLine & {
+  inventoryPartNo: number | null;
 };
 
 /**
@@ -589,6 +618,12 @@ export async function getQuoteForEdit(id: string): Promise<QuoteEditData | null>
       kind: quoteItems.kind,
       quantity: quoteItems.quantity,
       unitPrice: quoteItems.unitPrice,
+      /**
+       * 🔴 **칸을 하나씩 적는다** — `select()` 로 표를 통째로 긁지 않는다. 이 조회가
+       * 내주는 값은 문서로도 흘러가므로, 표에 칸이 느는 날 **아무도 모르게 따라 나가는**
+       * 자리가 되면 안 된다.
+       */
+      inventoryPartNo: quoteItems.inventoryPartNo,
     })
     .from(quoteItems)
     .where(eq(quoteItems.quoteId, id))
@@ -599,6 +634,10 @@ export async function getQuoteForEdit(id: string): Promise<QuoteEditData | null>
    *
    *  · items     문서로 나가는 쪽이 읽는다 — **품목 줄만**, 수량 · 단가가 반드시 있다.
    *  · itemLines 고치는 화면이 읽는다 — **설명 줄까지 차례 그대로**, 규격도 함께.
+   *
+   * 🔴 **갈라지는 자리가 여기다.** 재고 관리의 부품 번호는 **아래 itemLines 쪽에만** 적는다 —
+   *    위 items 는 인쇄 화면과 엑셀이 읽는 목록이고, 그 번호는 우리 쪽 열쇠라 고객사가
+   *    받는 종이에 닿을 길이 있으면 안 된다(위 QuoteEditItemLine 의 그 항목).
    */
   const items = itemRows.filter(isQuoteAmountItemLine).map((item) => ({
     partId: item.partId,
@@ -615,6 +654,7 @@ export async function getQuoteForEdit(id: string): Promise<QuoteEditData | null>
     isOverhaulPart: item.isOverhaulPart,
     quantity: item.quantity,
     unitPrice: item.unitPrice,
+    inventoryPartNo: item.inventoryPartNo,
   }));
 
   // 고른 수리 작업. **그때 값의 사본**이라 카탈로그를 조인하지 않는다 —
@@ -643,14 +683,16 @@ export async function getQuoteForEdit(id: string): Promise<QuoteEditData | null>
 }
 
 /**
- * 소유구분. 🔴 **값을 손으로 베끼지 않고 서브모듈의 enum 에서 끌어낸다** — A/S 는
- * `domain/inventory-types.ts` 의 `StockOwner` 를 쓰는데 이 사이트에는 재고 화면이
- * 없어 그 파일이 없다. 네 값을 여기 다시 적어 두면 값이 느는 날 이쪽만 모른다
- * (schema/inventory-enums.ts 의 「Never add values speculatively」).
+ * 인수번호 하나로 견적서 상단을 채울 값 — 🔴 **이 DB 가 아는 것이 여기까지다**.
+ *
+ * 2026-10-17 까지는 이 타입에 **출고된 부품**과 **O/H 템플릿 부품**이 함께 들어 있었다.
+ * 그 둘은 2026-10 에 **재고 관리로 옮겨갔고**, 같은 DB 의 A/S 재고 표에는 더 이상
+ * 아무것도 쌓이지 않는다 — 그대로 두면 「이 건에 나간 부품이 없다」는 거짓말이 된다.
+ * 지금은 `lib/server/quote-intake-lookup.ts` 가 이 값에 저쪽에서 받아 온 두 목록을
+ * 붙여 화면으로 올린다(그 파일 머리말). A/S 가 2026-10-16 에 같은 모양으로 먼저
+ * 끝냈고(저쪽 `d6ec03c`), 이름도 저쪽과 같은 `QuoteIntakeCase` 다.
  */
-type StockOwner = NonNullable<(typeof inventoryPartRequestItems.$inferSelect)["owner"]>;
-
-export type QuoteIntakeLookup = {
+export type QuoteIntakeCase = {
   repairCaseId: string;
   intakeNumber: string;
   customerId: string | null;
@@ -661,76 +703,15 @@ export type QuoteIntakeLookup = {
   serialNumber: string | null;
   faultDescription: string | null;
   /**
-   * 이 접수 건에 **실제로 출고된** 부품. 참고용이다 — 폼이 자동으로 채우지 않고
-   * 옆에 늘어놓기만 하고, 사람이 골라 담는다.
-   *
-   * 🔴 그 「옆에 늘어놓는 화면」은 폼의 「이 접수 건에 출고된 부품 (참고용)」 구역이다
-   * (조각 3b-3 뒤쪽 절반 — components/quotes/QuoteEditForm.tsx).
-   *
-   * 단가가 없다: parts 표에 가격 칼럼이 자체가 없다. 무엇을 몇 개 썼는지까지가
-   * 시스템이 아는 전부이고, 얼마에 청구할지는 사람이 정한다.
+   * 제품 **개체**의 id. 🔴 **화면으로 내려보내는 값이 아니다** — 재고 관리에 O/H 템플릿을
+   * 물을 열쇠(제품 **모델** id)를 얻는 데만 쓰고, 서버 쪽에서 떼어 낸다. 개체가 안 붙은
+   * 건이 있다(모델명만 적힌 건) — 그때는 null 이고 오류가 아니다.
    */
-  usedParts: {
-    partId: string;
-    partName: string;
-    partSpec: string | null;
-    /**
-     * 어느 소유구분으로 요청됐는가. **null 이 정상이다** — 이 칸이 생기기 전의
-     * 요청은 영영 NULL 로 남는다(schema/inventory-part-requests.ts 의 소유구분
-     * checkpoint). 화면은 "미지정"이라 그린다.
-     */
-    owner: StockOwner | null;
-    quantity: number;
-    /**
-     * 그 부품에 정해 둔 단가. **null 이면 "정하지 않음"이고 빈칸으로 둔다** —
-     * 0 으로 바꾸면 견적서가 정하지 않은 부품을 0원으로 청구하게 된다
-     * (schema/part-unit-prices.ts 머리말). "0"은 무상 부품이라는 뜻이라 그대로 쓴다.
-     *
-     * 🔴 **소유구분과 무관하다**(2026-09-17 사용자 정정). 그래서 소유구분이 NULL 인
-     * 옛 요청에도 단가가 붙는다 — 부품 하나에 값이 하나뿐이라 고를 일이 없다.
-     */
-    unitPrice: string | null;
-    /**
-     * 이 부품의 작업비(원, 수량과 무관). **null 이면 정하지 않은 것**이고,
-     * 견적서 화면이 작업비 합계를 낼 때 그 부품 몫을 빼고 그 사실을 알린다
-     * (schema/inventory.ts 의 laborCost — 0 으로 뭉개면 작업비를 실제보다
-     * 적게 부르게 된다).
-     */
-    laborCost: string | null;
-  }[];
-  /** 이 장비에 이어진 O/H 부품 템플릿의 기종 코드. 안 이어져 있으면 null. */
-  ohTemplateCode: string | null;
-  /**
-   * 그 기종의 **O/H 부품 목록**. 위 usedParts 와 성격이 전혀 다르다.
-   *
-   * ── 왜 출고 기록만으로는 안 되는가 ────────────────────────────────────
-   * **O/H 견적은 부품을 출고하기 전에 낸다**(2026-08-31 사용자 확인). 얼마에
-   * 할지를 먼저 알려 주고 승인을 받은 뒤에 뜯기 시작하므로, 그 시점에 출고
-   * 기록은 비어 있다. 그래서 "무엇을 쓸 예정인가"는 템플릿이 답한다.
-   *
-   * ── 단가는 O/H 단가다 ────────────────────────────────────────────────
-   * 여기서 온 줄은 O/H 템플릿에 적어 둔 단가를 따른다. 출고 기록에서 온 줄이
-   * 부품 상세의 일반 단가를 따르는 것과 짝이다 — **어느 견적서인지가 아니라
-   * 그 줄이 어디서 왔는지가 단가를 정한다**(2026-08-31 사용자 결정). 🔴 그 규칙을
-   * 담은 파일은 공용 묶음에 있다(`@dss/core/ui/inventory/part-price-field.ts`) —
-   * 여기 다시 적지 않는다.
-   *
-   * 재고와 이어지지 않은 줄(part_id 가 NULL)도 그대로 준다. 이름과 수량은
-   * 쓸모가 있고, 단가만 붙일 곳이 없어 null 이다.
-   */
-  ohTemplateParts: {
-    /** 재고 마스터 연결. **null 이 정상이다**(schema/oh-part-templates.ts). */
-    partId: string | null;
-    /** 템플릿에 적힌 품명 그대로. part_id 가 있어도 이 글자를 쓴다. */
-    partNameText: string;
-    quantity: number;
-    /** 그 부품의 O/H 단가. **null 이면 정하지 않은 것**이고 빈칸으로 둔다. */
-    overhaulUnitPrice: string | null;
-  }[];
+  productId: string | null;
 };
 
 /**
- * 인수번호 하나로 견적서 상단을 채울 값을 걷어 온다.
+ * 인수번호 하나로 접수 건을 찾는다.
  *
  * 못 찾으면 null 이다. 아직 접수되지 않은 건으로 먼저 견적을 내는 일이 있어서
  * **오류가 아니다**(server/actions/quotes.ts 의 같은 항목).
@@ -745,12 +726,12 @@ export type QuoteIntakeLookup = {
  * 보이지 않는 자료를 새로 만들어 주는 것이 아니라 **이미 시스템에 있는 값을
  * 옮겨 적어 주는 일**이라, 읽기 권한이 있는 사람에게 숨길 이유가 없다.
  *
- * ── 출고된 것만 센다 ────────────────────────────────────────────────────
- * inventory_part_request_items.issued_quantity > 0 인 줄만 본다. 요청했지만
- * 아직 안 나간 부품을 견적에 올리면 쓰지도 않은 값을 청구하게 된다.
- * 같은 부품을 여러 번 요청했으면 합쳐서 한 줄로 준다.
+ * ── 🔴 여기서 바깥 시스템을 부르지 않는다 ───────────────────────────────
+ * 이 파일은 DB 질의 모듈이다. 재고 관리를 부르는 일은 `lib/server/quote-intake-lookup.ts`
+ * 가 하고, 이 함수는 그 모듈이 쓰는 **한 조각**으로 남는다 — 섞으면 파일의 성격이
+ * 무너지고, 시험이 DB 를 세워 재는 방식과도 맞지 않는다.
  */
-export async function lookupIntakeForQuote(intakeNumber: string): Promise<QuoteIntakeLookup | null> {
+export async function lookupIntakeForQuote(intakeNumber: string): Promise<QuoteIntakeCase | null> {
   const [row] = await db
     .select({
       repairCaseId: repairCases.id,
@@ -761,123 +742,46 @@ export async function lookupIntakeForQuote(intakeNumber: string): Promise<QuoteI
       lotNumber: products.lotNumber,
       serialNumber: products.serialNumber,
       faultDescription: repairCases.reportedSymptom,
-      // 이 장비에 이어진 O/H 부품 템플릿의 기종 코드. 안 이어져 있으면 null 이고,
-      // 그때 화면은 "모델을 이어 주세요"를 그린다(폼의 O/H 부품 템플릿 구역).
-      ohTemplateCode: ohPartTemplates.code,
-      ohTemplateId: ohPartTemplates.id,
+      productId: repairCases.productId,
     })
     .from(repairCases)
     .leftJoin(customers, eq(customers.id, repairCases.customerId))
     .leftJoin(products, eq(products.id, repairCases.productId))
-    // 제품 모델 → O/H 부품 템플릿. **모델 하나는 템플릿 하나에만 붙으므로**
-    // (schema/oh-part-templates.ts 의 unique) 이 조인이 행을 늘리지 않는다.
-    // 지운 템플릿은 붙이지 않는다 — 휴지통에 있는 설정으로 청구하면 안 된다.
-    .leftJoin(ohPartTemplateModels, eq(ohPartTemplateModels.productModelId, products.productModelId))
-    .leftJoin(
-      ohPartTemplates,
-      and(eq(ohPartTemplates.id, ohPartTemplateModels.templateId), eq(ohPartTemplates.isDeleted, false))
-    )
     .where(eq(repairCases.intakeNumber, intakeNumber))
     .limit(1);
 
-  if (!row) return null;
+  return row ?? null;
+}
 
-  const usedPartRows = await db
-    .select({
-      partId: inventoryPartRequestItems.partId,
-      partName: parts.partName,
-      partSpec: parts.partSpec,
-      owner: inventoryPartRequestItems.owner,
-      issuedQuantity: inventoryPartRequestItems.issuedQuantity,
-      // 그 부품에 정해 둔 단가. **소유구분을 보지 않는다** — 부품 하나에 단가
-      // 하나다(2026-09-17 사용자 정정). 정해 두지 않았으면 조인이 붙지 않아
-      // null 이 오고, 그것이 "정하지 않음"이다(위 타입 주석).
-      unitPrice: partUnitPrices.unitPrice,
-      // 작업비는 소유구분과 무관하다 — parts 에 바로 있다.
-      laborCost: parts.laborCost,
-    })
-    .from(inventoryPartRequestItems)
-    .innerJoin(
-      inventoryPartRequests,
-      eq(inventoryPartRequests.id, inventoryPartRequestItems.requestId)
-    )
-    .innerJoin(parts, eq(parts.id, inventoryPartRequestItems.partId))
-    // 부품 하나에 단가 한 줄이라(part_id UNIQUE) 이 조인이 행을 늘리지 않는다.
-    .leftJoin(partUnitPrices, eq(partUnitPrices.partId, inventoryPartRequestItems.partId))
-    .where(
-      and(
-        eq(inventoryPartRequests.repairCaseId, row.repairCaseId),
-        gt(inventoryPartRequestItems.issuedQuantity, 0)
-      )
-    )
-    .orderBy(asc(parts.partName));
+/**
+ * 🔴 형식이 틀린 글자로 DB 를 때리지 않는다 — uuid 칸에 아무 글자나 넣으면 드라이버가
+ * 던지고, 그 예외는 「못 찾았다」와 다른 길로 올라간다(이웃 queries/attachments.ts 의 같은 자).
+ */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  /**
-   * **(부품, 소유구분)** 짝으로 묶는다.
-   *
-   * 처음에는 단가가 소유구분마다 달라서 갈랐지만, 단가에서 그 축이 없어진
-   * 지금도(2026-09-17) 갈라 둔다 — 화면이 줄마다 **어느 소유구분에서 나갔는지**를
-   * 보여 주고, 사람은 그것을 보고 담을지 정한다. DSS 것 하나와 교산 것 둘을 한
-   * 줄로 합치면 그 사실이 사라진다.
-   */
-  const byPartAndOwner = new Map<string, QuoteIntakeLookup["usedParts"][number]>();
-  for (const part of usedPartRows) {
-    const key = `${part.partId}|${part.owner ?? ""}`;
-    const existing = byPartAndOwner.get(key);
-    if (existing) existing.quantity += part.issuedQuantity;
-    else
-      byPartAndOwner.set(key, {
-        partId: part.partId,
-        partName: part.partName,
-        partSpec: part.partSpec,
-        owner: part.owner,
-        quantity: part.issuedQuantity,
-        unitPrice: part.unitPrice,
-        laborCost: part.laborCost,
-      });
-  }
+/**
+ * 제품 **개체** id → 그 개체의 제품 **모델** id. 재고 관리에 O/H 부품 템플릿을 물을
+ * 열쇠가 이 값이다(저쪽 API.md 6-1절 — 모델 **이름**으로는 찾지 않는다).
+ *
+ * 🔴 **`null` 이 정상이다.** 제품 모델이 안 붙은 개체가 있고(모델명만 적힌 건), 그때는
+ *    저쪽에 물을 열쇠가 없어 **부르지 않는다** — 오류가 아니라 「이어 둔 템플릿이 없다」다
+ *    (lib/server/quote-intake-lookup.ts 의 그 갈래).
+ * 🔴 **지운 모델은 붙이지 않는다.** 휴지통에 든 설정으로 청구하면 안 된다 — 옛 질의가
+ *    지운 템플릿을 조인에서 빼던 그 뜻 그대로다.
+ *
+ * 🔵 **A/S 는 이 함수를 `db/queries/repair-cases.ts` 에 둔다**(저쪽 `getProductModelIdForProduct`).
+ *    이 사이트에는 수리 건 조회 모듈이 없어(수리 건 화면은 A/S 에 남는다) 같은 이름으로
+ *    여기 둔다 — 견적서의 불러오기 하나가 쓰는 값이다.
+ */
+export async function getProductModelIdForProduct(productId: string): Promise<string | null> {
+  if (!UUID_PATTERN.test(productId)) return null;
 
-  /**
-   * 그 기종의 O/H 부품과 각각의 O/H 단가.
-   *
-   * 템플릿이 안 이어져 있으면 질의를 열지 않는다 — 없는 id 로 조회하는 것보다
-   * 아예 묻지 않는 편이 낫다.
-   *
-   * 차례는 템플릿에 늘어놓은 순서 그대로다. **양식의 부품 순서가 뜻을 갖는다**
-   * (휴즈 22개가 셋째 줄인 데는 이유가 있다 — schema/oh-part-templates.ts).
-   */
-  const ohTemplateParts = row.ohTemplateId
-    ? await db
-        .select({
-          partId: ohPartTemplateItems.partId,
-          partNameText: ohPartTemplateItems.partNameText,
-          quantity: ohPartTemplateItems.quantity,
-          // 재고와 이어지지 않은 줄은 붙일 단가가 없어 null 이 온다. 그 줄도
-          // 버리지 않는다 — 이름과 수량은 그대로 쓸모가 있다.
-          overhaulUnitPrice: partOverhaulUnitPrices.unitPrice,
-        })
-        .from(ohPartTemplateItems)
-        .leftJoin(
-          partOverhaulUnitPrices,
-          eq(partOverhaulUnitPrices.partId, ohPartTemplateItems.partId)
-        )
-        .where(eq(ohPartTemplateItems.templateId, row.ohTemplateId))
-        .orderBy(asc(ohPartTemplateItems.displayOrder))
-    : [];
+  const rows = await db
+    .select({ productModelId: productModels.id })
+    .from(products)
+    .innerJoin(productModels, eq(products.productModelId, productModels.id))
+    .where(and(eq(products.id, productId), eq(productModels.isDeleted, false)))
+    .limit(1);
 
-  // 칸을 하나씩 적는다. `...row` 로 펼치면 **ohTemplateId 까지 딸려 나가는데**,
-  // 그 값은 여기서 부품을 걷어 오는 데만 쓴 내부 id 이고 화면은 쓰지 않는다.
-  return {
-    repairCaseId: row.repairCaseId,
-    intakeNumber: row.intakeNumber,
-    customerId: row.customerId,
-    customerName: row.customerName,
-    modelName: row.modelName,
-    lotNumber: row.lotNumber,
-    serialNumber: row.serialNumber,
-    faultDescription: row.faultDescription,
-    ohTemplateCode: row.ohTemplateCode,
-    usedParts: [...byPartAndOwner.values()],
-    ohTemplateParts,
-  };
+  return rows[0]?.productModelId ?? null;
 }

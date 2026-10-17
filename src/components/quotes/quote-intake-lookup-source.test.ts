@@ -70,9 +70,13 @@ const actionSource = read("src/lib/server/actions/quotes.ts");
 const formSource = read("src/components/quotes/QuoteEditForm.tsx");
 const form = flat(formSource);
 
-/** 조회 한 함수. 이 파일의 마지막 함수라 시작 표지부터 끝까지다. */
+/**
+ * 조회 한 함수. ⚠️ **2026-10-17 부터 이 파일의 마지막 함수가 아니다** — 뒤에
+ * `getProductModelIdForProduct` 가 붙었다(재고 관리에 O/H 템플릿을 물을 열쇠). 그래서
+ * 끝 표지를 다음 머리말(`\n/**`)로 둔다 — 끝까지 잘라 쓰면 이웃 함수의 글자가 섞인다.
+ */
 const lookupQuery = flat(
-  querySource.slice(indexOrFail(querySource, "export async function lookupIntakeForQuote("))
+  sliceBetween(querySource, "export async function lookupIntakeForQuote(", "\n/**")
 );
 /** 액션 한 함수. 다음 머리말(휴지통 묶음)이 끝 표지다. */
 const lookupAction = flat(
@@ -92,24 +96,50 @@ const readingUserHelper = flat(
  */
 const handleLookup = flat(sliceBetween(formSource, "async function handleLookup() {", "\n  }\n"));
 
-describe("조회 — lookupIntakeForQuote 를 쪼개지 않고 옮겼다", () => {
-  test("🔴 한 함수가 출고 부품 · O/H 템플릿 · 기종 코드까지 함께 돌려준다", () => {
-    // 쪼개면 A/S 와 두 벌이 되고, 뒤쪽 절반(참고 목록 화면)이 올 때 또 고쳐야 한다.
+/**
+ * ⚠️ **2026-10-17 — 이 묶음의 이름과 뜻을 다시 정했다.**
+ * 예전 이름은 「lookupIntakeForQuote 를 쪼개지 않고 옮겼다」였고, **출고 부품 · O/H 템플릿 ·
+ * 기종 코드까지 한 함수가 돌려주는가**를 못 박고 있었다. 🔴 그 둘이 2026-10 에 **재고
+ * 관리로 옮겨가** 같은 DB 의 A/S 표에는 더 이상 아무것도 쌓이지 않는다 — 그 표를 계속
+ * 읽으면 화면이 「이 건에 나간 부품이 없다」고 거짓말한다. 지금 이 조회가 하는 일은
+ * **머리 칸 + 제품 개체 id** 까지이고, 재고 관리에서 받아 묶는 일은 서버 모듈이 한다
+ * (`lib/server/quote-intake-lookup.ts`). 옛 단언을 지우지 않고 **뒤집어** 같은 무게로
+ * 못 박는다 — 그 표를 **다시 읽기 시작하면** 여기가 붉어진다.
+ * 🔵 그 자리를 더 촘촘히 보는 시험이 곁에 있다(quote-intake-inventory.test.ts).
+ */
+describe("조회 — 🔴 이 DB 가 아는 것이 여기까지다", () => {
+  test("🔴 머리 칸과 **제품 개체 id** 만 읽는다 — 부품은 재고 관리에서 온다", () => {
     for (const marker of [
-      "usedParts: [...byPartAndOwner.values()],",
-      "ohTemplateCode: row.ohTemplateCode,",
-      "ohTemplateParts,",
+      "repairCaseId: repairCases.id,",
+      "customerName: customers.name,",
+      "modelName: products.modelName,",
+      "faultDescription: repairCases.reportedSymptom,",
+      "productId: repairCases.productId,",
     ]) {
       assert.ok(lookupQuery.includes(marker), `조회가 ${marker} 를 돌려주지 않는다`);
     }
     assert.ok(
-      querySource.includes("export type QuoteIntakeLookup = {"),
-      "반환 타입이 없다 — 액션과 폼이 같은 모양을 봐야 한다"
+      querySource.includes("export type QuoteIntakeCase = {"),
+      "반환 타입이 없다 — 서버 모듈과 폼이 같은 모양을 봐야 한다"
     );
   });
 
+  test("🔴 옛 재고 표를 한 줄도 읽지 않는다 — 그 표에는 새 기록이 쌓이지 않는다", () => {
+    for (const forbidden of [
+      "inventoryPartRequestItems",
+      "inventoryPartRequests",
+      "ohPartTemplateItems",
+      "ohPartTemplateModels",
+      "ohPartTemplates",
+      "partUnitPrices",
+      "partOverhaulUnitPrices",
+    ]) {
+      assert.equal(querySource.includes(forbidden), false, `질의가 아직 ${forbidden} 를 읽는다`);
+    }
+  });
+
   test("없는 인수번호는 오류가 아니라 null 이다 — 접수 전에 견적을 내는 일이 있다", () => {
-    assert.ok(lookupQuery.includes("if (!row) return null;"), lookupQuery.slice(0, 400));
+    assert.ok(lookupQuery.includes("return row ?? null;"), lookupQuery.slice(0, 400));
   });
 
   test("🔴 휴지통의 접수 건도 찾는다 — is_deleted 로 좁히지 않는다", () => {
@@ -119,10 +149,6 @@ describe("조회 — lookupIntakeForQuote 를 쪼개지 않고 옮겼다", () =>
       false,
       "지워진 접수 건을 빼고 있다 — 그러면 사람이 같은 값을 손으로 다시 적는다"
     );
-  });
-
-  test("출고된 것만 센다 — 요청만 하고 안 나간 부품을 청구하지 않는다", () => {
-    assert.ok(lookupQuery.includes("gt(inventoryPartRequestItems.issuedQuantity, 0)"));
   });
 
   test("🔴 권한 검사가 조회에 없다 — 세션과 문턱은 액션 층의 일이다", () => {
@@ -179,13 +205,16 @@ describe("서버 액션 — 문턱은 READ 하나다", () => {
   test("빈 문자열은 DB 를 열지 않는다", () => {
     assert.ok(
       indexOrFail(lookupAction, 'if (intakeNumber === "") return { ok: true, found: null };') <
-        indexOrFail(lookupAction, "await lookupIntakeForQuote(intakeNumber)"),
+        indexOrFail(lookupAction, "await loadQuoteIntakeLookup(intakeNumber)"),
       "빈 값으로도 조회를 부르고 있다"
     );
   });
 
   test("못 찾은 것은 ok:false 가 아니다 — found: null 로 돌려준다", () => {
-    assert.ok(lookupAction.includes("return { ok: true, found: await lookupIntakeForQuote(intakeNumber) };"));
+    // ⚠️ 2026-10-17 — 부르는 자리가 **서버 모듈**로 바뀌었다(재고 관리에서 받아 묶는다).
+    //    🔴 「못 찾음」의 뜻은 그대로 **건을 못 찾았다** 하나다 — 저쪽이 꺼진 것은 여기에
+    //    섞이지 않는다(그 갈래는 found 안의 두 목록이 들고 올라온다).
+    assert.ok(lookupAction.includes("return { ok: true, found: await loadQuoteIntakeLookup(intakeNumber) };"));
   });
 
   test("🔴 로그에 인수번호를 담지 않는다 — 어느 고객사의 어느 장비인지를 가리키는 글자다", () => {
@@ -274,13 +303,12 @@ describe("폼 — [불러오기] 한 자리", () => {
     }
   });
 
-  test("🔴 불러온 값 셋을 상태에 담는다 — 조회를 쪼개지 않았으므로 버리지도 않는다", () => {
-    for (const line of [
-      "setUsedParts(found.usedParts);",
-      "setOhTemplateCode(found.ohTemplateCode);",
-      "setOhTemplateParts(found.ohTemplateParts);",
-    ]) {
-      assert.ok(handleLookup.includes(line), `${line} 가 없다 — 뒤쪽 절반이 쓸 값을 버리고 있다`);
+  test("🔴 불러온 값 둘을 상태에 담는다 — 받아 온 것을 버리지 않는다", () => {
+    // ⚠️ 2026-10-17 — 셋이 둘이 되었다. 기종 코드는 템플릿 안의 이름으로 바뀌었고,
+    //    두 목록은 **갈래째**(`InventoryResult`) 올라온다 — 「없다」와 「못 받아 왔다」가
+    //    다른 값이라 여기서 풀면 화면이 까닭을 말할 길이 사라진다.
+    for (const line of ["setUsedParts(found.usedParts);", "setOhTemplate(found.ohTemplate);"]) {
+      assert.ok(handleLookup.includes(line), `${line} 가 없다 — 참고 목록이 쓸 값을 버리고 있다`);
     }
   });
 
@@ -307,20 +335,19 @@ describe("폼 — [불러오기] 한 자리", () => {
  * ============================================================================
  */
 describe("🔴 뒤쪽 절반이 들어왔다 · 조각 4·5 의 것은 아직 아니다", () => {
-  test("🔴 불러온 값 셋을 **읽는 쪽이 열렸다** — 참고 목록 둘이 그것을 그린다", () => {
+  test("🔴 불러온 값 둘을 **읽는 쪽이 열렸다** — 참고 목록 둘이 그것을 그린다", () => {
     for (const declaration of [
-      'const [usedParts, setUsedParts] = useState<QuoteIntakeLookup["usedParts"]>([]);',
-      "const [ohTemplateCode, setOhTemplateCode] = useState<string | null>(null);",
-      'const [ohTemplateParts, setOhTemplateParts] = useState<QuoteIntakeLookup["ohTemplateParts"]>([]);',
+      "const [usedParts, setUsedParts] = useState<InventoryResult<QuoteUsedPart[]>>(NO_USED_PARTS);",
+      "const [ohTemplate, setOhTemplate] = useState<InventoryResult<QuoteOhTemplate | null>>(NO_OH_TEMPLATE);",
     ]) {
       assert.ok(form.includes(declaration), `${declaration} 가 없다`);
     }
     // 🔴 화면이 실제로 **상태를 읽어** 그리는 자리들. 예전에는 이 목록이 「없어야
     // 하는 것」이었다(값을 담아 두고 그리지 않던 때).
     for (const reader of [
-      "{usedParts.map((part) => {",
-      "{ohTemplateParts.map((part, index) => {",
-      "{ohTemplateCode && (",
+      "{usedParts.value.map((part) => {",
+      "{ohTemplateParts.map((part) => {",
+      "{ohTemplateValue && (",
       "const unaddedUsedParts = useMemo(",
       "const unaddedOhTemplateParts = useMemo(",
       "const addedSourceKeys = useMemo(",
@@ -332,11 +359,13 @@ describe("🔴 뒤쪽 절반이 들어왔다 · 조각 4·5 의 것은 아직 �
   test("🔴 담기는 함수 **하나**다 — 일괄 담기가 하나씩을 여러 번 부르지 않는다", () => {
     // 하나씩 담기를 여러 번 부르면 setItems 가 여러 번 돌아 「빈 첫 줄」 처리가
     // 중간 상태에 걸린다(A/S 그 함수의 머리말이 적어 둔 함정).
+    // ⚠️ 2026-10-17 — 일괄 담기가 세는 것이 **「담을 수 있는 줄」**로 바뀌었다(안 담은
+    //    줄 중에는 되짚지 못해 담을 수 없는 줄이 섞인다 — quote-intake-inventory.test.ts).
     for (const call of [
-      "onClick={() => addUsedParts(unaddedUsedParts)}",
+      "onClick={() => addUsedParts(addableUsedParts)}",
       "onClick={() => addUsedParts([part])}",
-      "onClick={() => addOhTemplateParts(unaddedOhTemplateParts)}",
-      "onClick={() => addOhTemplateParts([{ part, index }])}",
+      "onClick={() => addOhTemplateParts(addableOhTemplateParts)}",
+      "onClick={() => addOhTemplateParts([part])}",
     ]) {
       assert.ok(form.includes(call), `${call} 가 없다`);
     }
@@ -345,8 +374,9 @@ describe("🔴 뒤쪽 절반이 들어왔다 · 조각 4·5 의 것은 아직 �
     }
     // 담는 함수 둘 다 **목록을 받아 한 번의 setItems 로** 끝낸다.
     for (const body of [
-      "function addUsedParts(list: readonly QuoteIntakeLookup[\"usedParts\"][number][]) { if (list.length === 0) return; setItems((prev) => {",
-      "if (list.length === 0) return; setItems((prev) => {",
+      "function addUsedParts(list: readonly QuoteUsedPart[]) {",
+      "function addOhTemplateParts(list: readonly QuoteOhTemplatePart[]) {",
+      "if (rows.length === 0) return; setItems((prev) => {",
     ]) {
       assert.ok(form.includes(body), `${body} 가 없다`);
     }
@@ -355,8 +385,12 @@ describe("🔴 뒤쪽 절반이 들어왔다 · 조각 4·5 의 것은 아직 �
   test("🔴 같은 것을 두 번 담지 않는다 — sourceKey 로 판정한다", () => {
     // 두 번 담기면 같은 부품이 두 줄이 되어 **청구가 두 배**가 되는데, 화면만 보고는
     // 실수인지 뜻인지 구별되지 않는다.
-    assert.ok(form.includes('return `issued:${part.partId}|${part.owner ?? ""}`;'), "출고 줄 열쇠가 (부품, 소유구분) 이 아니다");
-    assert.ok(form.includes("return `ohtpl:${index}`;"), "템플릿 줄 열쇠가 접두사로 갈라져 있지 않다");
+    // ⚠️ 2026-10-17 — 열쇠를 **순수 쪽이 짓는다**(lib/domain/quote-intake-parts.ts). 옛
+    //    (부품, 소유구분) 짝은 재고 관리에서 **소유가 다르면 번호가 달라** 축이 하나로
+    //    줄었다 — 줄이 합쳐지는 것이 아니라 애초에 다른 번호로 온다.
+    assert.ok(form.includes("sourceKey: part.sourceKey,"), "폼이 열쇠를 제 손으로 다시 짓는다");
+    assert.equal(form.includes("function usedPartKey("), false, "옛 (부품, 소유구분) 열쇠가 남아 있다");
+    assert.equal(form.includes("function ohTemplatePartKey("), false, "옛 차례 열쇠가 남아 있다");
     assert.ok(
       form.includes(
         "new Set(items.map((row) => row.sourceKey).filter((key): key is string => key !== null))"
@@ -364,10 +398,8 @@ describe("🔴 뒤쪽 절반이 들어왔다 · 조각 4·5 의 것은 아직 �
       "이미 담은 것을 세지 않는다"
     );
     for (const skip of [
-      "const added = addedSourceKeys.has(usedPartKey(part));",
-      "const added = addedSourceKeys.has(ohTemplatePartKey(index));",
-      "!addedSourceKeys.has(usedPartKey(part))",
-      "!addedSourceKeys.has(ohTemplatePartKey(index))",
+      "const added = addedSourceKeys.has(part.sourceKey);",
+      "!addedSourceKeys.has(part.sourceKey)",
     ]) {
       assert.ok(form.includes(skip), `${skip} 가 없다`);
     }
@@ -493,11 +525,15 @@ describe("🔴 뒤쪽 절반이 들어왔다 · 조각 4·5 의 것은 아직 �
    * 실제로 생겼으므로 이제 **그 말을 해야** 한다 — A/S 판 문구로 되돌렸다.
    */
   test("🔴 안내 문장이 **있는 화면**을 가리킨다 — A/S 판 문구로 되돌렸다", () => {
+    // ⚠️ 2026-10-17 — 그 문장을 짓는 자리가 **함수 하나**로 옮겨갔다(lookupResultMessage).
+    //    🔴 갈래가 셋이 되었기 때문이다 — 「못 받아 왔다」를 「없다」로 적으면 사람이
+    //    청구를 빠뜨린다(quote-intake-inventory.test.ts 가 그 세 갈래를 본다).
+    assert.ok(handleLookup.includes("setLookupMessage(lookupResultMessage(found.usedParts, found.ohTemplate));"), handleLookup);
     assert.ok(
-      handleLookup.includes(
-        "`불러왔습니다. 이 건에 출고된 부품 ${found.usedParts.length}종이 아래 참고 목록에 있습니다.`"
+      form.includes(
+        "`불러왔습니다. 이 건에 출고된 부품 ${usedParts.value.length}종이 아래 참고 목록에 있습니다.`"
       ),
-      handleLookup
+      form.slice(indexOrFail(form, "function lookupResultMessage("), indexOrFail(form, "function lookupResultMessage(") + 900)
     );
     assert.ok(
       form.includes("그 건에 출고된 부품도 아래에 참고용으로 보여 줍니다."),
@@ -539,13 +575,11 @@ describe("🔴 못 찾음 · 오류 갈래가 받아 온 목록을 비운다", (
     ["오류", errorBranch],
     ["못 찾음", notFoundBranch],
   ] as const) {
-    test(`${label} 갈래가 세 사본을 비우고 깃발을 세운다`, () => {
-      for (const line of [
-        "setUsedParts([]);",
-        "setOhTemplateCode(null);",
-        "setOhTemplateParts([]);",
-        "setLookupMissed(true);",
-      ]) {
+    test(`${label} 갈래가 두 사본을 비우고 깃발을 세운다`, () => {
+      // 🔵 비우는 값이 **「받아 왔는데 없다」**(`NO_*`)인 까닭은 곁의
+      //    quote-intake-inventory.test.ts 가 본다 — 저쪽을 부른 적이 없는 것을
+      //    「못 받아 왔다」로 적으면 화면이 있지도 않은 사고를 알린다.
+      for (const line of ["setUsedParts(NO_USED_PARTS);", "setOhTemplate(NO_OH_TEMPLATE);", "setLookupMissed(true);"]) {
         assert.ok(branch.includes(line), `${label} 갈래에 ${line} 가 없다`);
       }
     });

@@ -44,16 +44,29 @@ src/lib/db/db-roundtrip.integration.test.ts
 # createRepairCase 대신 직접 넣는 것 · 격리 접두사를 `PO-` 로 가른 것.
 # 🔴 **접두사를 저쪽과 같게 바꾸지 마라** — 두 저장소가 같은 dss_as_test 를 쓰므로
 #    겹치면 한쪽 after() 가 다른 쪽이 만든 줄을 치운다.
+#
+# ⚠️ 2026-10-17 — 묶음 끝에 **둘이 늘었다**: 고르개로 집어 넣은 줄의 `inventory_part_no`
+#    가 **DB 까지 갔다 돌아오는가**, 그리고 **설명 줄에는 그 번호가 붙을 수 없는가**
+#    (CHECK quote_items_inventory_part_no_item_line_only). 🔴 칸도 CHECK 도 A/S 가
+#    마이그레이션 0115 로 이미 넣었다 — 이 조각은 스키마를 한 글자도 건드리지 않았다.
+#    🔵 규칙 자체는 DB 없는 시험이 본다(components/quotes/quote-inventory-part-no.test.ts).
 src/lib/db/mutations/quotes.integration.test.ts
 
 # ── 조각 3b-3 앞쪽 절반 — 인수번호로 불러오기(A/S 에서 옮겨 옴) ──────────
-# 저쪽 `lib/db/queries/quote-intake-lookup.integration.test.ts`(288줄)의 단언을 그대로
-# 옮겼다. 다른 것 셋은 그 파일 머리말에 있다: 환경 불러오기 · import 경로 · 부품 ·
-# 단가 · 수리 건을 mutation 대신 직접 넣는 것 · 격리 이름을 가른 것.
+# 저쪽 `lib/db/queries/quote-intake-lookup.integration.test.ts` 의 단언을 그대로 옮겼다.
+# 다른 것은 그 파일 머리말에 있다: 환경 불러오기 · import 경로 · 수리 건을 mutation
+# 대신 직접 넣는 것 · 격리 이름을 가른 것.
 # 🔴 **격리 이름을 저쪽과 같게 바꾸지 마라** — 접수 월 9503(저쪽 9603) · 고객사
-#    `PO-TEST-LOOKUP-`(저쪽 `AS-TEST-QUOTE-LOOKUP-`) · 부품명 `po-test-lookup-`
-#    (저쪽 `test-quote-lookup-`). 같은 dss_as_test 를 쓰므로 겹치면 한쪽 after() 가
-#    다른 쪽 자료를 치운다.
+#    `PO-TEST-LOOKUP-`(저쪽 `AS-TEST-QUOTE-LOOKUP-`). 같은 dss_as_test 를 쓰므로
+#    겹치면 한쪽 after() 가 다른 쪽 자료를 치운다.
+#
+# ⚠️ 2026-10-17 — **이 파일이 362줄에서 180줄로 줄었다.** 출고된 부품과 O/H 템플릿이
+#    재고 관리로 옮겨가, 그 표를 세워 재던 여섯 가지(출고된 것만 센다 · 묶는 축 ·
+#    견적가가 따라온다 · 정하지 않은 값은 null · 0원은 그대로 · O/H 견적가를 때우지
+#    않는다)를 **뜻 그대로** unit.txt 의 `lib/domain/quote-intake-parts.test.ts` 로
+#    옮겼다. 🔴 **표를 지운 것이 아니다** — 과거 기록이 들어 있고 A/S 가 쓴다. 지운
+#    것은 **읽는 코드**뿐이다. 여기 남은 셋: 머리 칸이 따라온다 · 없는 번호는 null ·
+#    🔴 **제품 개체 id 가 함께 온다**(O/H 템플릿을 물을 열쇠가 그 값에서 나온다).
 src/lib/db/queries/quote-intake-lookup.integration.test.ts
 
 # ── 조각 3b-3 뒤쪽 절반 · 커밋 ① — 부품 고르개의 두 목록 (2026-10-17 걷어냄) ─

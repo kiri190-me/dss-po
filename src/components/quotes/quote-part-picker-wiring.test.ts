@@ -91,10 +91,14 @@ function implementationFiles(dir = "src"): string[] {
 }
 
 describe("🔴 고르개는 한 벌이다 — 이 사이트에 사본을 두지 않는다", () => {
-  test("폼이 공용 묶음에서 들여온다 — 컴포넌트와 두 순수 함수", () => {
+  test("폼이 공용 묶음에서 들여온다 — 컴포넌트와 순수 함수들", () => {
+    /* ⚠️ 2026-10-17 — 들여오는 이름이 **셋 늘었다**. 불러온 줄(출고 부품 · O/H 템플릿)에
+       적힐 이름과 담을 수 있는가를 재는 자가 고르개의 것 하나여야 해서다
+       (quote-intake-inventory.test.ts 의 ㉡). 🔴 막으려던 것은 그대로다 — **사본이 아니라
+       묶음에서 온다.** 🔵 `nameSource` 는 넘기지 않는다(기본값 `"part"`). */
     assert.ok(
       formSource.includes(
-        'import {\n  PartSuggestionList,\n  filterPartOptions,\n  partPickPatch,\n} from "@dss/core/ui/inventory/part-picker";'
+        'import {\n  PartSuggestionList,\n  canPickPartOption,\n  filterPartOptions,\n  partOptionDetail,\n  partPickName,\n  partPickPatch,\n} from "@dss/core/ui/inventory/part-picker";'
       ),
       "고르개를 공용 묶음에서 들여오지 않는다"
     );
