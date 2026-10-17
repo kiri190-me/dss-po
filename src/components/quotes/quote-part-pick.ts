@@ -1,4 +1,5 @@
-import type { PartPickerRow } from "@dss/core/ui/inventory/part-picker-rows";
+import { partPickPatch } from "@dss/core/ui/inventory/part-picker";
+import type { PartPickerPriceRow, PartPickerRow } from "@dss/core/ui/inventory/part-picker-rows";
 import { partFieldEntries, partFieldLabeledText } from "@dss/core/ui/inventory/part-picker-rows";
 
 /**
@@ -18,11 +19,17 @@ import { partFieldEntries, partFieldLabeledText } from "@dss/core/ui/inventory/p
  *
  * 🔴 **새로 설계한 것이 아니라 옮겨 온 것이다.** A/S 관리 시스템의 **같은 이름 파일**
  *    (`src/components/quotes/quote-part-pick.ts`, 저쪽 커밋 `26d4d4c`)에서 이 사이트에
- *    해당하는 규칙만 옮겼다. 🔵 **안 옮긴 것 하나를 적어 둔다** — 저쪽의 「부품이 바뀌면
- *    단가가 따라간다」와 「상세가 사라지면 단가도 비운다」(2026-10-16 저쪽 요청 ②)는
- *    **저쪽 사용자가 따로 내린 결정**이고 이 사이트에는 그 결정이 없다. 금액을 말없이
- *    바꾸는 규칙이라 「옮기는 김에」 들여오지 않는다 — 이 사이트의 단가 규칙은 지금까지
- *    그대로 「적혀 있으면 덮지 않는다」 하나다(공용 고르개 `partPickUnitPrice` 의 ㉠).
+ *    해당하는 규칙만 옮겼다.
+ *
+ * ── 🔴 **단가 규칙도 2026-10-17 에 뒤따라 왔다** ────────────────────────────
+ * 처음 옮길 때 **일부러 두고 온 것 하나**가 있었다 — 저쪽의 「부품이 바뀌면 단가가
+ * 따라간다」와 「상세가 사라지면 단가도 비운다」(2026-10-16 저쪽 요청 ②). 금액을 말없이
+ * 바꾸는 규칙이라 이 사이트 사용자의 결정 없이 「옮기는 김에」 들여오지 않았다.
+ * 🔴 **2026-10-17 에 그 결정이 내려졌다** — 「A/S처럼 만들어줘」. 그래서 두 규칙이
+ *    이 파일에 들어왔다(아래 `quotePartPickPatch` · `quotePartNameEditPatch`). 고치려던
+ *    증상은 이쪽에서도 같다 — **이미 금액이 적힌 줄에서 다른 부품으로 바꾸면 앞 부품의
+ *    금액이 그대로 남아 있었다.** 다른 부품인데 앞 부품 값으로 청구되고, 빈칸과 달리
+ *    그럴듯해 보여 아무도 되묻지 않는다.
  *
  * ── 🔴 상세는 **밖으로 나가지 않는다** ─────────────────────────────────────
  * 견적서는 고객사로 나가는 종이다. 우리 품명 · 교산 품번 · 도번은 **작성자가 보는 것**이지
@@ -72,6 +79,12 @@ export type QuotePartPickRow = {
    * 아니다** — 그것은 위 번호가 한다. 이 값은 **상세를 아직 그려도 되는가**만 가른다.
    */
   pickedPartNameText: string | null;
+  /**
+   * 🔴 지금 단가 칸에 적혀 있는 글자 (2026-10-17 에 더했다). **읽기만 한다** — 「같은
+   * 부품을 다시 골랐는가」에 따라 이 값을 고르개에 건네 「덮지 않는다」로 돌려세우는 데
+   * 쓴다(아래 `quotePartPickPatch`). 🔵 이 모듈은 금액을 **셈하지 않는다.**
+   */
+  unitPrice: string;
 };
 
 /**
@@ -118,6 +131,92 @@ export function pickedPartPatch(patch: {
   return { ...rest, partId: null, inventoryPartNo, pickedPartNameText: patch.partNameText };
 }
 
+/** 고를 때 단가를 가르는 데 필요한 것들. 🔵 둘 다 **선택**이다 — 안 주면 단가를 안 채운다. */
+export type QuotePartPickContext = {
+  /** 단가가 적힌 부품들. 못 받아 왔으면 빈 목록이고, 그때는 고르개가 단가를 안 채운다. */
+  prices?: readonly PartPickerPriceRow[];
+  /** 이 줄이 `2) OH 부품 비용` 칸으로 갈 줄인가 — 그러면 O/H 견적가를 본다. */
+  isOverhaulPart?: boolean;
+};
+
+/**
+ * 이번에 고른 것이 **지금 줄에 들어 있는 그 부품인가**. 🔴 **번호로만 잰다** — 줄의 품명은
+ * 사람이 손으로도 고치는 자유 글자라, 글자를 견주면 「다른 부품을 골랐다」와 「같은 부품인데
+ * 이름을 손봤다」가 구별되지 않는다.
+ *
+ * 🔵 아직 아무것도 고른 적이 없는 줄(손으로 적었거나 · 저장돼 있던 줄을 펼친 것)은 **다른
+ *    부품**으로 본다 — 그 줄의 금액은 「이 부품의 값」이라고 말할 수 있는 근거가 없다.
+ */
+export function isSamePickedPart(row: QuotePartPickRow, option: PartPickerRow): boolean {
+  return row.inventoryPartNo !== null && row.inventoryPartNo === option.id;
+}
+
+/**
+ * ============================================================================
+ * 🔴 **부품이 바뀐 때만** 단가가 따라간다 (2026-10-17 「A/S처럼 만들어줘」)
+ * ============================================================================
+ * 이 사이트의 규칙은 지금까지 「적혀 있으면 덮지 않는다」 하나였다(공용 고르개의
+ * `partPickUnitPrice` ㉠). 🔴 **그 규칙을 버리지 않는다** — 사람이 조정해 둔 금액이 **다른
+ * 일로** 덮이면, 바뀐 줄 모르고 그대로 고객사에 나간다. 바뀌는 것은 **한 가지 경우뿐**이다:
+ *
+ *  ㉠ **다른 부품을 골랐다** → 새 부품의 견적가(O/H 줄이면 O/H 견적가)로 **따라간다.**
+ *     까닭: 줄에 적혀 있던 금액은 **앞 부품의 값**이다. 부품이 바뀌었는데 그 금액이 남으면
+ *     **다른 부품의 값으로 청구**하게 되고, 빈칸과 달리 그럴듯해 보여 아무도 되묻지 않는다.
+ *     🔵 그 값이 「사람이 손으로 고쳐 둔 금액」이었더라도 마찬가지다 — 그 조정도 **앞 부품**
+ *        에 대고 한 것이라 새 부품에는 근거가 없다.
+ *  ㉡ **같은 부품을 다시 골랐다** → **그대로 둔다**(빈칸이면 지금까지처럼 채운다).
+ *     까닭: 바뀐 것이 없다. 사람이 조정해 둔 금액을 「다시 눌렀다」는 이유로 날리면 되돌릴
+ *     길이 없고, 같은 줄을 두 번 누르는 일은 실제로 흔하다(후보가 떠 있는 채로 칸을 다시
+ *     누르면 바로 그렇게 된다).
+ *
+ * 🔵 **새 부품에 단가가 없으면(null) 0 을 넣지 않고 비운다** — 사람이 채운다. `0` 을 넣으면
+ *    그 부품이 **무상**이라는 뜻이 되어 버린다(`"0"` 은 실제로 무상을 뜻하는 값이다 —
+ *    @dss/core 의 part-price-field.ts). 「정하지 않았다」와 「0원이다」는 다른 말이다.
+ * 🔵 O/H 줄에 일반 단가를 대신 쓰지 않는 규칙도 그대로다 — 그 판단은 전부 고르개 안에 있다.
+ *
+ * ── 🔴 `vendor/` 의 고르개는 **한 글자도 안 고친다** ───────────────────────
+ * 그 조각은 별도 저장소이고 A/S 도 같이 쓴다. 「바뀌면 따라간다」를 거기 박으면 그쪽이
+ * 포인터를 올리는 날 두 사이트가 함께 흔들린다. 그래서 **넘기는 값 하나**
+ * (`currentUnitPrice`)로 고르개를 「덮는다 / 안 덮는다」 사이에서 돌려세운다 — A/S 가
+ * 2026-10-16 에 쓴 그 방법 그대로다.
+ *
+ * 🔵 **적히는 이름은 언제나 고객사 품명이다** — 이 함수는 견적서 전용이고, 그 결정은
+ *    2026-10-17 지적 ① 이다(머리말). 자를 부르는 쪽이 넘기게 두면 한 곳만 빠뜨린 날
+ *    「목록에 보인 이름」과 「줄에 적히는 이름」이 어긋난다.
+ * ============================================================================
+ */
+export function quotePartPickPatch(
+  row: QuotePartPickRow,
+  option: PartPickerRow,
+  context: QuotePartPickContext = {}
+): QuotePartPickPatch {
+  const same = isSamePickedPart(row, option);
+  const patch = pickedPartPatch(
+    partPickPatch(
+      option,
+      {
+        prices: context.prices,
+        isOverhaulPart: context.isOverhaulPart,
+        /**
+         * 🔴 **여기 한 칸이 ㉠ 과 ㉡ 을 가른다.** 같은 부품이면 적혀 있는 금액을 그대로 건네
+         * 고르개가 「덮지 않는다」로 돌아서게 하고, 다른 부품이면 **빈 글자**를 건네 새 부품의
+         * 견적가를 받아 온다.
+         */
+        currentUnitPrice: same ? row.unitPrice : "",
+      },
+      "customer"
+    )
+  );
+
+  if (patch.unitPrice !== undefined) return patch;
+  /**
+   * 🔵 여기까지 왔으면 고르개가 **채우지 않기로** 했다(그 부품에 견적가가 없거나 · 목록을
+   * 못 받아 왔거나 · 같은 부품이라 지킨 것이다). 같은 부품이면 그대로 두면 되지만,
+   * **부품이 바뀐 줄**이라면 남아 있는 금액이 앞 부품의 값이다 — 비운다(🔴 0 이 아니다).
+   */
+  return same ? patch : { ...patch, unitPrice: "" };
+}
+
 /**
  * ============================================================================
  * 🔴 저장돼 있던 줄을 펼 때 **이름 기억을 되살린다**
@@ -147,15 +246,81 @@ export function quoteRestoredPickedPartName(line: {
 }
 
 /**
- * 줄에 적힌 이름이 **고른 그때의 이름 그대로인가**. 🔵 앞뒤 공백은 같은 것으로 본다 —
- * 칸에 공백 하나가 더 붙었다고 「고쳤다」가 되면 안 된다.
+ * 줄에 적힌(또는 **지금 치고 있는**) 이름이 **고른 그때의 이름 그대로인가**. 🔵 앞뒤 공백은
+ * 같은 것으로 본다 — 칸에 공백 하나가 더 붙었다고 「고쳤다」가 되면 안 된다.
  *
+ * 🔴 **잣대가 여기 한 곳이다** — 「상세를 그릴까」(`quotePickedPartOf`)와 「단가를 비울까」
+ *    (`quotePartNameEditPatch`)가 **같은 이 함수**로 잰다. 두 벌로 적으면 언젠가 갈리고,
+ *    갈린 날 **「상세는 보이는데 단가가 비었다」**(또는 그 반대)가 된다.
+ *    🔵 갈리는 것은 `quotePickedPartOf` 의 **마지막 한 줄뿐**이다 — 거기만 목록을 본다.
+ *
+ * 🔴 **재는 글자를 받는다**(`nameText`) — 줄의 `partNameText` 를 제 손으로 읽지 않는다.
+ *    품명 칸에 글자를 칠 때는 **아직 줄에 들어가지 않은** 그 글자로 재야 하기 때문이다.
  * 🔴 **`options` 를 보지 않는다.** 이 판정은 **줄이 들고 있는 기억**만으로 끝난다 — 재고
  *    관리에서 목록을 못 받아 온 날에도 「이름을 고쳤는가」의 답은 달라지지 않는다.
- *    목록을 보는 것은 아래 `quotePickedPartOf` 의 **마지막 한 줄**뿐이다.
+ *    목록이 끼면 **통신이 끊긴 날 적어 둔 금액이 날아간다.**
  */
-export function isPickedPartNameKept(row: QuotePartPickRow): boolean {
-  return row.pickedPartNameText !== null && row.partNameText.trim() === row.pickedPartNameText;
+export function isPickedPartNameKept(row: QuotePartPickRow, nameText: string): boolean {
+  return row.pickedPartNameText !== null && nameText.trim() === row.pickedPartNameText;
+}
+
+/**
+ * 품명 칸에 글자를 칠 때 줄에 부을 조각. 🔴 `unitPrice` 키는 **비울 때만 생긴다**(고르개와
+ * 같은 규약) — 키가 없으면 그 칸은 손대지 않은 채 남는다.
+ */
+export type QuotePartNameEditPatch = {
+  partNameText: string;
+  /** 🔴 글자를 치면 재고 연결을 **푼다** — 지금까지 그대로다(폼의 그 자리 주석). */
+  partId: null;
+  unitPrice?: string;
+};
+
+/**
+ * ============================================================================
+ * 🔴 **「고른 부품」 상세가 사라지면 단가도 사라진다** (2026-10-17 「A/S처럼 만들어줘」)
+ * ============================================================================
+ * 저쪽 사용자가 2026-10-16 에 한 말이 이 규칙의 뿌리다 — 「선택된 부품이 없으면 단가도
+ * 사라지도록 해줘.」 그리고 **「선택된 부품」이 무엇인지**도 그 사람이 직접 짚었다: 「품목
+ * 칸의 **밑에 [고른 부품] 하고 작은 글씨가 나오고 있는 상태**를 말한 거야.」
+ *
+ * 그래서 기준은 **「품명 칸이 비었는가」가 아니다.** 품명을 손으로 고쳐 그 작은 글씨가
+ * 사라지는 순간이 곧 「고른 부품이 없어진」 순간이고, 그때 단가도 비운다. 품명을 통째로 지운
+ * 경우는 여기에 저절로 들어간다 — 빈 글자가 고른 이름과 같을 수는 없다.
+ *
+ * ── 🔴 `options` 를 보지 않는 까닭 (지우기와 그리기는 다른 판정이다) ────────
+ * 상세를 **그릴지**는 `quotePickedPartOf` 가 정하고, 그 함수는 재고 관리에서 받아 온 목록
+ * (`options`)에서 그 부품을 찾아야 한다 — 모르는 것을 지어내지 않기 위해서다. 그래서 **목록을
+ * 못 받아 온 날에도** null 을 돌려준다.
+ * 🔴 **비울지를 그 함수로 정하면 안 된다.** 재고 관리와 통신이 끊긴 날 품명을 한 글자 고칠
+ *    때마다 단가가 사라지고, **적어 둔 금액이 통신 탓에 날아간다**. 「지금 화면에 상세가 안
+ *    보인다」와 「이 줄이 어느 부품에서 왔는지 모른다」는 다른 말이다 — 비우는 쪽은 **줄이 들고
+ *    있는 기억**(`pickedPartNameText`)과 치고 있는 글자만 견준다(`isPickedPartNameKept`).
+ *
+ * ── 🔴 번호와 이름 기억은 **건드리지 않는다** ────────────────────────────
+ * `inventoryPartNo` 는 「이름만 손보고 **같은 부품**을 다시 골랐다」를 알아보는 유일한
+ * 열쇠다(위 `quotePartPickPatch` 의 ㉡). 지우면 다시 고르는 것이 전부 「다른 부품」이 되고,
+ * 저장에 실리던 번호까지 사라진다.
+ * 🔵 그래서 비운 단가는 **같은 부품을 다시 고르는 것만으로** 견적가가 들어온다(고르개의
+ *    「빈칸이면 채운다」). 🔵 고친 품명을 **원래 글자로 되돌리면** 상세는 다시 뜨지만 단가는
+ *    비어 있는 그대로다 — 되살리지 않는다. 사라진 것이 저절로 돌아오면 사람이 못 믿는다.
+ *
+ * ── 🔴 `0` 이 아니라 **빈 글자**다 ───────────────────────────────────────
+ * `"0"` 은 **무상**이라는 실제 값이다(@dss/core 의 part-price-field.ts). 「정하지 않았다」와
+ * 「0원이다」는 다른 말이고, 0 으로 비우면 그 줄이 0원으로 청구된다.
+ *
+ * ── 🔵 손으로 적는 길은 그대로다 — 다만 **차례가 있다** ────────────────────
+ * 부품 마스터에 없는 것을 손으로 적는 줄은 애초에 기억이 없어서, 품명을 칠 때마다 단가가 빈
+ * 글자가 된다. **품명을 다 적은 뒤 단가를 적으면 그대로 남는다** — 단가 칸을 고치는 것은 이
+ * 규칙을 타지 않는다(이 함수는 품명 칸의 onChange 에서만 불린다).
+ * 🔵 **설명 줄(NOTE)은 이 길로 오지 않는다** — 그 줄에는 단가 칸 자체가 없다.
+ * ============================================================================
+ */
+export function quotePartNameEditPatch(
+  row: QuotePartPickRow,
+  nameText: string
+): QuotePartNameEditPatch {
+  const base: QuotePartNameEditPatch = { partNameText: nameText, partId: null };
+  return isPickedPartNameKept(row, nameText) ? base : { ...base, unitPrice: "" };
 }
 
 /** 상세 줄의 머리말. 🔵 「고른 부품」이라고 적어야 **적힌 품명과 다른 글자**인 까닭이 읽힌다. */
@@ -189,6 +354,11 @@ export function quotePickedPartDetail(option: PartPickerRow): string {
  *  · 🔵 재고 관리에서 목록을 못 받아 왔다(`options` 가 비어 있다) — 모르는 것을 지어내지
  *    않는다. 🔴 「지금 상세가 안 보인다」와 「이 줄이 어느 부품에서 왔는지 모른다」는 다른
  *    말이다. 통신이 끊긴 날 줄의 기억을 지우면 **돌아오지 않는다.**
+ *
+ * 🔴 **이름을 견주는 일은 `isPickedPartNameKept` 한 곳**이다 — 단가를 비울지 정하는
+ *    `quotePartNameEditPatch` 가 같은 잣대를 쓴다. 두 벌로 적으면 언젠가 갈리고, 갈린 날
+ *    「상세는 보이는데 단가가 비었다」(또는 그 반대)가 된다.
+ *    🔵 갈리는 것은 **그 뒤 한 줄뿐**이다 — 여기만 목록에서 부품을 찾는다(위 셋째 경우).
  */
 export function quotePickedPartOf(
   row: QuotePartPickRow,
@@ -196,6 +366,6 @@ export function quotePickedPartOf(
 ): PartPickerRow | null {
   const inventoryPartNo = row.inventoryPartNo;
   if (inventoryPartNo === null) return null;
-  if (!isPickedPartNameKept(row)) return null;
+  if (!isPickedPartNameKept(row, row.partNameText)) return null;
   return options.find((option) => option.id === inventoryPartNo) ?? null;
 }

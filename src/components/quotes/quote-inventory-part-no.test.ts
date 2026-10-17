@@ -149,8 +149,20 @@ describe("① 🔴 고르개로 고른 줄이 저장된다 — 2026-10-17 에 �
     );
     assert.ok(!form.includes("function pickedPartPatch("), "폼에 사본이 남아 있다");
 
+    /**
+     * ⚠️ 2026-10-17(둘째) — 폼은 그 함수를 **직접 부르지 않는다.** 같은 날 더한
+     * `quotePartPickPatch`(「부품이 바뀌면 단가도 따라간다」)가 고르개 호출부터 이 옮김까지
+     * 한 묶음으로 한다. 🔴 **막으려던 것은 그대로다** — 그래서 **그 함수 몸통 안**에서 잰다.
+     */
+    const picking = mover.slice(
+      mover.indexOf("export function quotePartPickPatch("),
+      mover.indexOf("export function quotePartNameEditPatch(")
+    );
+    assert.ok(picking.includes("export function quotePartPickPatch("), "고르는 함수가 없다");
+    assert.ok(picking.includes("pickedPartPatch( partPickPatch("), "고른 조각이 그대로 줄에 부어진다");
+
     const pick = sliceBetween(form, "onPick={(option) => {", "setPartPickerKey(null); }}");
-    assert.ok(pick.includes("pickedPartPatch( partPickPatch("), "고른 조각이 그대로 줄에 부어진다");
+    assert.ok(pick.includes("quotePartPickPatch(row, option, {"), "폼이 그 길로 안 지난다");
     assert.ok(!pick.includes("partId: option.id"), "🔴 고른 줄의 번호가 FK 칸으로 간다");
   });
 
@@ -262,14 +274,25 @@ describe("③ 🔴 다시 열어도 살아 있다 — 저장 → 되읽기 왕�
   });
 
   test("🔵 **품명을 고쳐도 번호는 남는다** — FK 만 푼다(A/S 와 같다)", () => {
-    // 🔵 이름을 손봐도 **그 줄이 그 부품에서 온 것은 사실**이다. 지우면 다시 열 때
-    //    어느 부품에서 왔는지 알 길이 없어진다(저쪽 quotePartNameEditPatch 의 그 항목).
+    /**
+     * 🔵 이름을 손봐도 **그 줄이 그 부품에서 온 것은 사실**이다. 지우면 다시 열 때
+     *    어느 부품에서 왔는지 알 길이 없어진다(A/S `quotePartNameEditPatch` 의 그 항목).
+     *
+     * ⚠️ 2026-10-17(둘째) — 그 조각을 만드는 일이 **모듈로 갔다**(`quotePartNameEditPatch`).
+     * 같은 날 「상세가 사라지면 단가도 비운다」가 들어오면서 품명 칸의 onChange 가
+     * 금액까지 건드리게 됐기 때문이다. 🔴 **번호를 안 지운다는 것은 그대로다.**
+     */
     assert.ok(
-      form.includes("updateItem(row.key, { partNameText: e.target.value, partId: null });"),
+      form.includes("updateItem(row.key, quotePartNameEditPatch(row, e.target.value));"),
       "글자를 칠 때 손대는 칸이 달라졌다"
     );
-    const edit = sliceBetween(form, "updateItem(row.key, { partNameText: e.target.value", "});");
+    const mover = flat(read("src/components/quotes/quote-part-pick.ts"));
+    const editAt = mover.indexOf("export function quotePartNameEditPatch(");
+    assert.notEqual(editAt, -1, "글자를 칠 때 부을 조각을 만드는 함수가 없다");
+    const edit = mover.slice(editAt, editAt + 400);
+    assert.ok(edit.includes("partId: null"), "글자를 쳐도 FK 를 안 푼다");
     assert.ok(!edit.includes("inventoryPartNo"), "이름만 고쳤는데 번호까지 지운다");
+    assert.ok(!edit.includes("pickedPartNameText"), "이름만 고쳤는데 이름 기억까지 지운다");
   });
 
   test("🔴 불러오기로 담은 줄도 **같은 길로 번호가 남는다**", () => {

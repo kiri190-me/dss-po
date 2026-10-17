@@ -12,10 +12,14 @@ import {
 import {
   QUOTE_PICKED_PART_PREFIX,
   isPickedPartNameKept,
+  isSamePickedPart,
   pickedPartPatch,
+  quotePartNameEditPatch,
+  quotePartPickPatch,
   quotePickedPartDetail,
   quotePickedPartOf,
   quoteRestoredPickedPartName,
+  type QuotePartPickContext,
   type QuotePartPickRow,
 } from "@/components/quotes/quote-part-pick";
 import { CUSTOMER_NAME_EMPTY_NOTICE } from "@/lib/domain/inventory-gateway";
@@ -64,9 +68,29 @@ const sliceBetween = (source: string, from: string, to: string) => {
   return source.slice(start, end);
 };
 
+/**
+ * 🔴 **주석을 걷어 낸 글자.** 2026-10-17 에 구멍이 둘 나왔다 — 「이 사이트도 넘긴다」고
+ * 적어 둔 **주석**에 단언이 걸려 통과했다(프롭을 떼어 내 봐도 시험이 초록이었다).
+ * 글의 뜻이 아니라 **코드가 하는 일**을 재는 단언은 전부 이것으로 잰다.
+ * 🔵 주석을 **찾아야 하는** 단언(품명 칸의 자리표지 같은 것)은 원본을 그대로 쓴다.
+ */
+const stripComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^[ \t]*\/\/.*$/gm, " ");
+/** 함수 **몸통만** 베어 낸다 — 선언부터 **바닥에 닿는** `}` 까지(주석은 이미 걷혔다). */
+const functionBody = (source: string, declaration: string) => {
+  const start = indexOrFail(source, declaration);
+  const end = source.indexOf("\n}", start);
+  assert.ok(end > start, `'${declaration}' 의 닫는 괄호를 못 찾았다`);
+  return source.slice(start, end);
+};
+
 const formSource = read("src/components/quotes/QuoteEditForm.tsx");
 const form = flat(formSource);
+/** 🔴 배선을 재는 자리는 **이쪽**이다 — 주석의 글자에 걸려 통과하지 않는다. */
+const formCode = flat(stripComments(formSource));
 const moduleSource = read("src/components/quotes/quote-part-pick.ts");
+/** 🔵 줄바꿈을 남겨 둔다 — `functionBody` 가 바닥의 `}` 를 그 줄바꿈으로 찾는다. */
+const moduleCode = stripComments(moduleSource);
 
 /** 다 들어 있는 줄 하나 — 다섯 칸이 **서로 다른 글자**라 차례를 자리로 잴 수 있다. */
 const FULL: PartPickerRow = {
@@ -96,8 +120,39 @@ const DASH_CUSTOMER: PartPickerRow = {
   kyosanPartNo: null,
 };
 
+/** 🔵 **바꿔 끼울** 또 하나의 부품 — 견적가가 둘 다 있다. */
+const OTHER: PartPickerRow = {
+  id: "15",
+  partName: "시험용 전원 모듈",
+  partSpec: null,
+  customerPartName: "시험용 고객사 전원부",
+  drawingNo: null,
+  kyosanPartNo: null,
+};
+/** 🔴 **견적가를 정하지 않은** 부품 — 「비는가 · 0 이 아닌가」를 재는 줄이다. */
+const NO_PRICE: PartPickerRow = {
+  id: "14",
+  partName: "시험용 도파관 플랜지",
+  partSpec: null,
+  customerPartName: "시험용 고객사 플랜지",
+  drawingNo: null,
+  kyosanPartNo: null,
+};
+/** 🔴 일반 견적가는 있고 **O/H 견적가만 없는** 부품 — 때워 넣지 않는지 재는 줄이다. */
+const OH_UNSET: PartPickerRow = {
+  id: "16",
+  partName: "시험용 절연체",
+  partSpec: null,
+  customerPartName: "시험용 고객사 절연체",
+  drawingNo: null,
+  kyosanPartNo: null,
+};
+
 const PRICES: PartPickerPriceRow[] = [
   { partId: "11", unitPrice: "125000", overhaulUnitPrice: "98000" },
+  { partId: "15", unitPrice: "77000", overhaulUnitPrice: "61000" },
+  // 🔴 `14`(NO_PRICE)는 **줄 자체가 없다** — 「정하지 않았다」가 그 모양이다.
+  { partId: "16", unitPrice: "42000", overhaulUnitPrice: null },
 ];
 
 /** 아직 아무것도 고르지 않은 줄. */
@@ -105,21 +160,44 @@ const blank = (over: Partial<QuotePartPickRow> = {}): QuotePartPickRow => ({
   partNameText: "",
   inventoryPartNo: null,
   pickedPartNameText: null,
+  unitPrice: "",
   ...over,
 });
 
 /**
- * `option` 을 한 번 고른 뒤의 줄 — 🔴 **폼이 지나는 그 사슬 그대로** 지난다
- * (고르개 → `pickedPartPatch` → `{ ...row, ...patch }`).
+ * 후보를 한 번 고른 뒤의 줄 — 🔴 **폼이 지나는 그 사슬 그대로** 지난다
+ * (`quotePartPickPatch` → `{ ...row, ...patch }`).
+ *
+ * 🔴 `unitPrice` 는 **키가 있을 때만** 덮는다. 폼의 `{ ...row, ...patch }` 가 바로 그
+ *    뜻이고, 이 한 줄을 `patch.unitPrice ?? ""` 로 적으면 「손대지 않는다」가 「비운다」로
+ *    둔갑해 시험이 통째로 거짓말을 한다.
  */
-function afterPick(option: PartPickerRow, row: QuotePartPickRow = blank()): QuotePartPickRow {
-  const patch = pickedPartPatch(partPickPatch(option, { prices: PRICES }, "customer"));
+function pick(
+  row: QuotePartPickRow,
+  option: PartPickerRow,
+  context: QuotePartPickContext = { prices: PRICES }
+): QuotePartPickRow {
+  const patch = quotePartPickPatch(row, option, context);
   return {
-    ...row,
     partNameText: patch.partNameText,
     inventoryPartNo: patch.inventoryPartNo,
     pickedPartNameText: patch.pickedPartNameText,
+    unitPrice: patch.unitPrice ?? row.unitPrice,
   };
+}
+
+/** 품명 칸에 글자를 친 뒤의 줄 — 🔴 여기도 **키가 있을 때만** 단가를 덮는다. */
+function typeName(row: QuotePartPickRow, nameText: string): QuotePartPickRow {
+  const patch = quotePartNameEditPatch(row, nameText);
+  return { ...row, partNameText: patch.partNameText, unitPrice: patch.unitPrice ?? row.unitPrice };
+}
+
+/** `unitPrice` 키가 조각에 **생겼는가** — 없으면 그 칸은 손대지 않은 채 남는다. */
+const touchesUnitPrice = (patch: object) =>
+  Object.prototype.hasOwnProperty.call(patch, "unitPrice");
+
+function afterPick(option: PartPickerRow, row: QuotePartPickRow = blank()): QuotePartPickRow {
+  return pick(row, option);
 }
 
 describe("① 🔴 줄에 적히는 이름은 **고객사 품명**이다", () => {
@@ -154,21 +232,32 @@ describe("① 🔴 줄에 적히는 이름은 **고객사 품명**이다", () =>
      *    넘긴다」고 적어 둔 **주석**에 걸린다. 실제로 그렇게 통과했다(2026-10-17, 프롭을
      *    떼어 내 봤더니 시험이 초록이었다).
      */
-    const picker = sliceBetween(form, "<PartSuggestionList", "onPick={(option) => {");
+    const picker = sliceBetween(formCode, "<PartSuggestionList", "onPick={(option) => {");
     assert.ok(picker.includes('nameSource="customer"'), "고르개에 자를 안 넘긴다");
-    // ㉡ 고른 값을 줄에 붓는 자리
-    const pick = sliceBetween(form, "onPick={(option) => {", "setPartPickerKey(null); }}");
-    assert.ok(pick.includes("pickedPartPatch( partPickPatch("), "고른 조각이 제 칸으로 안 간다");
-    assert.ok(pick.includes('"customer"'), "붓는 자리에 자를 안 넘긴다 — 적히는 이름이 목록과 어긋난다");
+    /**
+     * ㉡ 고른 값을 줄에 붓는 자리 — 🔴 2026-10-17 부터 **모듈이 그 자를 쥔다**
+     * (`quotePartPickPatch` 는 견적서 전용이라 제 안에 박아 둔다). 그래서 폼에서는
+     * **그 길로 지나는지**를, 모듈에서는 **자를 넘기는지**를 따로 잰다.
+     */
+    const pickSite = sliceBetween(formCode, "onPick={(option) => {", "setPartPickerKey(null); }}");
+    assert.ok(pickSite.includes("quotePartPickPatch(row, option, {"), "고른 조각이 제 칸으로 안 간다");
+    assert.ok(
+      !pickSite.includes("partPickPatch("),
+      "폼이 공용 고르개를 직접 불러 자를 빠뜨릴 길이 남아 있다"
+    );
+    assert.ok(
+      functionBody(moduleCode, "export function quotePartPickPatch(").includes('"customer"'),
+      "붓는 자리에 자를 안 넘긴다 — 적히는 이름이 목록과 어긋난다"
+    );
     // ㉢ 불러온 줄 둘(출고 부품 · O/H 템플릿) — 담기 판정과 적히는 이름
     assert.ok(
-      form.includes('canPickPartOption(option, "customer")'),
+      formCode.includes('canPickPartOption(option, "customer")'),
       "담기 판정이 고객사 품명을 안 본다"
     );
-    assert.ok(form.includes('partPickName(option, "customer")'), "담은 줄에 우리 품명이 적힌다");
+    assert.ok(formCode.includes('partPickName(option, "customer")'), "담은 줄에 우리 품명이 적힌다");
     // 🔴 **옛 자가 한 자리도 남아 있으면 안 된다** — 남은 그 줄만 다른 이름을 쓴다.
-    assert.ok(!form.includes("partPickName(option)"), "아직 우리 품명으로 짓는 자리가 있다");
-    assert.ok(!form.includes("canPickPartOption(option)"), "아직 고객사 품명을 안 보는 판정이 있다");
+    assert.ok(!formCode.includes("partPickName(option)"), "아직 우리 품명으로 짓는 자리가 있다");
+    assert.ok(!formCode.includes("canPickPartOption(option)"), "아직 고객사 품명을 안 보는 판정이 있다");
   });
 
   test("🔴 막힌 줄에 **까닭을 갈라 적는다** — 「없는 부품」과 「이름이 빈 부품」은 할 일이 다르다", () => {
@@ -259,12 +348,13 @@ describe("② 🔴 고른 부품의 상세 — 작성자만 보는 작은 글씨
 
   test("🔴 이름을 견주는 자는 **한 곳**이다 — 그리기가 제 손으로 다시 재지 않는다", () => {
     const row = afterPick(FULL);
-    assert.equal(isPickedPartNameKept(row), true);
-    assert.equal(isPickedPartNameKept({ ...row, partNameText: "다른 이름" }), false);
-    assert.equal(isPickedPartNameKept(blank({ partNameText: "" })), false, "기억 없는 줄이 「그대로」로 읽힌다");
+    assert.equal(isPickedPartNameKept(row, row.partNameText), true);
+    // 🔵 **치고 있는 글자**로 잰다 — 아직 줄에 들어가지 않은 값이라 줄에서 읽을 수 없다.
+    assert.equal(isPickedPartNameKept(row, "다른 이름"), false);
+    assert.equal(isPickedPartNameKept(blank(), ""), false, "기억 없는 줄이 「그대로」로 읽힌다");
     // 🔴 그 함수는 **목록을 보지 않는다** — 통신이 끊긴 날에도 답이 달라지면 안 된다.
     assert.ok(
-      !sliceBetween(moduleSource, "export function isPickedPartNameKept(", "}").includes("options"),
+      !functionBody(moduleCode, "export function isPickedPartNameKept(").includes("options"),
       "이름 판정이 목록을 본다"
     );
   });
@@ -277,6 +367,7 @@ describe("② 🔴 고른 부품의 상세 — 작성자만 보는 작은 글씨
         inventoryPartNo: 11,
         partNameText: "시험용 고객사 발진관",
       }),
+      unitPrice: "125000",
     };
     assert.equal(quotePickedPartOf(reopened, [FULL])?.id, "11");
     // 🔵 **이름을 고쳐 저장한 줄**도 다시 열면 보인다 — 저장된 품명을 그대로 기억으로 삼는다.
@@ -413,8 +504,8 @@ describe("③ 🔴 밖으로 나가지 않는다 · 저장은 그대로 된다",
     }
   });
 
-  test("🔴 **저장이 여전히 된다** — 옮긴 `pickedPartPatch` 가 번호를 제 칸으로 보낸다", () => {
-    const patch = pickedPartPatch(partPickPatch(FULL, { prices: PRICES }, "customer"));
+  test("🔴 **저장이 여전히 된다** — 고른 줄의 번호가 제 칸으로 간다", () => {
+    const patch = quotePartPickPatch(blank(), FULL, { prices: PRICES });
     // 🔴 FK 칸은 **언제나 비어 있다** — 재고 관리의 번호는 이 DB 의 UUID 가 아니다.
     assert.equal(patch.partId, null);
     assert.equal(patch.inventoryPartNo, "11");
@@ -456,5 +547,187 @@ describe("③ 🔴 밖으로 나가지 않는다 · 저장은 그대로 된다",
       "partNameText",
       "pickedPartNameText",
     ]);
+  });
+});
+
+/**
+ * ============================================================================
+ * ④ 🔴 **부품을 바꾸면 단가도 따라간다** (2026-10-17 「A/S처럼 만들어줘」)
+ * ============================================================================
+ * 고치려던 증상: **이미 금액이 적힌 줄에서 다른 부품으로 바꾸면 앞 부품의 금액이 그대로
+ * 남았다.** 다른 부품인데 앞 부품 값으로 청구되고, 빈칸과 달리 그럴듯해 보여 아무도
+ * 되묻지 않는다. 🔴 **금액이 걸린 규칙이라 느슨하면 돈이 틀린다** — 여기서는 「맞으면
+ * 되나」와 **「틀리면 안 되나」를 둘 다** 잰다.
+ *
+ * 🔴 `0` 과 빈 글자를 **엄히 가른다.** `"0"` 은 **무상**이라는 실제 값이고(@dss/core 의
+ *    part-price-field.ts), 「정하지 않았다」와 「0원이다」는 다른 말이다. 0 으로 비우면
+ *    정하지 않은 부품이 **0원으로 청구된다.**
+ * ============================================================================
+ */
+describe("④ 🔴 부품을 바꾸면 단가도 따라간다", () => {
+  /** 사람이 손으로 125,000 을 150,000 으로 고쳐 둔 줄. 여기서부터 전부 갈린다. */
+  const adjusted = () => ({ ...pick(blank(), FULL), unitPrice: "150000" });
+
+  test("🔵 **빈 줄은 지금까지처럼 채운다** — 「적혀 있으면 덮지 않는다」가 사라진 게 아니다", () => {
+    const row = pick(blank(), FULL);
+    assert.equal(row.unitPrice, "125000");
+    assert.equal(row.inventoryPartNo, "11");
+  });
+
+  test("㉡ 🔴 **같은 부품을 다시 고르면** 적어 둔 금액을 지킨다", () => {
+    const row = adjusted();
+    assert.equal(
+      pick(row, FULL).unitPrice,
+      "150000",
+      "다시 눌렀다는 이유로 사람이 고친 금액이 날아갔다 — 되돌릴 길이 없다"
+    );
+    // 🔴 조각에 **키 자체가 없어야** 한다. 키가 있으면 폼의 {...row, ...patch} 가 덮는다.
+    assert.equal(touchesUnitPrice(quotePartPickPatch(row, FULL, { prices: PRICES })), false);
+    // 🔵 그래도 이름과 번호 · 기억은 언제나 다시 간다.
+    assert.equal(pick(row, FULL).partNameText, "시험용 고객사 발진관");
+    assert.equal(isSamePickedPart(row, FULL), true);
+  });
+
+  test("㉠ 🔴 **다른 부품으로 바꾸면** 새 부품의 견적가가 들어온다", () => {
+    const swapped = pick(adjusted(), OTHER);
+    assert.equal(swapped.unitPrice, "77000", "앞 부품의 금액이 남았다 — 딴 부품 값으로 청구된다");
+    assert.equal(swapped.inventoryPartNo, "15");
+    assert.equal(swapped.partNameText, "시험용 고객사 전원부");
+    assert.equal(swapped.pickedPartNameText, "시험용 고객사 전원부");
+    // 🔴 **틀리면 안 되나** — 「같다」로 읽히면 150000 이 그대로 남는다.
+    assert.equal(isSamePickedPart(adjusted(), OTHER), false);
+    // 🔵 **이름을 손봐 둔 줄**도 같다 — 같고 다름은 글자가 아니라 **번호**가 잰다.
+    const renamed = typeName(adjusted(), "손으로 고친 이름");
+    assert.equal(pick({ ...renamed, unitPrice: "150000" }, FULL).unitPrice, "150000");
+    assert.equal(pick({ ...renamed, unitPrice: "150000" }, OTHER).unitPrice, "77000");
+  });
+
+  test("🔴 새 부품에 견적가가 **없으면 빈칸**이다 — `0` 이 아니다", () => {
+    const swapped = pick(adjusted(), NO_PRICE);
+    assert.equal(swapped.unitPrice, "", "앞 부품의 금액이 남았다");
+    assert.notEqual(swapped.unitPrice, "0", "🔴 0 은 **무상**이라는 실제 값이다 — 0원으로 청구된다");
+    // 🔴 재고 관리에서 **단가 목록을 못 받아 온 날**도 같다 — 앞 부품 값이 남으면 안 된다.
+    assert.equal(pick(adjusted(), OTHER, {}).unitPrice, "");
+    // 🔵 그래도 이름과 번호는 바뀐다 — 「아무 일도 안 일어난다」가 아니다.
+    assert.equal(swapped.inventoryPartNo, "14");
+    assert.equal(swapped.partNameText, "시험용 고객사 플랜지");
+    // 🔵 **같은 부품**을 다시 고를 때는 그대로다 — 비우는 것은 바뀐 줄뿐이다.
+    const noPriceRow = { ...swapped, unitPrice: "33000" };
+    assert.equal(pick(noPriceRow, NO_PRICE).unitPrice, "33000");
+  });
+
+  test("🔴 O/H 줄은 **O/H 견적가**를 받는다 — 일반 단가로 때우지 않는다", () => {
+    const oh = { prices: PRICES, isOverhaulPart: true };
+    assert.equal(pick(adjusted(), OTHER, oh).unitPrice, "61000");
+    // 🔴 O/H 견적가가 없는 부품이면 **빈칸**이다 — 일반 견적가(42,000)가 들어오면 안 된다.
+    const unset = pick(adjusted(), OH_UNSET, oh);
+    assert.equal(unset.unitPrice, "");
+    assert.notEqual(unset.unitPrice, "42000", "🔴 O/H 줄에 일반 단가를 대신 넣었다");
+    // 🔵 **틀리면 안 되나** — 같은 부품을 일반 줄로 고르면 그 일반 견적가가 들어온다.
+    assert.equal(pick(adjusted(), OH_UNSET).unitPrice, "42000");
+  });
+
+  test("🔴 품명을 손으로 고치면 **상세와 단가가 함께** 사라진다", () => {
+    const row = pick(blank(), FULL);
+    assert.equal(row.unitPrice, "125000");
+    assert.notEqual(quotePickedPartOf(row, [FULL]), null, "고른 직후인데 상세가 없다");
+
+    const edited = typeName(row, "시험용 고객사 발진관 (개조)");
+    assert.equal(quotePickedPartOf(edited, [FULL]), null);
+    assert.equal(edited.unitPrice, "", "상세는 사라졌는데 금액만 남았다 — 잣대가 갈렸다");
+    assert.notEqual(edited.unitPrice, "0", "🔴 0 으로 비우면 그 줄이 0원으로 청구된다");
+    // 🔴 통째로 지운 경우도 여기에 저절로 들어간다.
+    assert.equal(typeName(row, "").unitPrice, "");
+    // 🔵 앞뒤 공백만 다른 것은 고친 것이 아니다 — 금액에 **손대지 않는다**.
+    assert.equal(touchesUnitPrice(quotePartNameEditPatch(row, "  시험용 고객사 발진관  ")), false);
+
+    // 🔴 번호와 이름 기억은 **조각에 아예 없다** — 저장에 실리는 값이고 다시 고를 때의 열쇠다.
+    const patch = quotePartNameEditPatch(row, "딴 이름");
+    assert.deepEqual(Object.keys(patch).sort(), ["partId", "partNameText", "unitPrice"]);
+    assert.equal(patch.partId, null, "글자를 쳐도 FK 를 안 푼다");
+    assert.equal(edited.inventoryPartNo, "11", "이름만 고쳤는데 번호까지 지웠다");
+    assert.equal(edited.pickedPartNameText, "시험용 고객사 발진관");
+
+    // 🔵 **되돌리면 상세는 돌아오고 금액은 비어 있는 그대로**다 — 사라진 것이 저절로
+    //    돌아오면 사람이 못 믿는다.
+    const restored = typeName(edited, "시험용 고객사 발진관");
+    assert.notEqual(quotePickedPartOf(restored, [FULL]), null);
+    assert.equal(restored.unitPrice, "");
+    // 🔵 그리고 **같은 부품을 다시 고르면** 견적가가 들어온다(빈칸이니 채운다).
+    assert.equal(pick(restored, FULL).unitPrice, "125000");
+  });
+
+  test("🔴 손으로 적는 줄은 **차례가 있다** — 품명을 다 적은 뒤 단가를 적으면 남는다", () => {
+    // 기억이 없는 줄이라 글자를 칠 때마다 단가가 빈 글자가 된다.
+    let row = blank();
+    for (const nameText of ["마", "마스", "마스터에 없는 부품"]) row = typeName(row, nameText);
+    assert.equal(row.partNameText, "마스터에 없는 부품");
+    // 🔵 그 뒤에 단가를 적으면 **그대로 남는다** — 단가 칸은 이 규칙을 타지 않는다.
+    row = { ...row, unitPrice: "90000" };
+    assert.equal(row.unitPrice, "90000");
+  });
+
+  test("🔴 **잣대가 한 곳이다** — 상세를 그릴지와 단가를 비울지가 함께 움직인다", () => {
+    const row = pick(blank(), FULL);
+    for (const nameText of [
+      "시험용 고객사 발진관",
+      "  시험용 고객사 발진관  ",
+      "시험용 고객사 발진관 (개조)",
+      "",
+      "딴 이름",
+    ]) {
+      const drawn = quotePickedPartOf({ ...row, partNameText: nameText }, [FULL]) !== null;
+      const kept = !touchesUnitPrice(quotePartNameEditPatch(row, nameText));
+      assert.equal(drawn, kept, `'${nameText}' 에서 상세와 단가가 따로 논다`);
+    }
+    /**
+     * 🔴 **몸통 안만 베어서** 잰다(주석은 이미 걷혔다) — 두 함수가 **그 한 함수**를
+     * 실제로 부르는지. 제 손으로 다시 적으면 언젠가 갈린다.
+     */
+    for (const declaration of [
+      "export function quotePickedPartOf(",
+      "export function quotePartNameEditPatch(",
+    ]) {
+      assert.ok(
+        functionBody(moduleCode, declaration).includes("isPickedPartNameKept("),
+        `${declaration} 가 이름을 제 손으로 다시 잰다`
+      );
+    }
+    // 🔴 그리고 **같고 다름**을 재는 자도 한 곳이다 — 고를 때 그 함수를 쓴다.
+    assert.ok(
+      functionBody(moduleCode, "export function quotePartPickPatch(").includes("isSamePickedPart("),
+      "고를 때 같고 다름을 제 손으로 다시 잰다"
+    );
+  });
+
+  test("🔴 폼이 **그 두 규칙을 실제로 쓴다** — 규칙만 있고 화면이 안 쓰면 증상이 그대로다", () => {
+    /** 🔵 **품목 줄의 품명 칸**이다 — 설명 줄(NOTE)의 같은 칸은 `{` 로 열지 않는다. */
+    const edit = sliceBetween(
+      formCode,
+      "value={row.partNameText} onChange={(e) => {",
+      "setPartPickerKey(row.key); }}"
+    );
+    assert.ok(
+      edit.includes("updateItem(row.key, quotePartNameEditPatch(row, e.target.value));"),
+      "품명 칸이 그 규칙을 안 쓴다 — 상세만 사라지고 금액이 남는다"
+    );
+    /**
+     * 🔴 **폼이 「지금 적혀 있는 금액」을 건네면 안 된다.** 건네면 고르개가 언제나
+     * 「덮지 않는다」로 돌아서 **다른 부품으로 바꾼 줄에 앞 부품의 금액이 남는다**
+     * (고치려던 그 증상 그대로다). 그 판단은 모듈 안에서 번호를 보고 내린다.
+     */
+    const pickSite = sliceBetween(formCode, "onPick={(option) => {", "setPartPickerKey(null); }}");
+    assert.ok(!pickSite.includes("currentUnitPrice"), "폼이 적혀 있는 금액을 건넨다");
+    assert.ok(!pickSite.includes("unitPrice"), "폼이 금액을 제 손으로 셈한다");
+    assert.ok(
+      functionBody(moduleCode, "export function quotePartPickPatch(").includes("currentUnitPrice"),
+      "모듈이 고르개를 돌려세우지 않는다"
+    );
+    // 🔴 `vendor/` 의 고르개는 **안 고쳤다** — A/S 도 같이 쓰는 별도 저장소다.
+    const picker = read("vendor/dss-core/src/ui/inventory/part-picker.tsx");
+    assert.ok(
+      picker.includes('if (currentUnitPrice.trim() !== "") return null;'),
+      "공용 고르개의 「덮지 않는다」를 고쳐서 풀었다 — 저쪽이 같이 흔들린다"
+    );
   });
 });

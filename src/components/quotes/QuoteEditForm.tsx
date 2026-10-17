@@ -65,14 +65,15 @@ import OverhaulBadge from "@/components/common/OverhaulBadge";
       견적서는 **고객사로 나가는 서류**라 거기 적히는 이름은 고객사가 부르는 이름이어야
       한다(A/S 가 2026-10-16 에 같은 까닭으로 먼저 정했다). 🔴 **넘기는 자리가 셋이다** —
       고르개 · 고른 값을 붓는 자리 · 불러온 줄 둘. 한 곳만 넘기면 「목록에 보인 이름」과
-      「줄에 적히는 이름」이 어긋난다. */
+      「줄에 적히는 이름」이 어긋난다.
+      🔵 둘째 자리(고른 값을 붓는 자리)는 2026-10-17 부터 **모듈 안**에 있다 —
+         `quotePartPickPatch` 가 견적서 전용이라 그 자를 제 안에 박아 둔다. */
 import {
   PartSuggestionList,
   canPickPartOption,
   filterPartOptions,
   partOptionDetail,
   partPickName,
-  partPickPatch,
 } from "@dss/core/ui/inventory/part-picker";
 /* 줄의 생김새는 고르개 곁(서브모듈)에 있다 — 형 선언만 가져오므로 번들에는 아무것도
    실리지 않는다. 🔴 2026-10-17 부터 이 줄들은 같은 DB 의 A/S 부품 표가 아니라 **재고
@@ -92,10 +93,15 @@ import {
   type InventoryResult,
 } from "@/lib/domain/inventory-gateway";
 /* 🔴 **줄이 고른 부품을 기억한다**(2026-10-17 쓰는 분 지적 ②) — 규칙과 까닭은 전부 그
-   모듈의 머리말에 있다. 앞 조각이 폼 안에 두었던 `pickedPartPatch` 도 거기로 옮겼다. */
+   모듈의 머리말에 있다. 앞 조각이 폼 안에 두었던 `pickedPartPatch` 도 거기로 옮겼다.
+   🔴 **단가가 부품을 따라가는 규칙도 그 모듈이 쥔다**(2026-10-17 「A/S처럼 만들어줘」) —
+      고를 때는 `quotePartPickPatch`, 품명을 칠 때는 `quotePartNameEditPatch` 가 줄에 부을
+      조각을 통째로 만들어 준다. 🔴 **폼은 금액을 셈하지 않는다** — 두 함수가 돌려주는
+      조각을 그대로 붓기만 한다. 여기서 한 줄이라도 거들면 잣대가 두 벌이 된다. */
 import {
   QUOTE_PICKED_PART_PREFIX,
-  pickedPartPatch,
+  quotePartNameEditPatch,
+  quotePartPickPatch,
   quotePickedPartDetail,
   quotePickedPartOf,
   quoteRestoredPickedPartName,
@@ -428,6 +434,12 @@ type ItemRow = {
    */
   partSpecText: string;
   quantity: string;
+  /**
+   * 🔴 **부품이 바뀌면 이 값도 따라간다**(2026-10-17 「A/S처럼 만들어줘」). 고를 때와
+   * 품명을 칠 때의 두 규칙은 전부 quote-part-pick.ts 에 있다(`quotePartPickPatch` ·
+   * `quotePartNameEditPatch`) — 🔴 **폼이 제 손으로 이 칸을 비우거나 채우지 않는다.**
+   * 🔵 사람이 단가 칸에 직접 치는 것은 그 규칙을 타지 않는다(그대로 남는다).
+   */
   unitPrice: string;
   /**
    * 위 「출고된 부품」 목록의 어느 줄에서 담아 온 것인가. 손으로 적은 줄과
@@ -603,6 +615,8 @@ function ohTemplatePartToItem(part: QuoteOhTemplatePart, option: PartPickerRow):
  *    이름을 고쳤는지 · 다시 열 때 기억을 되살리기)이 그 모듈에 모여 있어야 갈리지 않는다.
  *    🔴 **그 함수가 하는 일은 한 글자도 안 바뀌었다** — 재고 관리의 부품 번호를 FK 칸이
  *    아니라 제 칸으로 옮긴다. 까닭은 그 모듈 머리말에 있다(2026-10-17 에 저장이 막혔던 그 일).
+ *    🔵 폼은 이제 그 함수를 **직접 부르지 않는다** — 같은 날 더한 `quotePartPickPatch` 가
+ *       고르개 호출부터 그 옮김까지 한 묶음으로 해 준다(단가 규칙이 그 사이에 끼기 때문이다).
  */
 
 /**
@@ -3593,9 +3607,18 @@ export default function QuoteEditForm({
                    * part_id 가 남아 있으면 화면의 글자와 통계가 세는 부품이 서로 다른 것을
                    * 가리킨다. 마스터에 없는 부품을 손으로 적는 길이 그대로 남는 까닭이기도
                    * 하다 — 고르면 붙고, 고쳐 쓰면 풀린다.
+                   *
+                   * 🔴 **상세가 사라지면 단가도 사라진다**(2026-10-17 「A/S처럼 만들어줘」).
+                   * 품명을 손으로 고쳐 밑의 작은 글씨가 사라지면 그 줄은 더 이상 그 부품의
+                   * 줄이 아니고, **적혀 있는 금액도 그 부품의 것이 아니다.** 그 판단은 전부
+                   * `quotePartNameEditPatch` 안에 있다 — 🔴 **폼은 한 칸도 거들지 않는다.**
+                   * 상세를 그릴지 가르는 자와 **같은 자**로 재야 둘이 함께 움직인다
+                   * (그 모듈의 `isPickedPartNameKept` 한 곳).
+                   * 🔵 번호(`inventoryPartNo`)와 이름 기억은 **그대로 남는다** — 그 줄이 그
+                   *    부품에서 온 것은 사실이고, 같은 부품을 다시 고를 때 금액을 지키는 열쇠다.
                    */
                   onChange={(e) => {
-                    updateItem(row.key, { partNameText: e.target.value, partId: null });
+                    updateItem(row.key, quotePartNameEditPatch(row, e.target.value));
                     setPartPickerKey(row.key);
                   }}
                   onFocus={() => setPartPickerKey(row.key)}
@@ -3632,36 +3655,36 @@ export default function QuoteEditForm({
                      */
                     nameSource="customer"
                     /**
-                     * 🔴 고르면 **단가도 함께** 채운다. 규칙은 전부 고르개 쪽에 있다
-                     * (공용 묶음 part-picker.tsx 의 partPickUnitPrice) — 여기서는 그
-                     * 판단에 필요한 세 가지를 건넨다:
+                     * 🔴 고르면 **단가도 함께** 채운다. 🔴 **그 규칙은 전부
+                     * `quotePartPickPatch` 안에 있다** — 폼은 그 판단에 필요한 두 가지만
+                     * 건네고, 돌아온 조각을 **그대로 붓는다**:
                      *
                      *  · `prices` — 단가가 적힌 부품들(페이지가 한 번 실어 보낸 그 목록)
                      *  · `isOverhaulPart` — 🔴 **`2) OH 부품 비용` 칸으로 갈 줄일 때만** true 다.
                      *    OH 표시는 O/H 견적서에만 그리고, 저장도 그때만 싣는다(collectFields 의
                      *    같은 식) — 종류를 바꿔 표시가 사라진 줄은 일반 단가로 청구된다.
-                     *  · `currentUnitPrice` — 적혀 있으면 덮지 않는다(사람이 조정해 둔 금액이다)
+                     *
+                     * 🔴 **지금 적혀 있는 금액은 폼이 안 건넨다**(2026-10-17 「A/S처럼
+                     *    만들어줘」). 「덮을까 지킬까」는 **같은 부품을 다시 골랐는가**로
+                     *    갈리고, 그것을 아는 것은 줄의 번호를 쥔 그 모듈이다 — 여기서
+                     *    `currentUnitPrice` 를 건네면 **언제나 지키게** 되어 다른 부품으로
+                     *    바꾼 줄에 **앞 부품의 금액**이 그대로 남는다(고치려던 그 증상이다).
+                     * 🔵 줄 전체를 넘기지만 그 모듈이 읽는 것은 **품명 · 번호 · 이름 기억 ·
+                     *    단가** 넷뿐이다(`QuotePartPickRow`).
                      */
                     onPick={(option) => {
+                      /**
+                       * 🔴 **고르개가 준 조각을 그대로 붓지 않는다** — `partId` 자리에 온 값은
+                       * 재고 관리의 부품 번호라 FK 칸에 넣으면 저장이 거절된다
+                       * (`pickedPartPatch` 머리말 — 2026-10-17 에 실제로 막혔다). 그 옮김도
+                       * `quotePartPickPatch` 안에서 일어난다.
+                       */
                       updateItem(
                         row.key,
-                        /**
-                         * 🔴 **고르개가 준 조각을 그대로 붓지 않는다** — `partId` 자리에
-                         * 온 값은 재고 관리의 부품 번호라 FK 칸에 넣으면 저장이 거절된다
-                         * (위 `pickedPartPatch` 머리말 — 2026-10-17 에 실제로 막혔다).
-                         */
-                        pickedPartPatch(
-                          partPickPatch(
-                            option,
-                            {
-                              prices: partPrices,
-                              isOverhaulPart: kind === "OVERHAUL" && row.isOverhaulPart,
-                              currentUnitPrice: row.unitPrice,
-                            },
-                            /* 🔴 위 `nameSource` 와 **같은 값**이다(그 머리말). */
-                            "customer"
-                          )
-                        )
+                        quotePartPickPatch(row, option, {
+                          prices: partPrices,
+                          isOverhaulPart: kind === "OVERHAUL" && row.isOverhaulPart,
+                        })
                       );
                       setPartPickerKey(null);
                     }}

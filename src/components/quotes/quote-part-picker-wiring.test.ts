@@ -96,11 +96,21 @@ describe("🔴 고르개는 한 벌이다 — 이 사이트에 사본을 두지 
        적힐 이름과 담을 수 있는가를 재는 자가 고르개의 것 하나여야 해서다
        (quote-intake-inventory.test.ts 의 ㉡). 🔴 막으려던 것은 그대로다 — **사본이 아니라
        묶음에서 온다.** 🔵 `nameSource` 는 넘기지 않는다(기본값 `"part"`). */
+    /* ⚠️ 2026-10-17(둘째) — `partPickPatch` 가 **빠졌다.** 「부품이 바뀌면 단가도 따라간다」가
+       들어오면서 고르개를 부르는 일이 `quote-part-pick.ts` 의 `quotePartPickPatch` 안으로
+       갔다(그 사이에 「같은 부품인가」 판단이 끼기 때문이다). 🔴 **사본이 아니라 묶음에서
+       온다**는 것은 그대로다 — 그 모듈이 같은 묶음에서 들여온다(바로 아래 단언). */
     assert.ok(
       formSource.includes(
-        'import {\n  PartSuggestionList,\n  canPickPartOption,\n  filterPartOptions,\n  partOptionDetail,\n  partPickName,\n  partPickPatch,\n} from "@dss/core/ui/inventory/part-picker";'
+        'import {\n  PartSuggestionList,\n  canPickPartOption,\n  filterPartOptions,\n  partOptionDetail,\n  partPickName,\n} from "@dss/core/ui/inventory/part-picker";'
       ),
       "고르개를 공용 묶음에서 들여오지 않는다"
+    );
+    assert.ok(
+      read("src/components/quotes/quote-part-pick.ts").includes(
+        'import { partPickPatch } from "@dss/core/ui/inventory/part-picker";'
+      ),
+      "고른 조각을 짓는 모듈이 공용 묶음에서 들여오지 않는다 — 사본을 지었을 수 있다"
     );
     assert.ok(
       formSource.includes('} from "@dss/core/ui/inventory/part-picker-rows";'),
@@ -371,13 +381,20 @@ describe("폼의 배선 — 목록이 어느 줄에 뜨는가", () => {
   });
 
   test("🔴 글자를 치면 재고 연결이 풀린다 — 화면의 글자와 통계가 같은 것을 가리키게", () => {
+    /* ⚠️ 2026-10-17(둘째) — 그 조각을 짓는 일이 `quotePartNameEditPatch` 로 갔다(같은 날
+       들어온 「상세가 사라지면 단가도 비운다」가 거기 얹히기 때문이다). 🔴 **FK 를 푼다는
+       것은 그대로다** — 그래서 **그 함수 몸통 안**에서 잰다. */
     assert.ok(
-      form.includes("updateItem(row.key, { partNameText: e.target.value, partId: null });"),
-      "이름만 고쳐도 part_id 가 남는다"
+      form.includes("updateItem(row.key, quotePartNameEditPatch(row, e.target.value));"),
+      "글자를 칠 때 줄에 붓는 조각이 달라졌다"
     );
+    const mover = flat(read("src/components/quotes/quote-part-pick.ts"));
+    const at = mover.indexOf("export function quotePartNameEditPatch(");
+    assert.notEqual(at, -1, "그 조각을 짓는 함수가 없다");
+    assert.ok(mover.slice(at, at + 400).includes("partId: null"), "이름만 고쳐도 part_id 가 남는다");
   });
 
-  test("🔴 고를 때 고르개에 건네는 것 셋 — OH 표시 · 적혀 있는 금액 · 단가 목록", () => {
+  test("🔴 고를 때 건네는 것 둘 — OH 표시 · 단가 목록", () => {
     const pick = flat(
       formSource.slice(
         formSource.indexOf("onPick={(option) => {"),
@@ -389,7 +406,20 @@ describe("폼의 배선 — 목록이 어느 줄에 뜨는가", () => {
       pick.includes('isOverhaulPart: kind === "OVERHAUL" && row.isOverhaulPart,'),
       "🔴 O/H 견적서의 OH 표시가 있는 줄일 때만 O/H 단가여야 한다"
     );
-    assert.ok(pick.includes("currentUnitPrice: row.unitPrice,"), "🔴 적혀 있는 금액을 안 건네면 덮는다");
+    /**
+     * ⚠️ 2026-10-17(둘째) — **셋째(`currentUnitPrice`)는 폼이 안 건넨다.** 「덮을까
+     * 지킬까」가 **같은 부품을 다시 골랐는가**로 갈리게 되었고(「부품이 바뀌면 단가도
+     * 따라간다」), 그 판단은 줄의 번호를 쥔 `quotePartPickPatch` 가 한다.
+     * 🔴 여기서 다시 건네면 **언제나 지키게** 되어 다른 부품으로 바꾼 줄에 앞 부품의
+     *    금액이 남는다 — 고치려던 그 증상 그대로다.
+     */
+    const mover = flat(read("src/components/quotes/quote-part-pick.ts"));
+    const at = mover.indexOf("export function quotePartPickPatch(");
+    assert.notEqual(at, -1, "고르개를 부르는 함수가 없다");
+    assert.ok(
+      mover.slice(at, at + 700).includes('currentUnitPrice: same ? row.unitPrice : "",'),
+      "🔴 적혀 있는 금액을 안 건네면 같은 부품을 다시 골랐을 때 덮는다"
+    );
   });
 
   /**
