@@ -8,7 +8,6 @@ import QuoteEditTabs from "@/components/quotes/QuoteEditTabs";
 import { requireAreaAccessForCurrentUser } from "@/lib/auth/area-guard";
 import { hasPermission } from "@/lib/auth/permission-resolver";
 import { listQuoteAttachmentSlots } from "@/lib/db/queries/attachments";
-import { getPartPickerList, getPartPickerUnitPrices } from "@/lib/db/queries/inventory";
 import {
   getQuoteApprovalHistory,
   getQuoteApprovalProgress,
@@ -20,10 +19,12 @@ import {
   listShipmentApprovalRouteSteps,
 } from "@/lib/db/queries/shipment-approval-routes";
 import { toKstDateOnly } from "@/lib/domain/date-only";
+import { toPartPickerOptions, toPartPickerPriceRows } from "@/lib/domain/inventory-gateway";
 import {
   QUOTE_APPROVAL_ROUTE_SCOPE,
   isQuoteApprovalRouteInForce,
 } from "@/lib/domain/quote-approval-rules";
+import { fetchInventoryParts } from "@/lib/server/inventory-gateway";
 import { readAllQuoteTemplateHeaders, readAllQuoteWorkSectionDefaults } from "@/lib/storage/quote-template";
 import { isValidQuoteId } from "@/lib/validation/quote-input";
 import { CABLE_QUOTE_MAX_LINES } from "@/lib/xlsx/cable-quote-template";
@@ -120,7 +121,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   // (getQuoteForEdit 의 관문). 종류를 접어 열면 다른 종류의 양식으로 문서가 나간다.
   if (!quote) notFound();
 
-  // 🔴 여덟을 **함께** 기다린다 — 서로를 쓰지 않으므로 줄줄이 기다릴 까닭이 없다.
+  // 🔴 일곱을 **함께** 기다린다 — 서로를 쓰지 않으므로 줄줄이 기다릴 까닭이 없다.
   //  · 장비 종류별 수리 작업 목록과 단가 — 견적서의 작업비가 여기서 나온다.
   //  · 양식 다섯의 작업 내역 기본값(조각 3c-1) — 종류를 바꿀 때 조사 · 통전 칸에
   //    들어가는 목록이고, **빈 묶음을 그릴 때도 이 값이 기준**이다. 🔴 DB 가 아니라
@@ -130,9 +131,11 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   //    (queries/attachments.ts 의 listQuoteAttachmentSlots) — 이 값이 그대로 화면으로
   //    넘어가므로 그 규율이 여기서 값을 한다. 이 값이 폼에 오는 것이 곧
   //    「첨부 구역을 그린다」는 뜻이다(QuoteEditForm 의 attachmentSlots 프롭).
-  //  · 부품 고르개의 두 목록(조각 3b-3 뒤쪽 절반) — 품명 칸에서 고를 부품과 그 단가.
-  //    🔴 **재고 · 소유구분 · 내부 비고가 없는 가벼운 조회 둘**이다
-  //    (queries/inventory.ts 머리말 — 무거운 형제 getPartList 는 옮겨 오지 않았다).
+  //  · 부품 고르개가 쓸 **부품 마스터** — 🔴 **2026-10-17 부터 재고 관리에서 온다**
+  //    (lib/server/inventory-gateway.ts). 같은 DB 의 A/S 부품 표(`parts`)를 곧바로 읽던
+  //    조회 둘은 이 조각에서 걷어냈다 — 그 표에는 2026-10 부터 새 부품이 들어오지 않아
+  //    재고 관리에 등록한 부품이 고르개에 **뜨지 않았다**. 새 견적서 화면과 같은 값이고,
+  //    🔴 **이미 나란히 도는 이 Promise.all 에 태운다**(왕복을 늘리지 않는다).
   //  · 🔴 **결재 탭이 그릴 것 셋**(조각 PO 결재-C) — 지금 상태(+ 그 근거인 판 번호
   //    비교), 이력, 그리고 지금 쓰이는 「견적서 승인」 결재선. 🔴 **상태 판정은
   //    여기서 하지 않는다.** getQuoteApprovalProgress 가 도메인 함수 하나
@@ -143,8 +146,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
     workScopeDefaults,
     printHeaders,
     attachmentSlots,
-    partOptions,
-    partPrices,
+    inventoryParts,
     approvalProgress,
     approvalHistory,
     currentApprovalRoute,
@@ -156,12 +158,19 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
     //    파일을 읽고**, 못 읽어도 던지지 않고 칸이 전부 null 인 머리말이 온다.
     readAllQuoteTemplateHeaders(),
     listQuoteAttachmentSlots(quote.id),
-    getPartPickerList(),
-    getPartPickerUnitPrices(),
+    fetchInventoryParts(),
     getQuoteApprovalProgress(quote.id),
     getQuoteApprovalHistory(quote.id),
     getCurrentShipmentApprovalRoute(QUOTE_APPROVAL_ROUTE_SCOPE),
   ]);
+
+  // 🔴 **못 받아 온 갈래를 그대로 폼까지 내려보낸다** — 여기서 `status === "ok"` 로 풀어
+  //    빈 배열로 만들면 화면이 「재고에 부품이 하나도 없다」고 거짓말한다(그 모듈 머리말).
+  const partOptions = toPartPickerOptions(inventoryParts);
+  // 🔵 단가는 **같은 응답**의 견적가 · O/H 견적가를 옮겨 담을 뿐이다 — 통로를 한 번 더
+  //    두드리지 않는다(toPartPickerPriceRows 머리말). 못 받아 왔으면 빈 목록이고, 그것은
+  //    고르개에 「단가를 정하지 않았다」와 같아서 **칸을 비워 둔다**(0 을 붓지 않는다).
+  const partPrices = inventoryParts.status === "ok" ? toPartPickerPriceRows(inventoryParts.value) : [];
 
   // 🔴 이력의 줄들이 가리키는 **판들**을 한 번에 읽는다. 「n/m단계」의 m 은 그
   // 줄에 적힌 판으로 세야 한다 — 관리자가 A/S 에서 절차를 바꾸면 새 판이 얹히고

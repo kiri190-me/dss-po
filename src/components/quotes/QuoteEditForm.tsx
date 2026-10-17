@@ -63,13 +63,19 @@ import {
   filterPartOptions,
   partPickPatch,
 } from "@dss/core/ui/inventory/part-picker";
-/* 조회 자체는 서버 것이지만(queries/inventory.ts) 줄의 생김새는 여기서도 알아야 한다 —
-   형 선언만 가져오므로 번들에는 아무것도 실리지 않는다. 🔴 조회 파일을 거치지 않고
-   **묶음에서 곧바로** 가져온다(그 파일 머리말의 「재수출하지 않는다」). */
+/* 줄의 생김새는 고르개 곁(서브모듈)에 있다 — 형 선언만 가져오므로 번들에는 아무것도
+   실리지 않는다. 🔴 2026-10-17 부터 이 줄들은 같은 DB 의 A/S 부품 표가 아니라 **재고
+   관리**에서 온다(페이지 둘이 부르는 lib/server/inventory-gateway.ts 의 fetchInventoryParts,
+   옮겨 담는 곳은 lib/domain/inventory-gateway.ts 의 toPartPickerRows). */
 import type {
   PartPickerPriceRow,
   PartPickerRow,
 } from "@dss/core/ui/inventory/part-picker-rows";
+/* 🔴 **「못 받아 왔다」와 「하나도 없다」를 가르는 갈래**가 그대로 여기까지 온다. 아래
+   partOptions 프롭이 그 갈래이고, 사람에게 까닭을 적는 말은 그 모듈 한 곳에 있다 —
+   A/S 와 **한 글자도 다르지 않아야** 같은 사고가 두 화면에서 같은 일로 보인다.
+   🔵 이 모듈은 react 도 DB 도 망도 물지 않는 순수 쪽이라 클라이언트에서 불러도 된다. */
+import { inventoryUnreachableMessage, type InventoryResult } from "@/lib/domain/inventory-gateway";
 /* 단가를 칸에 넣을 글자로 바꾸는 규약도 고르개 곁에 있다 — 🔴 `null` 은 빈칸이고
    `"0"` 은 "무상 부품"이라는 실제 값이다. 참고 목록 둘이 그 구분을 그대로 보인다. */
 import { isPriceUnset, toPriceFieldValue } from "@dss/core/ui/inventory/part-price-field";
@@ -199,8 +205,11 @@ import {
  *  · **부품 고르개**(품명 칸에서 재고를 찾아 고르기) → 🔴 **조각 3b-3 뒤쪽 절반에서
  *    들어왔다.** 🔴 **베끼지 않고 공용 묶음에서 가져다 쓴다**
  *    (`@dss/core/ui/inventory/part-picker` — 설계서 F-3). 그 파일은 A/S 의 수리 건
- *    상세(사용 부품 칸)도 함께 쓰는 한 벌이다. 값을 실어 보내는 조회 둘만 이 사이트가
- *    갖는다(queries/inventory.ts — 무거운 형제 `getPartList` 는 옮겨 오지 않았다).
+ *    상세(사용 부품 칸)도 함께 쓰는 한 벌이다. 값을 실어 보내는 일만 이 사이트가 한다.
+ *    ⚠️ 거기 적혀 있던 「조회 둘(queries/inventory.ts)」은 **그때의 기록**이다 —
+ *    🔴 **2026-10-17 부터 부품은 재고 관리 통로에서 온다**(페이지 둘의
+ *    `fetchInventoryParts`). 같은 DB 의 A/S 부품 표를 곧바로 읽던 그 조회 둘은 파일째
+ *    걷어냈다. 무거운 형제 `getPartList` 를 옮겨 오지 않은 것은 그대로다.
  *  · **[새 견적서] 팝업의 처음 값**(`initialKind` · `initialExcelOnly` ·
  *    `initialIntakeNumber` · `startNewQuoteLines`) → **조각 3b-2**.
  *    🔴 폼 자체는 `quote === null`(만들기)를 **그대로 다룰 수 있다** — 3b-2 는
@@ -701,27 +710,35 @@ export default function QuoteEditForm({
    */
   repairLabor: RepairLaborKindRow[];
   /**
-   * 부품 마스터 — 품명 칸에서 찾아 고르는 데 쓴다(queries/inventory.ts 의
-   * getPartPickerList).
+   * 부품 마스터 — 품명 칸에서 찾아 고르는 데 쓴다. 🔴 **2026-10-17 부터 재고 관리에서
+   * 온다**(페이지 둘의 `fetchInventoryParts`). 같은 DB 의 A/S 부품 표(`parts`)를 곧바로
+   * 읽던 조회 둘은 이 조각에서 걷어냈다 — 그 표에는 2026-10 부터 새 부품이 들어오지
+   * 않아, 재고 관리에 등록한 부품이 이 고르개에 **뜨지 않았다**.
    *
-   * 🔴 **재고 · 소유구분 · 내부 비고가 없는 가벼운 목록이다.** 그 값들은 재고
-   * 담당의 정보라 견적서 화면으로 내보내지 않는다 — 그래서 저쪽의 무거운
-   * `getPartList` 를 옮겨 오지 않고 형제 조회만 만들었다(그 함수의 머리말).
+   * 🔴 **목록이 아니라 갈래가 온다**(`InventoryResult`). 「하나도 없다」와 「못 받아 왔다」는
+   * 다른 값이고, 못 받아 온 것을 빈 목록으로 뭉개면 화면이 **「재고에 부품이 하나도 없다」**고
+   * 거짓말한다 — 사람은 그 말을 믿고 멀쩡히 있는 부품을 찾아 헤맨다. 빈 목록으로 접는
+   * 자리는 아래 `partOptionRows` 하나이고, 까닭은 부품 비용 구역이 글로 적는다.
    *
-   * 통째로 한 번 받아 **브라우저에서 거른다** — 부품 마스터가 백 줄 안쪽이라 글자마다
+   * 🔴 **재고 · 소유구분 · 내부 비고가 없는 가벼운 줄이다.** 그 값들은 재고 담당의
+   * 정보라 견적서 화면으로 내보내지 않는다 — 떼어 내는 자리는 `toPartPickerRow` 다
+   * (props 는 브라우저로 그대로 나가므로 「화면에서 안 그린다」로는 모자라다).
+   *
+   * 통째로 한 번 받아 **브라우저에서 거른다** — 부품이 수백 줄 안쪽이라 글자마다
    * 서버를 부를 까닭이 없다(공용 묶음 part-picker.tsx 의 filterPartOptions).
    *
    * 🔴 손으로 적는 길은 그대로다 — 마스터에 없는 부품 · 케이블 부속은 지금까지처럼
    * 그냥 적으면 되고, 그 줄은 part_id 없이 저장된다.
    */
-  partOptions: PartPickerRow[];
+  partOptions: InventoryResult<PartPickerRow[]>;
   /**
-   * 단가가 적혀 있는 부품들(queries/inventory.ts 의 getPartPickerUnitPrices) — 부품을
-   * 고르면 **단가 칸도 함께 채우는** 데 쓴다.
+   * 단가가 적혀 있는 부품들 — 부품을 고르면 **단가 칸도 함께 채우는** 데 쓴다.
+   * 🔴 값은 재고 관리가 부품 줄에 실어 준 **견적가 · O/H 견적가**다(페이지 둘의
+   * `toPartPickerPriceRows` — 통로를 한 번 더 두드려 받는 값이 아니다).
    *
-   * 🔴 부품 목록과 **따로** 오는 까닭: 단가가 적힌 부품은 통틀어 열몇이고, 그 열몇
-   * 줄만 실으면 된다. 고를 때마다 서버를 다녀오지 않는 것은 부품 목록과 같은
-   * 판단이다 — 늦게 온 응답이 사람이 그새 적은 금액을 덮는 일이 없다.
+   * 🔴 부품 목록과 **따로** 오는 까닭: 단가가 적힌 부품만 실으면 되고, 단가 칸이
+   * **없는** 화면은 아예 안 받는다. 고를 때마다 서버를 다녀오지 않는 것은 부품 목록과
+   * 같은 판단이다 — 늦게 온 응답이 사람이 그새 적은 금액을 덮는 일이 없다.
    *
    * 채우는 규칙(덮지 않는다 · null 은 빈칸 · O/H 는 O/H 단가로만)은 고르개에 있다
    * (공용 묶음 part-picker.tsx 의 partPickUnitPrice).
@@ -838,6 +855,14 @@ export default function QuoteEditForm({
   attachmentSlots?: QuoteAttachmentSlots | null;
 }) {
   const router = useRouter();
+
+  /**
+   * 🔴 **못 받아 왔을 때 고를 줄이 없을 뿐, 「부품이 없다」가 아니다.** 빈 목록으로 접는
+   * 자리는 여기 하나이고(후보 목록이 받는 값), 사람에게는 부품 비용 구역의 안내가
+   * **까닭을 그대로** 말한다 — 두 가지를 한 변수로 뭉개면 화면이 「재고에 부품이 하나도
+   * 없다」고 거짓말한다.
+   */
+  const partOptionRows = partOptions.status === "ok" ? partOptions.value : [];
 
   /**
    * [새 견적서] 팝업에서 고른 처음 값(initialKind · initialExcelOnly)으로 연 새 견적서의 처음
@@ -3250,6 +3275,19 @@ export default function QuoteEditForm({
           풀립니다 — 재고에 없는 {isCable ? "품목" : "부품"}은 지금처럼 그냥 적으면 됩니다.
         </p>
 
+        {/* 🔴 못 받아 왔을 때. 후보가 안 뜨는 것을 「재고에 부품이 하나도 없다」로 읽으면
+            사람은 멀쩡한 부품을 두고 다른 길을 찾는다 — 까닭을 그대로 적는다(글자는
+            lib/domain/inventory-gateway.ts 한 곳에 있고 A/S 와 같다).
+            🔵 손으로 적는 길은 그대로 열어 둔다 — 재고 관리가 꺼져 있다고 견적서를 못
+               쓰게 되면 그것이 더 큰 사고다. */}
+        {partOptions.status !== "ok" && (
+          <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            재고 관리의 부품 목록을 불러오지 못했습니다 — {inventoryUnreachableMessage(partOptions.reason)}{" "}
+            찾아 고를 수 없을 뿐, 부품이 <b>없는 것이 아니라 확인하지 못한 것</b>입니다. 품명과
+            단가는 손으로 적을 수 있습니다.
+          </p>
+        )}
+
         {kind === "OVERHAUL" && (
           <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">
             <b>OH</b> 를 체크한 줄은 양식의 <b>2) OH 부품 비용</b> 칸으로, 체크하지 않은 줄은
@@ -3349,7 +3387,7 @@ export default function QuoteEditForm({
                 />
                 {partPickerKey === row.key && !disabled && (
                   <PartSuggestionList
-                    options={filterPartOptions(partOptions, row.partNameText)}
+                    options={filterPartOptions(partOptionRows, row.partNameText)}
                     listLabel={`${lineOrdinals[index]}번째 ${isCable ? "품목" : "부품"} 후보`}
                     /**
                      * 🔴 고르면 **단가도 함께** 채운다. 규칙은 전부 고르개 쪽에 있다

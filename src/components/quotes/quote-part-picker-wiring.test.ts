@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -11,19 +11,31 @@ import {
 } from "@dss/core/ui/inventory/part-picker";
 import type { PartPickerPriceRow, PartPickerRow } from "@dss/core/ui/inventory/part-picker-rows";
 import { isPriceUnset, toPriceFieldValue } from "@dss/core/ui/inventory/part-price-field";
+/* 🔴 **갈래를 옮기는 함수를 진짜로 돌려 본다** — 이 시험의 나머지가 글자를 읽는 쪽이라,
+   「ok 는 ok 로 · 못 받아 온 것은 못 받아 온 채로」가 실제로 그런지는 불러 봐야 안다.
+   🔵 받아 온 것을 읽는 규칙 자체는 lib/domain/inventory-gateway.test.ts 가 촘촘히 본다. */
+import { inventoryUnreachableMessage, toPartPickerOptions } from "@/lib/domain/inventory-gateway";
 
 /**
  * ============================================================================
  * 부품 고르개 — 조각 3b-3 **뒤쪽 절반**, 커밋 ①
+ * (🔴 2026-10-17 **부품이 오는 곳이 바뀌었다** — 아래 ㉣)
  * ============================================================================
  * 품명 칸에 글자를 치면 부품 마스터에서 찾아 고를 수 있고, 고르면 품명과 단가가
- * 채워진다. 이 시험이 보는 것은 셋이다.
+ * 채워진다. 이 시험이 보는 것은 넷이다.
  *
  *  ㉠ 🔴 **고르개를 베끼지 않고 공용 묶음에서 가져다 쓴다**(설계서 F-3).
  *  ㉡ 🔴 **금액이 고객사로 나가는 자리의 규칙 셋** — 적혀 있으면 덮지 않는다 ·
  *     정하지 않은 것을 0 으로 채우지 않는다 · O/H 줄에 일반 단가를 대신 쓰지 않는다.
  *  ㉢ 🔴 **재고 · 소유구분 · 내부 비고가 화면으로 흘러갈 길이 없다** — 무거운 형제
- *     조회(`getPartList`)를 옮겨 오지 않았고, 가벼운 둘은 그 표를 건드리지 않는다.
+ *     조회(`getPartList`)를 부르는 줄이 이 저장소 어디에도 없다.
+ *  ㉣ 🔴 **부품은 재고 관리 통로에서 온다**(2026-10-17). 같은 DB 의 A/S 부품 표
+ *     (`parts`)를 곧바로 읽던 조회 둘(`lib/db/queries/inventory.ts`)은 파일째 걷어냈다 —
+ *     그 표에는 2026-10 부터 새 부품이 들어오지 않아, 재고 관리에 등록한 부품이 이
+ *     고르개에 **뜨지 않았다**(「고장」이 아니라 「옛것만 나옴」이라 아무도 신고하지 않는다).
+ *     🔴 그래서 이 시험이 새로 지키는 것이 하나 더 있다: **「못 받아 왔다」가 폼까지
+ *     그대로 간다.** 페이지가 미리 풀어 빈 목록으로 만들면 화면이 「재고에 부품이 하나도
+ *     없다」고 거짓말하고, 사람은 그 말을 믿고 멀쩡히 있는 부품을 찾아 헤맨다.
  *
  * ── 왜 저쪽에도 있는 시험을 여기서 또 재는가 ────────────────────────────────
  * A/S 에는 같은 함수들을 더 촘촘히 보는 시험이 있다
@@ -53,7 +65,6 @@ const flat = (source: string) => source.replace(/\s+/g, " ");
 
 const formSource = read("src/components/quotes/QuoteEditForm.tsx");
 const form = flat(formSource);
-const querySource = read("src/lib/db/queries/inventory.ts");
 const newPageSource = read("src/app/(app)/quotes/new/page.tsx");
 const editPageSource = read("src/app/(app)/quotes/[id]/page.tsx");
 
@@ -126,7 +137,7 @@ describe("🔴 고르개는 한 벌이다 — 이 사이트에 사본을 두지 
   });
 });
 
-describe("🔴 조회 둘 — 가벼운 형제만 옮겨 왔다", () => {
+describe("🔴 재고가 견적서 화면으로 흘러갈 길이 없다", () => {
   /**
    * 🔴 **부르는 꼴로 잰다**(`getPartList(` — 괄호까지). 머리말 주석들이 「그 무거운
    * 형제를 옮겨 오지 않았다」를 이름으로 적고 있어, 이름만 찾으면 그 주석에 걸린다.
@@ -144,75 +155,96 @@ describe("🔴 조회 둘 — 가벼운 형제만 옮겨 왔다", () => {
     }
   });
 
-  test("🔴 고르개 목록에 재고 · 소유구분 · 내부 비고 칸이 없다 — 다섯 칸뿐이다", () => {
-    const list = flat(
-      querySource.slice(
-        querySource.indexOf("export async function getPartPickerList("),
-        querySource.indexOf("export async function getPartPickerUnitPrices(")
-      )
+  /**
+   * 🔴 **옛 길이 남아 있으면 안 된다**(2026-10-17). 같은 DB 의 A/S 부품 표를 곧바로
+   * 읽던 조회 둘은 파일째 지웠다 — 그 표에는 새 부품이 들어오지 않으므로, 한 화면이라도
+   * 저 길로 되돌아가면 그 화면만 **조용히 옛 목록**을 보인다.
+   *
+   * 🔵 지운 것은 **읽는 코드**뿐이다 — 표(`parts` · 단가 표 둘)는 그대로 있고 A/S 가 쓴다.
+   */
+  test("🔴 옛 조회(getPartPickerList · getPartPickerUnitPrices)가 저장소에 없다", () => {
+    assert.equal(
+      existsSync(fileURLToPath(new URL("src/lib/db/queries/inventory.ts", repoUrl))),
+      false,
+      "걷어낸 조회 파일이 되살아났다"
     );
-    assert.ok(list.includes("id: parts.id,"), list);
-    for (const column of ["partName", "partSpec", "drawingNo", "kyosanPartNo"]) {
-      assert.ok(list.includes(`${column}: parts.${column},`), `${column} 칸이 없다`);
+    /* 🔴 **부르는 꼴 · 들여오는 꼴로 잰다**(위 형제 시험과 같은 까닭이다) — 걷어낸
+       까닭을 적어 둔 주석들이 이름을 그대로 쓰고 있어, 이름만 찾으면 그 설명에 걸린다. */
+    for (const gone of [
+      "getPartPickerList(",
+      "getPartPickerUnitPrices(",
+      'from "@/lib/db/queries/inventory"',
+    ]) {
+      for (const file of implementationFiles()) {
+        assert.equal(
+          read(file).includes(gone),
+          false,
+          `${file} 가 ${gone} 를 쓴다 — 부품 마스터는 재고 관리에서 온다`
+        );
+      }
     }
-    for (const forbidden of ["owner", "notes", "Balance", "quantity", "leftJoin"]) {
-      assert.equal(list.includes(forbidden), false, `${forbidden} — 이 조회가 실어 보내면 안 되는 것이다`);
-    }
-    assert.ok(list.includes("eq(parts.isDeleted, false)"), "지워진 부품을 고를 수 있다");
-    // 🔴 차례를 여기서 본다 — 진짜 DB 에서는 collation 과 JS 글자 비교가 어긋나
-    // 코드가 맞는 날에도 붉어진다(queries/part-picker.integration.test.ts 의 그 주석).
-    assert.ok(list.includes(".orderBy(parts.partName)"), "품명 차례로 돌려주지 않는다");
-  });
-
-  test("🔴 단가 목록은 **단가 표 둘만** 조인하고, 단가가 있는 부품만 돌려준다", () => {
-    const prices = flat(
-      querySource.slice(querySource.indexOf("export async function getPartPickerUnitPrices("))
-    );
-    assert.ok(prices.includes("leftJoin(partUnitPrices, eq(partUnitPrices.partId, parts.id))"));
-    assert.ok(
-      prices.includes("leftJoin(partOverhaulUnitPrices, eq(partOverhaulUnitPrices.partId, parts.id))")
-    );
-    assert.ok(
-      prices.includes(
-        "or(isNotNull(partUnitPrices.unitPrice), isNotNull(partOverhaulUnitPrices.unitPrice))"
-      ),
-      "단가가 하나도 없는 부품까지 실어 보낸다"
-    );
-    for (const forbidden of ["owner", "notes", "Balance"]) {
-      assert.equal(prices.includes(forbidden), false, `${forbidden} — 단가 목록에 와서는 안 된다`);
-    }
-  });
-
-  test("🔴 권한 검사가 조회에 없다 — 세션과 문턱은 액션·페이지 층의 일이다", () => {
-    for (const marker of ["hasPermission", "getSessionUser"]) {
-      assert.equal(
-        querySource.includes(marker),
-        false,
-        `읽는 층에 ${marker} 가 들어왔다 — 층이 섞이면 어디가 관문인지 알 수 없다`
-      );
-    }
-    assert.ok(querySource.startsWith('import "server-only";'), "클라이언트 번들로 새는 것을 막지 않는다");
   });
 });
 
-describe("페이지 둘이 목록을 실어 보낸다 — 관문 뒤에서", () => {
+describe("페이지 둘이 **재고 관리에서** 받아 실어 보낸다 — 관문 뒤에서", () => {
   for (const [label, source] of [
     ["새 견적서", newPageSource],
     ["견적서 수정", editPageSource],
   ] as const) {
-    test(`${label} 화면이 두 목록을 넘긴다`, () => {
+    test(`${label} 화면이 통로에서 받아 두 목록을 넘긴다`, () => {
       const body = flat(source);
       assert.ok(body.includes("partOptions={partOptions}"), "partOptions 를 넘기지 않는다");
       assert.ok(body.includes("partPrices={partPrices}"), "partPrices 를 넘기지 않는다");
       assert.ok(
-        body.includes("getPartPickerList(), getPartPickerUnitPrices(),"),
-        "두 조회를 함께 기다리지 않는다"
+        body.includes("const partOptions = toPartPickerOptions(inventoryParts);"),
+        "받아 온 것을 고르개 줄로 옮겨 담지 않는다"
       );
-      // 🔴 조회가 **쓰기 권한 판정 뒤**에 있어야 한다. 앞에 두면 들어올 수 없는
-      // 사람에게도 부품 마스터를 한 번 읽어 주는 셈이 된다.
+      // 🔴 **통로를 두 번 두드리지 않는다.** 단가는 같은 응답의 견적가 · O/H 견적가를
+      //    옮겨 담을 뿐이다(toPartPickerPriceRows 머리말).
       assert.ok(
-        body.indexOf('hasPermission(user, "quotes", "WRITE")') < body.indexOf("getPartPickerList()"),
-        "권한 판정보다 조회가 먼저다"
+        body.includes(
+          'const partPrices = inventoryParts.status === "ok" ? toPartPickerPriceRows(inventoryParts.value) : [];'
+        ),
+        "단가를 같은 응답에서 옮겨 담지 않는다"
+      );
+      assert.equal(
+        source.match(/fetchInventoryParts\(/g)?.length,
+        1,
+        "🔴 통로를 한 번만 두드려야 한다 — 두 번 두드리면 화면 열기가 그만큼 늦는다"
+      );
+      // 🔴 **이미 나란히 도는 Promise.all 안**이어야 한다. 차례로 기다리면 저쪽이
+      //    느린 날 견적서 화면이 열리는 데 그만큼 더 걸린다.
+      const all = body.indexOf("await Promise.all([");
+      assert.ok(all >= 0 && all < body.indexOf("fetchInventoryParts()"), "함께 기다리지 않는다");
+      assert.ok(
+        body.indexOf("fetchInventoryParts()") < body.indexOf("]);"),
+        "Promise.all 밖에서 따로 기다린다"
+      );
+      // 🔴 통로를 두드리는 것이 **쓰기 권한 판정 뒤**여야 한다. 앞에 두면 들어올 수
+      //    없는 사람 때문에도 재고 관리를 한 번씩 부르는 셈이 된다.
+      assert.ok(
+        body.indexOf('hasPermission(user, "quotes", "WRITE")') < body.indexOf("fetchInventoryParts()"),
+        "권한 판정보다 통로가 먼저다"
+      );
+    });
+
+    /**
+     * 🔴 **이 조각에서 제일 중요한 줄이다.** 페이지가 `status === "ok"` 로 미리 풀어
+     * 빈 배열을 폼에 넘기면, 재고 관리가 꺼진 날 화면이 「재고에 부품이 하나도 없다」고
+     * 거짓말한다 — 사람은 그 말을 믿고 손으로 품명을 적거나 멀쩡히 있는 부품을 찾아
+     * 헤맨다. 갈래는 **폼까지 그대로** 간다.
+     */
+    test(`🔴 ${label} 화면이 못 받아 온 갈래를 폼까지 그대로 내려보낸다`, () => {
+      const body = flat(source);
+      assert.equal(
+        /partOptions = inventoryParts\.status/.test(body),
+        false,
+        "페이지가 갈래를 미리 풀어 버린다 — 폼이 까닭을 말할 길이 사라진다"
+      );
+      assert.equal(
+        /toPartPickerOptions\(inventoryParts\.value\)/.test(body),
+        false,
+        "성공 갈래의 알맹이만 옮긴다 — 실패가 어디에도 남지 않는다"
       );
     });
   }
@@ -382,5 +414,113 @@ describe("폼의 배선 — 목록이 어느 줄에 뜨는가", () => {
     assert.ok(form.includes("품명 칸에 글자를 치면 재고의 부품을"), "안내 문장이 없다");
     assert.ok(form.includes("<b>품명 / 품명2 / 도번 / 교산 품번</b>"), "무엇으로 찾는지 안 적혀 있다");
     assert.ok(form.includes("지금처럼 그냥 적으면 됩니다"), "손으로 적는 길이 남는다는 말이 없다");
+  });
+});
+
+/**
+ * ============================================================================
+ * 🔴 못 받아 왔을 때 — 「없음」이 아니라 「확인 못 함」 (2026-10-17)
+ * ============================================================================
+ * 재고 관리가 꺼져 있거나 늦거나 토큰이 틀리면 고를 부품이 없다. 그때 화면이 아무 말도
+ * 않으면 **사람은 「재고에 부품이 하나도 없다」로 읽고 그대로 믿는다** — 멀쩡히 있는
+ * 부품을 두고. 그래서 갈래를 폼까지 그대로 나르고, 폼은 **까닭을 적는다.**
+ * 🔵 그러면서도 **손으로 적는 길은 막지 않는다** — 재고 관리가 꺼져 있다고 견적서를 못
+ *    쓰게 되면 그것이 더 큰 사고다.
+ * ============================================================================
+ */
+describe("🔴 못 받아 왔을 때 폼이 하는 말", () => {
+  test("🔴 옮기는 함수가 실패 갈래를 **그대로** 넘긴다 — 빈 목록으로 바꾸지 않는다", () => {
+    assert.deepEqual(toPartPickerOptions({ status: "unreachable", reason: "timeout" }), {
+      status: "unreachable",
+      reason: "timeout",
+    });
+    // 🔵 200 에 빈 목록이 온 것은 **사실**이다 — 이것만 ok 다(그때는 안내가 뜨지 않는다).
+    assert.deepEqual(toPartPickerOptions({ status: "ok", value: [] }), { status: "ok", value: [] });
+  });
+
+  test("폼이 갈래를 받는다 — 목록이 아니라", () => {
+    assert.ok(
+      form.includes("partOptions: InventoryResult<PartPickerRow[]>;"),
+      "🔴 프롭이 목록이면 페이지가 어딘가에서 빈 배열로 뭉갰다는 뜻이다"
+    );
+    assert.ok(
+      formSource.includes(
+        'import { inventoryUnreachableMessage, type InventoryResult } from "@/lib/domain/inventory-gateway";'
+      ),
+      "까닭을 적는 말을 제 손으로 지어낸다 — A/S 와 글자가 갈린다"
+    );
+  });
+
+  test("🔴 빈 목록으로 접는 자리가 **한 곳**뿐이다 — 후보 목록이 받는 값", () => {
+    assert.ok(
+      form.includes('const partOptionRows = partOptions.status === "ok" ? partOptions.value : [];'),
+      "후보 목록에 넘길 줄을 고르는 자리가 없다"
+    );
+    assert.equal(
+      formSource.match(/partOptions\.status === "ok" \? partOptions\.value : \[\]/g)?.length,
+      1,
+      "빈 목록으로 접는 자리가 둘이다 — 한 곳은 까닭을 잃는다"
+    );
+    assert.ok(
+      form.includes("filterPartOptions(partOptionRows, row.partNameText)"),
+      "후보 목록이 푼 줄이 아니라 갈래를 받는다"
+    );
+  });
+
+  /**
+   * 🔴 **「맞으면 되나」와 「틀리면 안 되나」를 둘 다 본다.** 안내가 있기만 하면 되는 것이
+   * 아니다 — 잘 받아 온 날에도 떠 있으면 사람은 멀쩡한 목록을 두고 통로를 의심한다.
+   * 폼은 서버 액션을 물고 있어 `npm test` 에서 렌더할 수 없으므로(이 파일 머리말),
+   * **그 안내가 실패 갈래 안에만 있는지**를 글자로 잰다.
+   */
+  test("🔴 안내는 **못 받아 온 갈래 안에만** 있다 — 잘 받아 온 날에는 그려지지 않는다", () => {
+    const guard = '{partOptions.status !== "ok" && (';
+    const guardAt = formSource.indexOf(guard);
+    assert.ok(guardAt > 0, "못 받아 온 갈래를 그리는 자리가 없다");
+
+    const noticeText = "재고 관리의 부품 목록을 불러오지 못했습니다";
+    assert.equal(
+      formSource.match(/재고 관리의 부품 목록을 불러오지 못했습니다/g)?.length,
+      1,
+      "🔴 같은 안내가 둘이다 — 한 쪽은 갈래 밖에 있어 잘 받아 온 날에도 뜬다"
+    );
+    const noticeAt = formSource.indexOf(noticeText);
+    assert.ok(noticeAt > guardAt, "안내가 갈래보다 앞에 있다 — 조건 밖이다");
+    assert.ok(
+      formSource.slice(guardAt, formSource.indexOf(")}", noticeAt)).includes(noticeText),
+      "안내가 그 갈래의 괄호 안에 있지 않다"
+    );
+  });
+
+  test("🔴 안내가 **까닭**을 적고 「없다」라고 말하지 않는다", () => {
+    assert.ok(
+      form.includes(
+        "재고 관리의 부품 목록을 불러오지 못했습니다 — {inventoryUnreachableMessage(partOptions.reason)}"
+      ),
+      "까닭(저쪽이 왜 안 됐는지)을 적지 않는다"
+    );
+    assert.ok(
+      form.includes("<b>없는 것이 아니라 확인하지 못한 것</b>입니다."),
+      "「없다」와 「모른다」를 가르는 문장이 없다"
+    );
+    // 🔵 손으로 적는 길이 그대로 열려 있다는 말까지가 이 안내의 몫이다.
+    assert.ok(form.includes("품명과 단가는 손으로 적을 수 있습니다."), "막다른 길처럼 읽힌다");
+    // 🔴 그 까닭 글자 어느 것도 「없습니다」라고 말하지 않는다(글자는 저 모듈 한 곳이다).
+    for (const reason of ["not_configured", "timeout", "unauthorized", "api_closed", "error"] as const) {
+      assert.equal(
+        /재고에 (부품이 )?없/.test(inventoryUnreachableMessage(reason)),
+        false,
+        `${reason} 의 말이 「재고에 없다」로 읽힌다`
+      );
+    }
+  });
+
+  test("🔴 안내가 **부품 비용 구역 안**에 있다 — 고를 칸 곁이 아니면 눈에 안 닿는다", () => {
+    const sectionAt = formSource.indexOf('{isCable ? "품목" : "부품 비용"}');
+    assert.ok(sectionAt > 0, "부품 비용 구역의 머리를 못 찾았다");
+    assert.ok(
+      sectionAt < formSource.indexOf('{partOptions.status !== "ok" && ('),
+      "안내가 부품 비용 구역보다 앞에 있다"
+    );
   });
 });

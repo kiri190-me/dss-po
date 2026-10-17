@@ -56,14 +56,19 @@ src/lib/db/mutations/quotes.integration.test.ts
 #    다른 쪽 자료를 치운다.
 src/lib/db/queries/quote-intake-lookup.integration.test.ts
 
-# ── 조각 3b-3 뒤쪽 절반 · 커밋 ① — 부품 고르개의 두 목록 ────────────────
-# 🔴 **A/S 에는 이 시험이 없다**(새로 적었다). 두 조회의 요점이 「어떤 칸을 싣지
-#    않는가」와 「null 과 "0" 을 가르는가」인데, 그 둘은 글자를 읽어서는 절반만 보인다 —
-#    SQL 이 실제로 무엇을 돌려주는지가 답이다.
-# 🔴 **격리 이름을 겹치지 않게 두었다**: 부품명 접두사 `po-test-picker-`
-#    (저쪽은 `test-quote-lookup-`, 위 이웃은 `po-test-lookup-`). 고객사 · 제품 ·
-#    수리 건은 만들지 않는다 — 이 두 조회는 parts 와 단가 표 둘만 읽는다.
-src/lib/db/queries/part-picker.integration.test.ts
+# ── 조각 3b-3 뒤쪽 절반 · 커밋 ① — 부품 고르개의 두 목록 (2026-10-17 걷어냄) ─
+# 여기 있던 `src/lib/db/queries/part-picker.integration.test.ts` 를 **파일째 지웠다.**
+# 재던 것이 `lib/db/queries/inventory.ts` 의 조회 둘(getPartPickerList ·
+# getPartPickerUnitPrices)뿐이었고, 그 파일이 같은 날 함께 사라졌기 때문이다 —
+# 🔴 부품 고르개는 이제 같은 DB 의 A/S 부품 표(`parts`)가 아니라 **재고 관리 통로**에서
+#    목록과 단가를 받는다(lib/server/inventory-gateway.ts 의 fetchInventoryParts).
+#    그 표에는 2026-10 부터 새 부품이 들어오지 않아, 재고 관리에 등록한 부품이 견적서
+#    고르개에 **뜨지 않는** 결함이 있었다.
+# 🔵 **DB 표는 그대로 둔다** — 지운 것은 읽는 코드뿐이다. `parts` 와 단가 표 둘에는
+#    과거 기록이 들어 있고 A/S 쪽에서도 쓴다.
+# 🔴 그래서 **이 조각은 db 목록에 아무것도 더하지 않는다.** 새 길은 DB 를 타지 않는다 —
+#    받아 온 것을 읽는 규칙은 unit.txt 의 lib/domain/inventory-gateway.test.ts 가 보고,
+#    페이지 둘의 배선은 components/quotes/quote-part-picker-wiring.test.ts 가 본다.
 
 # ── 조각 3d-3c — 첨부를 지우고 되살리는 서버 쪽(A/S 에서 옮겨 옴) ────────
 # 저쪽 `mutations/quote-attachments.integration.test.ts`(952줄) 가운데 **견적서 갈래

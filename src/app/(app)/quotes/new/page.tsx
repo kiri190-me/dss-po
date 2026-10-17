@@ -4,10 +4,11 @@ import { redirect } from "next/navigation";
 import QuoteEditForm from "@/components/quotes/QuoteEditForm";
 import { requireAreaAccessForCurrentUser } from "@/lib/auth/area-guard";
 import { hasPermission } from "@/lib/auth/permission-resolver";
-import { getPartPickerList, getPartPickerUnitPrices } from "@/lib/db/queries/inventory";
 import { listRepairLabor } from "@/lib/db/queries/repair-labor";
 import { toKstDateOnly } from "@/lib/domain/date-only";
+import { toPartPickerOptions, toPartPickerPriceRows } from "@/lib/domain/inventory-gateway";
 import { parseNewQuoteStart, type SearchParamsInput } from "@/lib/domain/quote-new-link";
+import { fetchInventoryParts } from "@/lib/server/inventory-gateway";
 import { readAllQuoteTemplateHeaders, readAllQuoteWorkSectionDefaults } from "@/lib/storage/quote-template";
 import { CABLE_QUOTE_MAX_LINES } from "@/lib/xlsx/cable-quote-template";
 
@@ -90,19 +91,31 @@ export default async function NewQuotePage({
   //  · 양식 다섯의 작업 내역 기본값(조각 3c-1) — 종류를 바꿀 때 조사 · 통전 칸에
   //    들어가는 목록이다. 🔴 **DB 가 아니라 양식 `.xlsx` 파일을 읽는다**
   //    (storage/quote-template.ts). 못 읽어도 던지지 않고 빈 목록이다.
-  //  · 부품 고르개의 두 목록(조각 3b-3 뒤쪽 절반) — 품명 칸에서 고를 부품과 그 단가.
-  //    🔴 **재고 · 소유구분 · 내부 비고가 없는 가벼운 조회 둘**이다
-  //    (queries/inventory.ts 머리말 — 무거운 형제 getPartList 는 옮겨 오지 않았다).
-  const [repairLabor, workScopeDefaults, printHeaders, partOptions, partPrices] = await Promise.all([
+  //  · 부품 고르개가 쓸 **부품 마스터** — 🔴 **2026-10-17 부터 재고 관리에서 온다**
+  //    (lib/server/inventory-gateway.ts). 같은 DB 의 A/S 부품 표(`parts`)를 곧바로 읽던
+  //    조회 둘(getPartPickerList · getPartPickerUnitPrices)은 이 조각에서 걷어냈다 —
+  //    그 표에는 2026-10 부터 새 부품이 들어오지 않아, 재고 관리에 등록한 부품이 이
+  //    고르개에 **뜨지 않았다**(domain/inventory-gateway.ts 머리말의 그 결함).
+  //    🔴 **이미 나란히 도는 Promise.all 에 태운다** — 줄줄이 기다리면 저쪽이 느린 날
+  //    견적서 화면이 열리는 데 그만큼 더 걸린다.
+  const [repairLabor, workScopeDefaults, printHeaders, inventoryParts] = await Promise.all([
     listRepairLabor(),
     readAllQuoteWorkSectionDefaults(),
     // 🔴 양식 넷의 회사 정보 · 기본 문구 · 계좌 (조각 3f, 2026-09-28) — 쓰는 곳은 폼의
     //    [미리보기 · PDF] 한 줄(activePrintHeader)이다. 🔴 **DB 가 아니라 양식 `.xlsx`
     //    파일을 읽고**, 못 읽어도 던지지 않고 칸이 전부 null 인 머리말이 온다.
     readAllQuoteTemplateHeaders(),
-    getPartPickerList(),
-    getPartPickerUnitPrices(),
+    fetchInventoryParts(),
   ]);
+
+  // 🔴 **못 받아 온 갈래를 그대로 폼까지 내려보낸다** — 여기서 `status === "ok"` 로 풀어
+  //    빈 배열로 만들면 화면이 「재고에 부품이 하나도 없다」고 거짓말하고, 사람은 그 말을
+  //    믿고 손으로 품명을 적거나 멀쩡히 있는 부품을 찾아 헤맨다(그 모듈 머리말).
+  const partOptions = toPartPickerOptions(inventoryParts);
+  // 🔵 단가는 **같은 응답**의 견적가 · O/H 견적가를 옮겨 담을 뿐이다 — 통로를 한 번 더
+  //    두드리지 않는다(toPartPickerPriceRows 머리말). 못 받아 왔으면 빈 목록이고, 그것은
+  //    고르개에 「단가를 정하지 않았다」와 같아서 **칸을 비워 둔다**(0 을 붓지 않는다).
+  const partPrices = inventoryParts.status === "ok" ? toPartPickerPriceRows(inventoryParts.value) : [];
 
   /*
    * [새 견적서] 팝업이 고른 두 값(조각 3e-3). 🔴 **정해진 글자만 받는다** — 그 밖은

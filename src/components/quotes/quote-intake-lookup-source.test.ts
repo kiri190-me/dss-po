@@ -424,11 +424,16 @@ describe("🔴 뒤쪽 절반이 들어왔다 · 조각 4·5 의 것은 아직 �
       formSource.includes('} from "@dss/core/ui/inventory/part-picker";'),
       "고르개를 공용 묶음에서 들여오지 않는다 — 사본을 만들면 F-3 의 뜻이 사라진다"
     );
+    /* ⚠️ 2026-10-17 — **부품이 오는 곳이 바뀌어** 두 표지의 글자가 달라졌다. 재고 관리
+       통로에서 받으므로 프롭이 목록이 아니라 **갈래**(`InventoryResult`)이고, 후보
+       목록은 그 갈래를 푼 줄(`partOptionRows`)을 받는다 — 🔴 **막으려던 것은 그대로다**
+       (고르개가 폼에 붙어 있는가 · 공용 묶음에서 왔는가). 그 갈래를 폼까지 그대로
+       나르는 까닭은 quote-part-picker-wiring.test.ts 가 따로 지킨다. */
     for (const marker of [
       "const [partPickerKey, setPartPickerKey] = useState<string | null>(null);",
       "<PartSuggestionList ",
-      "options={filterPartOptions(partOptions, row.partNameText)}",
-      "partOptions: PartPickerRow[];",
+      "options={filterPartOptions(partOptionRows, row.partNameText)}",
+      "partOptions: InventoryResult<PartPickerRow[]>;",
       "partPrices: PartPickerPriceRow[];",
     ]) {
       assert.ok(form.includes(marker), `${marker} 가 없다 — 고르개가 폼에 붙지 않았다`);
