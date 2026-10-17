@@ -22,8 +22,9 @@ import { toQuoteUsedParts } from "@/lib/domain/quote-intake-parts";
  * 붙잡는 것 다섯:
  *  ㉠ **같은 DB 의 A/S 제 표를 보지 않는다** — 옛 조회도 소유구분 이름표도 남지 않았다.
  *  ㉡ **적힐 이름과 담을 수 있는가를 재는 자가 고르개의 것 하나다.**
- *     🔵 이 사이트는 `nameSource` 를 넘기지 않는다(기본값 `"part"` — 우리 품명). A/S 는
- *        `"customer"` 를 넘기는데 그것은 저쪽 견적서의 결정이고 이 사이트에는 아직 없다.
+ *     ⚠️ 2026-10-17 — 이 사이트도 `"customer"`(고객사 품명)를 넘긴다. 견적서는 고객사로
+ *        나가는 서류라는 그 까닭이고, 자를 한 벌로 둔 덕에 고친 자리가 화면 한 곳이었다.
+ *        그 결정 자체의 시험은 quote-part-pick.test.ts 의 ① 구역이다.
  *  ㉢ 🔴 **「못 받아 왔다」를 「없다」로 그리지 않는다** — 구역을 통째로 감추는 것도 그 말이다.
  *  ㉣ 담긴 줄의 **열쇠는 순수 쪽이 지은 것**이고, FK 칸(`partId`)에는 재고 번호를 넣지 않는다.
  *  ㉤ 서버 모듈이 **나란히 부르고**, 상단 정보는 재고 관리와 **무관하게** 채워진다.
@@ -77,8 +78,24 @@ describe("㉠ 🔴 같은 DB 의 A/S 제 표를 보지 않는다", () => {
 
 describe("㉡ 🔴 적힐 이름 · 담을 수 있는가 — 자는 고르개의 것 하나다", () => {
   test("폼이 고르개의 두 함수를 그대로 쓴다 — 판정을 손으로 다시 적지 않는다", () => {
-    assert.ok(form.includes("canPickPartOption(option)"), "담기 판정을 고르개 함수로 하지 않는다");
-    assert.ok(form.includes("partPickName(option)"), "적힐 이름을 고르개 함수로 짓지 않는다");
+    /* ⚠️ 2026-10-17 — 자에 **고객사 품명**이 들어갔다(쓰는 분 지적 ①). 견적서에 적히는
+       이름이 고객사 품명이 되었으므로 불러온 줄도 같은 자로 잰다. 🔴 막으려던 것은
+       그대로다 — **판정을 폼이 손으로 다시 적지 않는다.** 그 결정의 시험은
+       quote-part-pick.test.ts 의 ① 구역이다. */
+    /* 🔴 **판정하는 자리 안에서 잰다** — 파일 전체에서 글자를 찾으면 그 까닭을 적어 둔
+       **주석**에 걸린다(2026-10-17 에 실제로 그렇게 통과했다). */
+    const gate = form.slice(
+      indexOrFail(form, "function canAddQuoteIntakeLine("),
+      indexOrFail(form, "function canAddQuoteIntakeLine(") + 200
+    );
+    assert.ok(gate.includes('canPickPartOption(option, "customer")'), "담기 판정을 고르개 함수로 하지 않는다");
+    assert.ok(
+      form.includes('partPickName(option, "customer")'),
+      "적힐 이름을 고르개 함수로 짓지 않는다"
+    );
+    // 🔴 옛 자가 한 자리도 남아 있으면 안 된다 — 남은 그 줄만 다른 이름을 쓴다.
+    assert.ok(!form.includes("canPickPartOption(option)"), "아직 고객사 품명을 안 보는 판정이 있다");
+    assert.ok(!form.includes("partPickName(option)"), "아직 우리 품명으로 짓는 자리가 있다");
     // 🔴 자가 두 벌이 되는 길 — 이름 칸을 폼에서 직접 재고 있으면 언젠가 갈린다.
     assert.ok(!form.includes("customerPartName ==="), "폼이 고객사 품명을 제 손으로 잰다");
     assert.ok(!form.includes("partFieldValue("), "폼이 「값이 있는가」를 제 손으로 잰다");
@@ -137,13 +154,13 @@ describe("㉡ 🔴 적힐 이름 · 담을 수 있는가 — 자는 고르개의
       return found;
     };
 
-    // 🔵 이 사이트의 자는 기본값(`"part"`)이다 — 줄에 적히는 이름이 **우리 품명**이다.
-    assert.equal(canPickPartOption(option("11")), true);
-    assert.equal(partPickName(option("11")), "우리품명-A", "견적서에 다른 이름이 적힌다");
-    // 🔴 고객사 품명이 비어도 **이 사이트에서는 담을 수 있다** — 자를 넘기는 자리가 화면
-    //    한 곳이라, 저쪽처럼 `"customer"` 로 바꾸는 날 이 줄이 먼저 붉어진다.
-    assert.equal(canPickPartOption(option("12")), true);
+    // 🔴 2026-10-17 부터 이 사이트의 자도 `"customer"` 다 — 줄에 적히는 이름이 **고객사 품명**이다.
+    assert.equal(canPickPartOption(option("11"), "customer"), true);
+    assert.equal(partPickName(option("11"), "customer"), "고객사품명-A", "견적서에 다른 이름이 적힌다");
+    // 🔴 고객사 품명이 **빈 줄은 담을 수 없다.** 🔵 그 밑줄은 「틀리면 안 되나」다 — 자를
+    //    안 넘기던 때에는 그 줄도 통과했고, 그것이 쓰는 분이 본 화면이다.
     assert.equal(canPickPartOption(option("12"), "customer"), false, "고르개의 자가 고객사 품명을 안 본다");
+    assert.equal(canPickPartOption(option("12")), true);
     // 🔵 못 담는 줄도 **목록에는 남아 있다** — 둘 다 왔다.
     assert.equal(rows.length, 2);
   });
@@ -209,7 +226,11 @@ describe("㉣ 🔴 담은 줄의 열쇠와 FK 칸", () => {
     for (const builder of ["function usedPartToItem(", "function ohTemplatePartToItem("]) {
       const at = indexOrFail(form, builder);
       const body = form.slice(at, at + 800);
-      assert.ok(body.includes("partNameText: partPickName(option),"), builder);
+      /* ⚠️ 2026-10-17 — 같은 값을 **한 번만 셈해** 품명 칸과 이름 기억에 둘 다 쓴다
+         (quote-part-pick.ts 의 `isPickedPartNameKept` — 둘이 다르면 담자마자 상세가
+         사라진다). 🔴 막으려던 것은 그대로다 — **폼이 품명을 제 손으로 잇지 않는다.** */
+      assert.ok(body.includes('const partNameText = partPickName(option, "customer");'), builder);
+      assert.ok(body.includes("partNameText,"), builder);
     }
   });
 

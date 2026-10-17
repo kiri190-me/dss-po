@@ -129,14 +129,28 @@ describe("① 🔴 고르개로 고른 줄이 저장된다 — 2026-10-17 에 �
   });
 
   test("🔴 폼이 고르개의 조각을 **그대로 붓지 않는다** — 옮기는 자리가 한 곳이다", () => {
-    const moverAt = form.indexOf("function pickedPartPatch(");
+    /**
+     * ⚠️ 2026-10-17 — 옮기는 함수가 **폼에서 모듈로 갔다**
+     * (`components/quotes/quote-part-pick.ts`). 같은 값을 쓰는 규칙들(상세를 그릴지 ·
+     * 이름을 고쳤는지 · 다시 열 때 기억을 되살리기)이 한 곳에 모여야 갈리지 않는다.
+     * 🔴 **막으려던 것은 그대로다** — FK 칸을 비우고 번호를 제 칸으로 옮긴다. 자리가
+     *    바뀌었으니 **그 자리에서** 잰다.
+     */
+    const mover = flat(read("src/components/quotes/quote-part-pick.ts"));
+    const moverAt = mover.indexOf("export function pickedPartPatch(");
     assert.notEqual(moverAt, -1, "옮기는 함수가 없다 — 고르개의 조각이 어딘가에서 그대로 부어진다");
-    const mover = form.slice(moverAt, moverAt + 400);
-    assert.ok(mover.includes("partId: null,"), "FK 칸을 비우지 않는다 — 저장이 다시 막힌다");
-    assert.ok(mover.includes("inventoryPartNo"), "번호를 옮겨 담지 않는다");
+    const body = mover.slice(moverAt, moverAt + 400);
+    assert.ok(body.includes("partId: null,"), "FK 칸을 비우지 않는다 — 저장이 다시 막힌다");
+    assert.ok(body.includes("inventoryPartNo"), "번호를 옮겨 담지 않는다");
+    // 🔴 폼은 그 함수를 **들여와서** 쓴다 — 제 손으로 다시 적으면 두 벌이 된다.
+    assert.ok(
+      formSource.includes('} from "@/components/quotes/quote-part-pick";'),
+      "폼이 그 모듈에서 들여오지 않는다"
+    );
+    assert.ok(!form.includes("function pickedPartPatch("), "폼에 사본이 남아 있다");
 
     const pick = sliceBetween(form, "onPick={(option) => {", "setPartPickerKey(null); }}");
-    assert.ok(pick.includes("pickedPartPatch( partPickPatch(option, {"), "고른 조각이 그대로 줄에 부어진다");
+    assert.ok(pick.includes("pickedPartPatch( partPickPatch("), "고른 조각이 그대로 줄에 부어진다");
     assert.ok(!pick.includes("partId: option.id"), "🔴 고른 줄의 번호가 FK 칸으로 간다");
   });
 

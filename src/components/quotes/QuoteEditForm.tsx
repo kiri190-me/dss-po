@@ -61,9 +61,11 @@ import OverhaulBadge from "@/components/common/OverhaulBadge";
 /* 🔴 **적힐 이름을 정하고 · 담을 수 있는지 가르는 자는 고르개의 것 하나다**(2026-10-17).
    불러온 줄(출고 부품 · O/H 템플릿)에 그 판정을 다시 적으면 자가 두 벌이 되어, 한쪽은
    담을 수 있다고 그리고 다른 쪽은 빈 이름을 넣는다.
-   🔵 **이 사이트는 `nameSource` 를 넘기지 않는다**(기본값 `"part"` — 우리 품명). A/S 는
-      2026-10-16 부터 `"customer"` 를 넘기는데, 그것은 저쪽 견적서가 내린 결정이고 이
-      사이트에는 아직 그 결정이 없다(고르개 자체는 한 벌이라 넘기기만 하면 된다). */
+   🔴 **이 사이트도 `nameSource="customer"` 를 넘긴다**(2026-10-17 쓰는 분 지적 ①) —
+      견적서는 **고객사로 나가는 서류**라 거기 적히는 이름은 고객사가 부르는 이름이어야
+      한다(A/S 가 2026-10-16 에 같은 까닭으로 먼저 정했다). 🔴 **넘기는 자리가 셋이다** —
+      고르개 · 고른 값을 붓는 자리 · 불러온 줄 둘. 한 곳만 넘기면 「목록에 보인 이름」과
+      「줄에 적히는 이름」이 어긋난다. */
 import {
   PartSuggestionList,
   canPickPartOption,
@@ -84,7 +86,20 @@ import type {
    partOptions 프롭이 그 갈래이고, 사람에게 까닭을 적는 말은 그 모듈 한 곳에 있다 —
    A/S 와 **한 글자도 다르지 않아야** 같은 사고가 두 화면에서 같은 일로 보인다.
    🔵 이 모듈은 react 도 DB 도 망도 물지 않는 순수 쪽이라 클라이언트에서 불러도 된다. */
-import { inventoryUnreachableMessage, type InventoryResult } from "@/lib/domain/inventory-gateway";
+import {
+  CUSTOMER_NAME_EMPTY_NOTICE,
+  inventoryUnreachableMessage,
+  type InventoryResult,
+} from "@/lib/domain/inventory-gateway";
+/* 🔴 **줄이 고른 부품을 기억한다**(2026-10-17 쓰는 분 지적 ②) — 규칙과 까닭은 전부 그
+   모듈의 머리말에 있다. 앞 조각이 폼 안에 두었던 `pickedPartPatch` 도 거기로 옮겼다. */
+import {
+  QUOTE_PICKED_PART_PREFIX,
+  pickedPartPatch,
+  quotePickedPartDetail,
+  quotePickedPartOf,
+  quoteRestoredPickedPartName,
+} from "@/components/quotes/quote-part-pick";
 /* 🔴 불러온 두 목록도 2026-10-17 부터 **재고 관리**에서 온다(2026-10 에 옮겨갔다) —
    받아 오는 길은 lib/server/quote-intake-lookup.ts, 읽는 규칙은 아래 순수 모듈에 있다. */
 import {
@@ -377,6 +392,24 @@ type ItemRow = {
    * ==========================================================================
    */
   inventoryPartNo: string | null;
+  /**
+   * ==========================================================================
+   * 🔴 고른(담은 · 다시 연) **그때 이 줄에 적은 이름** (2026-10-17)
+   * ==========================================================================
+   * 바로 위 번호가 「어느 부품인가」를 쥐고, 이 값은 **상세를 아직 그려도 되는가**만
+   * 가른다. 적힌 품명이 이 글자와 달라졌으면 사람이 손으로 고친 것이고, 그때 상세를
+   * 그대로 두면 **딴 부품의 품번**을 그 줄의 것으로 읽게 된다(quote-part-pick.ts 의
+   * `quotePickedPartOf`).
+   *
+   * 🔴 **저장되지 않는다 — 화면에만 사는 값이다.** 적어 두면 ㉠ 고객사로 나가는 표에
+   *    우리 글자가 한 칸 더 쌓이고, ㉡ 품명을 손보고 저장한 줄이 다시 열자마자 두 글자가
+   *    어긋나 상세가 안 보인다. 다시 열 때는 **저장된 품명 그대로**를 이 값으로 삼는다
+   *    (`quoteRestoredPickedPartName`).
+   * 🔵 **품명을 고쳐도 지우지 않는다** — 번호와 같다. 지우는 것은 아무 이득이 없고,
+   *    원래 글자로 되돌리면 상세가 다시 보이는 쪽이 사람이 보기에 자연스럽다.
+   * ==========================================================================
+   */
+  pickedPartNameText: string | null;
   /** `2) OH 부품 비용` 칸으로 갈 줄인가. OH 견적서에만 그 칸이 있다. */
   isOverhaulPart: boolean;
   /**
@@ -412,6 +445,7 @@ function emptyItem(): ItemRow {
     key: generateClientUuid(),
     partId: null,
     inventoryPartNo: null,
+    pickedPartNameText: null,
     isOverhaulPart: false,
     lineKind: "ITEM",
     partNameText: "",
@@ -433,6 +467,7 @@ function emptyNoteItem(): ItemRow {
     partId: null,
     // 설명 줄에는 부품이 없다 — DB 의 CHECK 도 같은 말을 한다.
     inventoryPartNo: null,
+    pickedPartNameText: null,
     isOverhaulPart: false,
     lineKind: "NOTE",
     partNameText: "",
@@ -478,18 +513,21 @@ function lineOrdinalsOf(rows: readonly ItemRow[]): number[] {
  * ============================================================================
  * 🔴 불러온 줄을 **담을 수 있는가** — 자는 고르개의 것 하나다 (2026-10-17)
  * ============================================================================
- * 견적서 줄에 적히는 이름과 「그 이름이 없는 줄은 고를 수 없다」는 판정은 고르개가
- * 쥐고 있다(`partPickName` · `canPickPartOption`). 불러온 줄도 **같은 잣대**로 가른다 —
- * 두 벌로 적으면 언젠가 갈려, 한쪽은 담을 수 있다고 그리고 다른 쪽은 빈 이름을 넣는다.
+ * 견적서 줄에 적히는 이름은 **고객사 품명**이고(2026-10-17 지적 ①), 그 이름이 없는
+ * 부품은 고르개에서도 눌리지 않는다(`canPickPartOption(option, "customer")`). 불러온
+ * 줄도 **같은 잣대**로 가른다 — 두 벌로 적으면 언젠가 갈려, 한쪽은 담을 수 있다고
+ * 그리고 다른 쪽은 빈 이름을 넣는다.
  * 🔵 **목록에서 감추지는 않는다** — 나간 부품이 목록에서 사라지면 사람은 청구를
  * 빠뜨린다(그 까닭은 lib/domain/quote-intake-parts.ts 머리말).
  *
  * `option` 이 `null` 인 줄은 애초에 잴 것이 없다 — 재고 마스터에서 못 찾았거나(출고 줄)
- * 재고에 안 이어진 줄(템플릿)이고, 적을 이름도 붙일 금액도 없다.
+ * 재고에 안 이어진 줄(템플릿)이고, 적을 이름도 붙일 금액도 없다. 🔴 그래서 막힌 까닭을
+ * 적을 때 **그 둘을 갈라 적는다** — 「부품 자체가 거기 없다」와 「고객사 품명이 비어
+ * 있다」는 사람이 할 일이 다르다(아래 두 목록).
  * ============================================================================
  */
 function canAddQuoteIntakeLine(option: PartPickerRow | null): option is PartPickerRow {
-  return option !== null && canPickPartOption(option);
+  return option !== null && canPickPartOption(option, "customer");
 }
 
 /**
@@ -505,15 +543,21 @@ function canAddQuoteIntakeLine(option: PartPickerRow | null): option is PartPick
  *    같은 DB 의 `parts.id` 가 아니라서 그 FK 칸에 넣으면 저장이 거절된다
  *    (validation/quote-input.ts 가 UUID 를 본다). 적어 둘 자리는
  *    `quote_items.inventory_part_no` 이고, 줄이 들고 다니는 칸이 `inventoryPartNo` 다.
+ * 🔴 **적히는 이름은 고객사 품명이다**(2026-10-17 지적 ①) — 고른 줄과 **같은 자**로 짓는다.
+ * 🔴 `pickedPartNameText` 는 **줄에 실제로 적히는 글자와 같아야** 한다 — 다르면 담자마자
+ *    상세가 사라진다(quote-part-pick.ts 의 `isPickedPartNameKept`). 그래서 같은 값을 한 번만
+ *    셈해 둘 다에 쓴다.
  */
 function usedPartToItem(part: QuoteUsedPart, option: PartPickerRow): ItemRow {
+  const partNameText = partPickName(option, "customer");
   return {
     key: generateClientUuid(),
     partId: null,
     inventoryPartNo: option.id,
+    pickedPartNameText: partNameText,
     isOverhaulPart: false,
     lineKind: "ITEM",
-    partNameText: partPickName(option),
+    partNameText,
     // 규격 칸은 케이블 견적서에만 있다. 여기(출고 부품)는 내자 · OH 의 길이다.
     partSpecText: "",
     quantity: String(part.quantity),
@@ -536,14 +580,16 @@ function usedPartToItem(part: QuoteUsedPart, option: PartPickerRow): ItemRow {
  * 아래 「수리 작업 목록」에서 고른 것들로 따로 셈한다(2026-08-31 사용자 정정).
  */
 function ohTemplatePartToItem(part: QuoteOhTemplatePart, option: PartPickerRow): ItemRow {
+  const partNameText = partPickName(option, "customer");
   return {
     key: generateClientUuid(),
-    // 🔴 위 출고 줄과 같은 까닭으로 FK 는 비우고, 번호는 제 칸에 담는다.
+    // 🔴 위 출고 줄과 같은 까닭으로 FK 는 비우고, 번호와 이름 기억은 제 칸에 담는다.
     partId: null,
     inventoryPartNo: option.id,
+    pickedPartNameText: partNameText,
     isOverhaulPart: true,
     lineKind: "ITEM",
-    partNameText: partPickName(option),
+    partNameText,
     partSpecText: "",
     quantity: String(part.quantity),
     unitPrice: toPriceFieldValue(part.overhaulUnitPrice),
@@ -552,31 +598,12 @@ function ohTemplatePartToItem(part: QuoteOhTemplatePart, option: PartPickerRow):
 }
 
 /**
- * ============================================================================
- * 🔴 고르개가 준 조각을 **줄의 제 칸으로 옮긴다** (2026-10-17)
- * ============================================================================
- * 공용 고르개는 고른 줄에 부을 조각을 `{ partNameText, partId: option.id, unitPrice? }`
- * 로 돌려준다. 그런데 이 사이트의 `option.id` 는 2026-10-17 부터 **재고 관리의 부품
- * 번호**(`"1"` · `"2"` 같은 정수 글자)다 — 같은 DB 의 `parts.id`(UUID)가 아니다.
- *
- * 🔴 **그대로 부으면 저장이 통째로 막힌다.** 실제로 그랬다 — 고르개로 고른 줄이 하나라도
- *    있는 견적서는 저장할 때 「N번째 부품의 재고 연결을 확인할 수 없습니다」로 거절됐다
- *    (validation/quote-input.ts 의 `isValidQuoteId` 는 UUID 만 통과시킨다).
- * 🔴 **고르개를 고치지 않는다.** 그 조각은 별도 저장소(vendor/dss-core)이고 A/S 도 같이
- *    쓴다. 「`partId` 는 고른 줄의 id 일 뿐, 어디에 저장할지는 폼이 정한다」가 그쪽의
- *    규약이고(part-picker.tsx 의 `partPickPatch` 머리말), 이 함수가 이 사이트의 답이다.
- * 🔵 **`unitPrice` 키는 있을 때만 따라간다** — 고르개의 규약 그대로다. 없는 키를 지어
- *    넣으면(`unitPrice: undefined`) 사람이 적어 둔 금액이 지워진다.
- * ============================================================================
+ * 🔴 고르개가 준 조각을 **줄의 제 칸으로 옮기는** 일(`pickedPartPatch`)은 2026-10-17 에
+ *    `components/quotes/quote-part-pick.ts` 로 옮겼다 — 같은 값을 쓰는 규칙들(상세를 그릴지 ·
+ *    이름을 고쳤는지 · 다시 열 때 기억을 되살리기)이 그 모듈에 모여 있어야 갈리지 않는다.
+ *    🔴 **그 함수가 하는 일은 한 글자도 안 바뀌었다** — 재고 관리의 부품 번호를 FK 칸이
+ *    아니라 제 칸으로 옮긴다. 까닭은 그 모듈 머리말에 있다(2026-10-17 에 저장이 막혔던 그 일).
  */
-function pickedPartPatch(patch: {
-  partNameText: string;
-  partId: string;
-  unitPrice?: string;
-}): Partial<ItemRow> {
-  const { partId: inventoryPartNo, ...rest } = patch;
-  return { ...rest, partId: null, inventoryPartNo };
-}
 
 /**
  * 불러오기 결과 한 줄 — 🔴 **「못 받아 왔다」를 「없다」로 적지 않는다**.
@@ -1039,6 +1066,12 @@ export default function QuoteEditForm({
            * 🔵 **0 으로 접지 않는다** — `null` 은 「집어 넣은 적 없음」이고 0번 부품은 없다.
            */
           inventoryPartNo: item.inventoryPartNo === null ? null : String(item.inventoryPartNo),
+          /**
+           * 🔴 **이름 기억도 함께 되살린다**(2026-10-17). 안 되살리면 저장한 견적서를 다시
+           * 열 때마다 상세가 **안 보인다** — 쓰는 분이 짚은 그 증상이 그대로 남는다.
+           * 🔵 되살리는 값이 **저장된 품명 그대로**인 까닭은 그 함수의 머리말에 있다.
+           */
+          pickedPartNameText: quoteRestoredPickedPartName(item),
           // 저장된 줄에는 작업비를 싣지 않는다 — 그 값은 부품 마스터의 지금 값이고,
           // 이미 정해진 작업비를 다시 제안할 이유가 없다.
           isOverhaulPart: item.isOverhaulPart,
@@ -3234,7 +3267,8 @@ export default function QuoteEditForm({
                 단가는 재고 관리에 적어 둔 <b>O/H 견적가</b>가 따라옵니다 — 출고된 부품이 일반
                 견적가를 쓰는 것과 다릅니다. 담은 줄은 견적서의 <b>2) OH 부품 비용</b> 칸으로
                 갑니다. 재고 마스터에 이어져 있지 않은 줄은 담을 수 없습니다 — 재고 관리에서
-                이어 둔 뒤 [불러오기]를 다시 눌러 주세요.
+                이어 둔 뒤 [불러오기]를 다시 눌러 주세요. 줄에 적히는 이름은{" "}
+                <b>고객사 품명</b>이라, 그 이름이 없는 부품도 담을 수 없습니다.
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
@@ -3260,14 +3294,20 @@ export default function QuoteEditForm({
                   const addable = canAddQuoteIntakeLine(option);
                   return (
                     <li key={part.sourceKey} className="flex flex-wrap items-center gap-2 text-sm">
-                      {/* 🔴 줄에 **적힐 이름**은 고르개가 정한다. 되짚지 못한 줄은 적을 이름이
-                          없어 까닭을 적고 담기를 막되, 🔵 줄은 **감추지 않는다** — 목록에서
+                      {/* 🔴 줄에 **적힐 이름**은 고르개가 정한다 — 고객사 품명이다(위 안내).
+                          못 담는 줄은 **까닭을 갈라 적는다**: 되짚지 못한 줄(`option === null`)은
+                          부품 자체가 거기 없는 것이고, 되짚었는데 막힌 줄은 **고객사 품명이 비어
+                          있는** 것이라 사람이 할 일이 다르다. 🔵 줄은 **감추지 않는다** — 목록에서
                           사라지면 사람이 청구를 빠뜨린다. */}
                       {addable ? (
-                        <span className="text-zinc-800 dark:text-zinc-200">{partPickName(option)}</span>
+                        <span className="text-zinc-800 dark:text-zinc-200">
+                          {partPickName(option, "customer")}
+                        </span>
                       ) : (
                         <span className="text-amber-700 dark:text-amber-400">
-                          {OH_TEMPLATE_PART_NOT_LINKED_MESSAGE}
+                          {option === null
+                            ? OH_TEMPLATE_PART_NOT_LINKED_MESSAGE
+                            : CUSTOMER_NAME_EMPTY_NOTICE}
                         </span>
                       )}
                       {/* 어느 부품인지 알아보는 자리 — 템플릿에 적힌 이름과 재고의 품명이 다를 수 있다. */}
@@ -3331,7 +3371,8 @@ export default function QuoteEditForm({
             <>
           <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
             재고에서 나간 것과 청구하는 것이 늘 같지는 않습니다. 담을 것만 골라 주세요. 단가는 재고 관리에
-            부품마다 적어 둔 <b>견적가</b>가 따라오고, 정해 두지 않았으면 빈칸으로 들어옵니다.
+            부품마다 적어 둔 <b>견적가</b>가 따라오고, 정해 두지 않았으면 빈칸으로 들어옵니다. 줄에
+            적히는 이름은 <b>고객사 품명</b>이라, 그 이름이 없는 부품은 담을 수 없습니다.
           </p>
           {/* 일괄 담기. 출고된 부품이 열 종을 넘는 일이 흔한데 하나씩 누르게
               두면 사람이 중간에 하나를 빠뜨리고, 빠뜨린 것은 청구에서 통째로
@@ -3361,14 +3402,18 @@ export default function QuoteEditForm({
               const addable = canAddQuoteIntakeLine(option);
               return (
               <li key={part.sourceKey} className="flex flex-wrap items-center gap-2 text-sm">
-                {/* 🔴 줄에 **적힐 이름**은 고르개가 정한다. 되짚지 못한 줄은 적을 이름이 없어
-                    까닭을 적고 담기를 막되, 🔵 줄은 **감추지 않는다** — 나간 부품이 목록에서
-                    사라지면 사람이 청구를 빠뜨린다. */}
+                {/* 🔴 줄에 **적힐 이름**은 고르개가 정한다 — 고객사 품명이다(위 안내). 못 담는
+                    줄은 **까닭을 갈라 적는다**(위 O/H 목록과 같은 가름). 🔵 줄은 **감추지
+                    않는다** — 나간 부품이 목록에서 사라지면 사람이 청구를 빠뜨린다. */}
                 {addable ? (
-                  <span className="text-zinc-800 dark:text-zinc-200">{partPickName(option)}</span>
+                  <span className="text-zinc-800 dark:text-zinc-200">
+                    {partPickName(option, "customer")}
+                  </span>
                 ) : (
                   <span className="text-amber-700 dark:text-amber-400">
-                    {USED_PART_NOT_IN_INVENTORY_MESSAGE}
+                    {option === null
+                      ? USED_PART_NOT_IN_INVENTORY_MESSAGE
+                      : CUSTOMER_NAME_EMPTY_NOTICE}
                   </span>
                 )}
                 <span className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -3447,9 +3492,12 @@ export default function QuoteEditForm({
         {/* 찾아 고르는 길이 생긴 것을 칸만 보고는 알 수 없다 — 지금까지 자유 글자였기
             때문이다. 손으로 적는 길이 그대로라는 것도 함께 적는다. */}
         <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">
-          품명 칸에 글자를 치면 재고의 부품을 <b>품명 / 품명2 / 도번 / 교산 품번</b>으로 찾아
-          고를 수 있습니다. 고르면 그 줄이 재고의 부품과 이어지고, 이름을 손으로 고치면 이어짐이
-          풀립니다 — 재고에 없는 {isCable ? "품목" : "부품"}은 지금처럼 그냥 적으면 됩니다.
+          품명 칸에 글자를 치면 재고 관리의 부품을{" "}
+          <b>품명 / 품명2 / 고객사 품명 / 도번 / 교산 품번</b>으로 찾아 고를 수 있습니다. 줄에
+          적히는 이름은 <b>고객사 품명</b>이고(이 서류는 고객사로 나갑니다), 그 이름이 없는
+          부품은 고를 수 없습니다. 고르면 품명과 단가가 채워지고 칸 밑에 어느 부품인지가 작은
+          글씨로 보입니다 — 그 글씨는 작성자만 보고 견적서에는 나가지 않습니다. 이름을 손으로
+          고쳐도 되고, 재고 관리에 없는 {isCable ? "품목" : "부품"}은 지금처럼 그냥 적으면 됩니다.
         </p>
 
         {/* 🔴 못 받아 왔을 때. 후보가 안 뜨는 것을 「재고에 부품이 하나도 없다」로 읽으면
@@ -3567,6 +3615,23 @@ export default function QuoteEditForm({
                     options={filterPartOptions(partOptionRows, row.partNameText)}
                     listLabel={`${lineOrdinals[index]}번째 ${isCable ? "품목" : "부품"} 후보`}
                     /**
+                     * 🔴 **견적서에 적히는 품명은 고객사 품명이다**(2026-10-17 쓰는 분 지적 ①).
+                     * 이 종이는 고객사로 나가고, 고객사는 제 이름으로 부품을 부른다 — 우리
+                     * 품명을 적어 보내면 받는 쪽이 무엇인지 모른다.
+                     *
+                     * 🔴 **고객사 품명이 빈 부품은 이 목록에서 고를 수 없다**(딸린 규칙).
+                     * 고르개가 그 줄을 눌리지 않게 하고 까닭을 그 자리에 적는다 — 🔵
+                     * **감추지는 않는다**. 있는데 못 고르는 것과 아예 없는 것은 다른 말이고,
+                     * 뒤로 읽히면 사람은 손으로 적어 버린다.
+                     * 🔵 **채워 넣는 길은 이 사이트에 없다** — 그 단추는 A/S 수리 건 상세의
+                     *    부품 요청 칸에 있고, 이 사이트는 재고 관리에 아무것도 쓰지 않는다.
+                     *
+                     * 🔴 **아래 `partPickPatch` 에 넘기는 값과 같아야 한다.** 한쪽만 넘기면
+                     *    「목록에 보인 이름」과 「줄에 적히는 이름」이 어긋난다 — 보기엔 막혔는데
+                     *    적히거나, 고를 수 있는데 빈 이름이 들어간다.
+                     */
+                    nameSource="customer"
+                    /**
                      * 🔴 고르면 **단가도 함께** 채운다. 규칙은 전부 고르개 쪽에 있다
                      * (공용 묶음 part-picker.tsx 의 partPickUnitPrice) — 여기서는 그
                      * 판단에 필요한 세 가지를 건넨다:
@@ -3586,17 +3651,47 @@ export default function QuoteEditForm({
                          * (위 `pickedPartPatch` 머리말 — 2026-10-17 에 실제로 막혔다).
                          */
                         pickedPartPatch(
-                          partPickPatch(option, {
-                            prices: partPrices,
-                            isOverhaulPart: kind === "OVERHAUL" && row.isOverhaulPart,
-                            currentUnitPrice: row.unitPrice,
-                          })
+                          partPickPatch(
+                            option,
+                            {
+                              prices: partPrices,
+                              isOverhaulPart: kind === "OVERHAUL" && row.isOverhaulPart,
+                              currentUnitPrice: row.unitPrice,
+                            },
+                            /* 🔴 위 `nameSource` 와 **같은 값**이다(그 머리말). */
+                            "customer"
+                          )
                         )
                       );
                       setPartPickerKey(null);
                     }}
                   />
                 )}
+                {/**
+                  * 🔴 **고른 부품의 상세 — 작성자만 본다** (2026-10-17 쓰는 분 지적 ②).
+                  *
+                  * 이 줄에 적히는 품명은 **고객사 품명**이라, 적어 놓고 보면 작성자도 그게 우리 쪽
+                  * 어느 부품인지 알 수 없다. 그래서 칸 밑에 **작은 글씨로** 그 부품의 다섯 가지를
+                  * 적는다(차례는 공용 묶음의 `PART_FIELD_ORDER` 한 곳이 정한다).
+                  *
+                  * 🔴 **이것은 화면에만 있다.** 저장 · 인쇄 · 엑셀 어디에도 실리지 않는다 — 고객사가
+                  *    받는 종이에 우리 품번과 우리 품명이 찍히면 안 된다(quote-part-pick.ts 머리말과
+                  *    그 시험이 나가는 길 셋을 지킨다).
+                  * 🔴 **작성자만 본다**는 이 화면 자체가 지킨다 — 견적서 편집 폼은 `quotes` 쓰기
+                  *    권한이 있어야 열리고(두 페이지의 `hasPermission(user, "quotes", "WRITE")`),
+                  *    고객사가 보는 종이는 QuotePrintView · 엑셀이 따로 그린다.
+                  * 🔵 **고른 적이 없거나 · 고른 뒤 이름을 손으로 고쳤으면 안 그린다** — 그때는 그
+                  *    상세가 이 줄의 설명이 아니다(`quotePickedPartOf`).
+                  */}
+                {(() => {
+                  const picked = quotePickedPartOf(row, partOptionRows);
+                  if (picked === null) return null;
+                  return (
+                    <p className="mt-0.5 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+                      {QUOTE_PICKED_PART_PREFIX} — {quotePickedPartDetail(picked)}
+                    </p>
+                  );
+                })()}
                 {fieldErrors[`items.${index}.partNameText`] && (
                   <p className={editErrorClass}>{fieldErrors[`items.${index}.partNameText`]}</p>
                 )}

@@ -415,9 +415,17 @@ describe("폼의 배선 — 목록이 어느 줄에 뜨는가", () => {
   });
 
   test("찾아 고르는 길이 생긴 것을 화면이 말한다 — 손으로 적는 길도 그대로라고", () => {
-    assert.ok(form.includes("품명 칸에 글자를 치면 재고의 부품을"), "안내 문장이 없다");
-    assert.ok(form.includes("<b>품명 / 품명2 / 도번 / 교산 품번</b>"), "무엇으로 찾는지 안 적혀 있다");
+    /* ⚠️ 2026-10-17 — 안내가 **두 가지 더** 말한다(쓰는 분 지적 ①②): 줄에 적히는 이름은
+       고객사 품명이고, 칸 밑의 작은 글씨는 작성자만 본다. 찾는 칸에도 고객사 품명이
+       들어갔다(고르개가 처음부터 그 칸으로 거른다). 🔴 막으려던 것은 그대로다 —
+       **찾아 고르는 길과 손으로 적는 길을 화면이 말한다.** */
+    assert.ok(form.includes("품명 칸에 글자를 치면 재고 관리의 부품을"), "안내 문장이 없다");
+    assert.ok(
+      form.includes("<b>품명 / 품명2 / 고객사 품명 / 도번 / 교산 품번</b>"),
+      "무엇으로 찾는지 안 적혀 있다"
+    );
     assert.ok(form.includes("지금처럼 그냥 적으면 됩니다"), "손으로 적는 길이 남는다는 말이 없다");
+    assert.ok(form.includes("줄에 적히는 이름은 <b>고객사 품명</b>"), "적히는 이름이 무엇인지 안 적혀 있다");
   });
 });
 
@@ -447,12 +455,14 @@ describe("🔴 못 받아 왔을 때 폼이 하는 말", () => {
       form.includes("partOptions: InventoryResult<PartPickerRow[]>;"),
       "🔴 프롭이 목록이면 페이지가 어딘가에서 빈 배열로 뭉갰다는 뜻이다"
     );
+    /* ⚠️ 2026-10-17 — 같은 모듈에서 **하나 더** 들여온다(`CUSTOMER_NAME_EMPTY_NOTICE` —
+       고객사 품명이 빈 부품을 못 담는 까닭). 🔴 막으려던 것은 그대로다 — **사람에게 하는
+       말을 폼이 제 손으로 지어내지 않는다.** */
     assert.ok(
-      formSource.includes(
-        'import { inventoryUnreachableMessage, type InventoryResult } from "@/lib/domain/inventory-gateway";'
-      ),
+      formSource.includes('} from "@/lib/domain/inventory-gateway";'),
       "까닭을 적는 말을 제 손으로 지어낸다 — A/S 와 글자가 갈린다"
     );
+    assert.ok(formSource.includes("inventoryUnreachableMessage"), "못 받아 온 까닭을 그 모듈에서 안 가져온다");
   });
 
   test("🔴 빈 목록으로 접는 자리가 **한 곳**뿐이다 — 후보 목록이 받는 값", () => {
