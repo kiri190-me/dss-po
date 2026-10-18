@@ -6,6 +6,10 @@ import { useId, useMemo, useState, useTransition, type MouseEvent, type ReactNod
 //    도는 도구라 맞지 않는다. 아래 IntakeNumberLink 가 평범한 <a> 로 그린다.
 import { useRouter } from "next/navigation";
 import { showSavePopup } from "@/components/common/SavePopup";
+// 🔴 **읽어야 닫히는 알림**(2026-10-18). showSavePopup 과 바꿔 끼우지 않는다 — 그것은
+//    성공 전용이고 0.5초 뒤 저절로 닫힌다. 이 사이트의 것은 `lines` 가 아니라 `message`
+//    한 줄을 받는다(A/S 의 같은 이름 조각과 다른 점이다 — 아래 쓰는 자리에 적었다).
+import { NoticePopup } from "@/components/common/NoticePopup";
 // 🔴 아래 넷은 2026-09-21(조각 3a)에 **서브모듈(vendor/dss-core)로 옮겨 갔다.**
 //    견적서 목록 화면이 두 사이트 한 벌이라 그 화면이 쓰는 공용 조각도 거기 있어야
 //    했고(설계서 E-2절), 이 사이트가 두 벌을 들고 있을 이유가 없어 그쪽 것을 쓴다.
@@ -76,6 +80,7 @@ import {
   type DomesticOrderSheetHeadingFieldErrors,
   type SheetIndentLevel,
 } from "@/lib/domain/domestic-order-sheet-heading";
+import DomesticOrderCompletionReleaseDialog from "./DomesticOrderCompletionReleaseDialog";
 import DomesticOrderEditForm, { type QuoteOption } from "./DomesticOrderEditForm";
 import DomesticOrderTextCell from "./DomesticOrderTextCell";
 import DomesticOrderDueDatesCell from "./DomesticOrderDueDatesCell";
@@ -1386,13 +1391,51 @@ function IntakeNumberLink({
  * 실패는 조용히 넘기지 않고 부르는 쪽에 올린다. 특히 CONFLICT 는 그 사이 남이
  * 이 줄을 고쳤다는 뜻이라, 아무 일도 없었던 것처럼 두면 사람은 완료가 된 줄
  * 안다.
+ *
+ * ── 🔴 완료 처리는 수리 건까지 함께 움직인다 (2026-10-18) ───────────────
+ * [완료 처리]는 붙어 있는 수리 건을 함께 출하 완료로 넘긴다. 🔴 **그 판정은 이
+ * 사이트에 없다** — A/S 관리 시스템의 서비스가 쥐고 있고, 액션이 통로를 거쳐
+ * 그것을 부른다(lib/server/as-gateway.ts). 그래서 결과가 넷이다:
+ *
+ *  · 수리 건까지 함께 넘어갔다  → 성공 팝업 문구가 그 사실을 말한다.
+ *  · 내자 줄만 완료됐다          → 예전 문구 그대로(붙은 건이 없거나 이미 출하 완료).
+ *  · 🔴 수리 건이 막혔다         → **내자 줄도 완료되지 않는다.** 이때만
+ *    `onBlocked` 로 올려 보내 **읽고 닫아야 하는 알림**(NoticePopup)을 띄운다.
+ *    줄 위 빨간 글씨 한 줄로는 놓치기 쉽고, 무엇보다 "내자 줄도 안 됐다"를
+ *    함께 전해야 한다.
+ *  · 🔵 통로에 못 닿았다(AS_UNREACHABLE) → 그 밖의 실패와 **같은 길**로 보낸다.
+ *    줄 위 빨간 글씨 한 줄이고, 거기에 적히는 문장이 「내자 줄은 그대로다」와
+ *    「바뀌었는지 모른다」를 이미 가른다(as-gateway.ts 의
+ *    asCompletionUnreachableMessage). 알림을 하나 더 만들지 않은 까닭은, 이것이
+ *    업무가 막힌 것이 아니라 **설정·연결 문제**라 사람이 할 일이 "다시 눌러 보기"
+ *    하나뿐이기 때문이다.
+ *
+ * 가르는 기준은 **코드**(SHIPMENT_COMPLETION_BLOCKED)다 — 메시지 글자를
+ * 비교하지 않는다. 막히는 까닭마다 서버가 돌려주는 문장이 다르다.
+ *
+ * 🔴 팝업을 이 안에서 그리지 않고 화면 위쪽으로 올리는 이유: 이 단추는 표의
+ * `<td>` 안에 산다. 팝업이 거기서 태어나면 칸의 CSS(가운데·오른쪽 정렬 등)를
+ * 그대로 물려받아 글이 한쪽으로 쏠린다.
+ *
+ * ── 🔴 [완료 해제]는 **여기서 아무것도 보내지 않는다** (2026-10-18) ──────
+ * 해제도 수리 건의 출하 완료를 함께 되돌리는 조작이 되었다. 한 번의 클릭으로 그
+ * 일이 일어나면 안 된다는 것이 사용자 요청이라, 이 단추는 **확인 창을 열어 달라고
+ * 부모에게 알릴 뿐**이고(onRequestRelease) 실제 요청은 부모가 보낸다. 창과
+ * 전송 중 상태를 부모가 소유하는 까닭도 같다 — 창을 이 `<td>` 안에서 그리면
+ * 칸의 CSS 를 물려받는다(위와 같은 이유).
  */
 function CompletionToggle({
   row,
   onError,
+  onBlocked,
+  onRequestRelease,
 }: {
   row: DomesticOrderListItem;
   onError: (message: string | null) => void;
+  /** 출하 완료가 막혀 아무것도 저장되지 않았다 — 서버가 돌려준 까닭 한 줄. */
+  onBlocked: (reason: string) => void;
+  /** [완료 해제]를 눌렀다. 보내지 않고 **확인 창을 열어 달라**는 뜻이다. */
+  onRequestRelease: (row: DomesticOrderListItem) => void;
 }) {
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
@@ -1401,20 +1444,36 @@ function CompletionToggle({
   async function toggle(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     if (isPending) return;
+    if (completed) {
+      // 🔴 해제는 묻고 나서 한다. 여기서는 창만 연다.
+      onError(null);
+      onRequestRelease(row);
+      return;
+    }
     setIsPending(true);
     onError(null);
     try {
+      // 여기까지 오는 것은 [완료 처리] 하나뿐이다(해제는 위에서 돌아갔다).
       const result = await setDomesticOrderCompletionAction({
         id: row.id,
         expectedVersion: row.version,
-        completed: !completed,
+        completed: true,
       });
       if (!result.ok) {
+        if (result.code === "SHIPMENT_COMPLETION_BLOCKED") {
+          onBlocked(result.message);
+          return;
+        }
         onError(result.message);
         return;
       }
       router.refresh();
-      showSavePopup({ message: completed ? "완료 표시를 풀었습니다." : "완료로 표시했습니다.", redirectTo: null });
+      showSavePopup({
+        message: result.repairCaseShipmentCompleted
+          ? "완료로 표시하고, 연결된 수리 건도 출하 완료로 처리했습니다."
+          : "완료로 표시했습니다.",
+        redirectTo: null,
+      });
     } finally {
       setIsPending(false);
     }
@@ -1787,6 +1846,66 @@ export default function DomesticOrderListScreen({
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
   const [completionError, setCompletionError] = useState<string | null>(null);
+  /**
+   * 출하 완료가 막혀 **아무것도 저장되지 않았을 때** 띄우는 알림의 까닭 한 줄
+   * (null 이면 안 떠 있다). 상태가 여기 있는 이유는 CompletionToggle 머리말에
+   * 적었다 — 표 칸 안에서 팝업을 그리면 칸의 CSS 를 물려받는다.
+   */
+  const [shipmentBlockedReason, setShipmentBlockedReason] = useState<string | null>(null);
+  /**
+   * 되돌리기가 막혀 **아무것도 저장되지 않았을 때**의 까닭 한 줄(2026-10-18).
+   * 위 완료 처리 쪽과 **상태를 나눈 이유**는 팝업의 글이 다르기 때문이다 —
+   * 서버가 쓰는 코드는 하나지만(SHIPMENT_COMPLETION_BLOCKED), 사람에게 할 말은
+   * "완료 처리가 안 됐다"와 "완료 해제가 안 됐다"로 갈린다. 둘은 동시에 뜨지
+   * 않는다(한 번에 한 단추만 누른다).
+   */
+  const [revertBlockedReason, setRevertBlockedReason] = useState<string | null>(null);
+  /**
+   * [완료 해제] 확인 창이 묻고 있는 줄(null 이면 창이 닫혀 있다). 🔴 한 번의
+   * 클릭으로 해제되지 않게 하는 장치다 — 단추는 이 상태를 세우기만 하고, 실제
+   * 요청은 아래 releaseCompletion 이 보낸다(CompletionToggle 머리말).
+   */
+  const [releaseTarget, setReleaseTarget] = useState<DomesticOrderListItem | null>(null);
+  const [isReleasing, setIsReleasing] = useState(false);
+  const router = useRouter();
+
+  /**
+   * 확인 창에서 [완료 해제]를 눌렀다. 성공 문구가 **두 갈래**다 — 수리 건의
+   * 출하 완료까지 되돌렸는가(A/S 가 알려 준다), 아니면 이 줄의 표시만 풀렸는가.
+   */
+  async function releaseCompletion() {
+    if (releaseTarget === null || isReleasing) return;
+    setIsReleasing(true);
+    setCompletionError(null);
+    try {
+      const result = await setDomesticOrderCompletionAction({
+        id: releaseTarget.id,
+        expectedVersion: releaseTarget.version,
+        completed: false,
+      });
+      // 결과가 무엇이든 창은 닫는다 — 막힌 까닭은 팝업이, 그 밖의 실패(통로에
+      // 못 닿은 것까지)는 목록 위 빨간 줄이 말한다(완료 처리 쪽과 같은 두 길을
+      // 그대로 쓴다).
+      setReleaseTarget(null);
+      if (!result.ok) {
+        if (result.code === "SHIPMENT_COMPLETION_BLOCKED") {
+          setRevertBlockedReason(result.message);
+          return;
+        }
+        setCompletionError(result.message);
+        return;
+      }
+      router.refresh();
+      showSavePopup({
+        message: result.repairCaseShipmentReverted
+          ? "완료 표시를 풀고, 연결된 수리 건의 출하 완료도 되돌렸습니다."
+          : "완료 표시를 풀었습니다.",
+        redirectTo: null,
+      });
+    } finally {
+      setIsReleasing(false);
+    }
+  }
 
   const years = useMemo(() => collectDomesticOrderYears(rows), [rows]);
   /**
@@ -2116,6 +2235,47 @@ export default function DomesticOrderListScreen({
         </p>
       )}
 
+      {/* 🔴 출하 완료가 막혀 **내자 줄까지 그대로**인 경우. 사람이 닫아야 닫히는
+          알림이라야 한다 — 읽기 전에 사라지면 "완료된 줄 알고" 넘어간다.
+          무엇이 막혔는지(A/S 가 돌려준 까닭)와 **무엇이 저장되지 않았는지**,
+          그리고 다음에 무엇을 해야 하는지를 함께 적는다.
+          🔵 이 사이트의 NoticePopup 은 문단 여럿이 아니라 `message` 한 줄을 받는다
+          (A/S 의 같은 이름 조각은 `lines` 다 — 두 저장소가 각각 제 것을 갖고 있고,
+          공용 조각을 고치면 견적서 쪽 알림까지 함께 바뀐다). 그래서 저쪽이 세 문단으로
+          적은 것을 **한 문단에 세 문장**으로 잇는다 — 말은 한 글자도 바꾸지 않았다. */}
+      {shipmentBlockedReason !== null && (
+        <NoticePopup
+          title="완료 처리를 하지 못했습니다"
+          message={`이 줄에 연결된 수리 건을 출하 완료로 넘기지 못했습니다. ${shipmentBlockedReason} 그래서 내자 정리의 완료 처리도 되지 않았습니다. 수리 건 쪽을 먼저 처리한 뒤 [완료 처리]를 다시 눌러 주세요.`}
+          onClose={() => setShipmentBlockedReason(null)}
+        />
+      )}
+
+      {/* 🔴 되돌리기가 막혀 **내자 줄까지 그대로**인 경우(2026-10-18). 위
+          완료 처리 쪽과 같은 길을 그대로 타되 글만 해제 상황으로 바꾼다 —
+          여기서도 "내자 줄도 안 풀렸다"를 함께 전해야 한다. */}
+      {revertBlockedReason !== null && (
+        <NoticePopup
+          title="완료 해제를 하지 못했습니다"
+          message={`이 줄에 연결된 수리 건의 출하 완료를 되돌리지 못했습니다. ${revertBlockedReason} 그래서 내자 정리의 완료 표시도 그대로입니다. 수리 건 쪽을 먼저 확인한 뒤 [완료 해제]를 다시 눌러 주세요.`}
+          onClose={() => setRevertBlockedReason(null)}
+        />
+      )}
+
+      {/* 🔴 한 번의 클릭으로 완료 해제가 되지 않게 하는 확인 창. 표 칸이 아니라
+          여기서 그린다 — 칸 안에서 태어나면 칸의 정렬 CSS 를 물려받는다(위
+          NoticePopup 과 같은 자리·같은 까닭). */}
+      <DomesticOrderCompletionReleaseDialog
+        isOpen={releaseTarget !== null}
+        intakeNumber={releaseTarget?.displayIntakeNumber ?? null}
+        hasLinkedRepairCase={releaseTarget?.repairCaseId != null}
+        isSubmitting={isReleasing}
+        onConfirm={releaseCompletion}
+        onCancel={() => {
+          if (!isReleasing) setReleaseTarget(null);
+        }}
+      />
+
       {rows.length === 0 ? (
         <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
           등록된 내자 정리 항목이 없습니다.
@@ -2266,7 +2426,14 @@ export default function DomesticOrderListScreen({
                             <span className="tabular-nums">{dash(row.displayOrder)}</span>
                             {completed && <CompletedBadge />}
                             {canEdit && <EditRowButton row={row} onOpen={openRow} />}
-                            {canEdit && <CompletionToggle row={row} onError={setCompletionError} />}
+                            {canEdit && (
+                              <CompletionToggle
+                                row={row}
+                                onError={setCompletionError}
+                                onBlocked={setShipmentBlockedReason}
+                                onRequestRelease={setReleaseTarget}
+                              />
+                            )}
                           </span>
                         </td>
                         <td className="px-3 py-2">{dash(row.customerName)}</td>
@@ -2575,7 +2742,12 @@ export default function DomesticOrderListScreen({
                               {completed && <CompletedBadge />}
                               {canEdit && <EditRowButton row={row} onOpen={openRow} />}
                               {canEdit && (
-                                <CompletionToggle row={row} onError={setCompletionError} />
+                                <CompletionToggle
+                                  row={row}
+                                  onError={setCompletionError}
+                                  onBlocked={setShipmentBlockedReason}
+                                  onRequestRelease={setReleaseTarget}
+                                />
                               )}
                             </span>
                           </div>

@@ -8,11 +8,14 @@ import {
   isValidExpectedVersion,
   validateDomesticOrderFields,
 } from "@/lib/validation/domestic-order-input";
+// 🔴 `setDomesticOrderCompletion` 은 여기서 더 이상 부르지 않는다(2026-10-18) — 완료
+//    처리·해제는 A/S 통로를 거치고, 그 끝에서 **저쪽이** 같은 이름의 mutation 을 부른다.
+//    mutation 자체는 지우지 않았다(아래 setDomesticOrderCompletionAction 머리말).
+import { createDomesticOrder, updateDomesticOrder } from "@/lib/db/mutations/domestic-orders";
 import {
-  createDomesticOrder,
-  setDomesticOrderCompletion,
-  updateDomesticOrder,
-} from "@/lib/db/mutations/domestic-orders";
+  asCompletionUnreachableMessage,
+  setAsDomesticOrderCompletion,
+} from "@/lib/server/as-gateway";
 import {
   permanentlyDeleteDomesticOrder,
   restoreDomesticOrder,
@@ -189,18 +192,90 @@ export async function updateDomesticOrderAction(input: {
 }
 
 /**
- * 완료 처리 · 완료 해제.
+ * ============================================================================
+ * 완료 처리 · 완료 해제 — 🔴 **A/S 통로를 부른다** (2026-10-18)
+ * ============================================================================
+ * 관문은 위 둘과 **똑같다**(hasPermission("domesticOrders", "WRITE")). 권한 상한을
+ * 따로 올리지 않는다: 완료는 누른 그 자리에서 다시 눌러 되돌릴 수 있는 조작이고,
+ * 값이 사라지지도 않는다. 되돌릴 수 없는 조작(삭제 등)이 생기면 그때 별도의
+ * 수준을 논한다.
  *
- * 관문은 위 둘과 **똑같다** — canEditDomesticOrders AND
- * hasPermission("domesticOrders", "WRITE"). 권한 상한을 따로 올리지 않는다:
- * 완료는 누른 그 자리에서 다시 눌러 되돌릴 수 있는 조작이고, 값이 사라지지도
- * 않는다. 되돌릴 수 없는 조작(삭제 등)이 생기면 그때 별도의 수준을 논한다.
+ * ── 🔴 저장은 이 사이트가 하지 않는다 ───────────────────────────────────
+ * 2026-10-18 부터 [완료 처리]/[완료 해제]는 그 줄에 붙은 **수리 건의 출하 완료까지**
+ * 함께 움직인다. 그 판정(최종 출하 승인 확인 · 되돌리기 · 두 mutation 의 차례)은
+ * A/S 가 쥐고 있고, **베끼면 규칙이 두 벌이 된다.** 그래서 여기서는 `setDomesticOrder
+ * Completion` mutation 을 곧장 부르지 않고 저쪽 통로를 부른다(server/as-gateway.ts).
+ * 저쪽이 같은 서비스를 거쳐 그 mutation 을 마지막 한 걸음으로 부른다.
+ *
+ * 🔵 그 mutation 은 **지우지 않았다.** 이 액션이 유일한 호출자였으므로 지금은 쓰이지
+ *    않지만, 지우는 것은 이 조각의 일이 아니다(설계·시험이 함께 걸린다).
+ *
+ * ── 🔴 관문을 그대로 두는 까닭 ──────────────────────────────────────────
+ * 저쪽도 `requester.sub` 로 사람을 되짚어 권한을 **다시** 본다(저쪽 1-2절). 그래도
+ * 이 검사를 빼지 않는다 — 빼면 PO 화면이 **로그인하지 않은 사람에게도** 열리고,
+ * 통로가 닫혀 있는 서버에서는 거절조차 받지 못해 무엇이 막았는지 알 수 없게 된다.
+ *
+ * ── 🔴 `requester.sub` 는 **포털 번호**다 ───────────────────────────────
+ * `users.sso_subject` 이고 이 사이트의 `users.id` 가 **아니다**. `getSessionUser()` 가
+ * users 한 행을 통째로 돌려주므로(auth/session.ts) 그 칸이 이미 손에 있다 — 조회를
+ * 더하지 않는다. 🔴 그 칸은 **비어 있을 수 있다**(nullable). 포털을 거치지 않고 만들어진
+ * 계정이 그렇고, 그대로 보내면 저쪽이 사람을 못 찾아 403 이 된다 — 사람에게는 「권한이
+ * 없다」로 보여 영문을 알 수 없다. 그래서 **보내기 전에** 가르고 다른 말로 돌려준다.
+ *
+ * ── 결과가 세 갈래다 ────────────────────────────────────────────────────
+ *  · 성공 — 수리 건까지 함께 움직였는지를 두 칸으로 함께 돌려준다(화면의 성공 문구가 갈린다).
+ *  · 저쪽이 거절 — 코드를 그대로 올린다. 🔴 `SHIPMENT_COMPLETION_BLOCKED` 는 **내자 줄도
+ *    안 바뀌었다**는 뜻이고, `message` 는 사람에게 그대로 보여 줄 글이다.
+ *  · 🔴 통로에 못 닿음 — 설정이 없든 저쪽이 꺼졌든, **사람이 읽을 수 있는 한 줄**로 바꾼다
+ *    (as-gateway.ts 의 asCompletionUnreachableMessage). 그 글이 「내자 줄은 그대로다」와
+ *    「바뀌었는지 모른다」를 가른다.
+ * ============================================================================
  */
+
+export type DomesticOrderCompletionActionResultCode =
+  | DomesticOrderActionResultCode
+  /**
+   * 붙어 있는 수리 건의 출하 완료 상태를 바꾸지 못해 **내자 줄도 그대로다.**
+   * 두 방향이 같은 코드를 쓴다 — 완료 처리에서는 "넘기지 못했다", 완료 해제에서는
+   * "되돌리지 못했다"이고, 어느 쪽인지는 화면이 이미 안다(지금 누른 단추가 무엇인지).
+   * 화면은 이 코드를 보고 **읽고 닫아야 하는 알림**(NoticePopup)을 띄운다 — 승인이
+   * 남았다는 말은 줄 위 빨간 글씨 한 줄로는 놓치기 쉽고, 무엇보다 **내자 줄도 안 됐다**는
+   * 사실을 함께 전해야 한다.
+   */
+  | "SHIPMENT_COMPLETION_BLOCKED"
+  /**
+   * 🔴 **A/S 통로에 닿지 못했다**(이 사이트에만 있는 갈래다 — 저쪽 화면은 같은 앱 안에서
+   * 서비스를 직접 부르므로 이런 일이 없다). 설정이 빠졌거나 저쪽이 꺼졌다는 뜻이고,
+   * 고칠 사람도 고칠 자리도 업무 거절과 전혀 다르다.
+   */
+  | "AS_UNREACHABLE";
+
+export type DomesticOrderCompletionActionResult =
+  | {
+      ok: true;
+      id: string;
+      version: number;
+      /** 이번 누름으로 수리 건까지 함께 출하 완료됐는가(화면의 성공 문구가 갈린다). */
+      repairCaseShipmentCompleted: boolean;
+      /** 이번 누름으로 수리 건의 출하 완료까지 되돌렸는가(완료 해제 쪽 문구가 갈린다). */
+      repairCaseShipmentReverted: boolean;
+    }
+  | {
+      ok: false;
+      code: DomesticOrderCompletionActionResultCode;
+      fieldErrors?: Record<string, string>;
+      message: string;
+    };
+
+/** 포털 번호가 없는 계정. 저쪽에 보내 봐야 403 이라 여기서 가른다(위 머리말). */
+const NO_PORTAL_SUBJECT_MESSAGE =
+  "통합 로그인 계정 정보가 없어 A/S 관리 시스템에 완료 처리를 요청할 수 없습니다. 관리자에게 알려 주세요.";
+
 export async function setDomesticOrderCompletionAction(input: {
   id: string;
   expectedVersion: number;
   completed: boolean;
-}): Promise<DomesticOrderActionResult> {
+}): Promise<DomesticOrderCompletionActionResult> {
   const auth = await resolveAuthorizedActingUser();
   if (!auth.ok) return { ok: false, code: auth.code, message: auth.message };
 
@@ -221,6 +296,7 @@ export async function setDomesticOrderCompletionAction(input: {
     };
   }
   // 불리언이 아닌 값을 받아 두면 undefined 가 "해제"로 조용히 읽힌다.
+  // 🔴 저쪽도 같은 것을 본다(불리언이 아니면 400) — 두 벌이 아니라 한 벌이 앞당겨진 것이다.
   if (typeof input.completed !== "boolean") {
     return {
       ok: false,
@@ -230,17 +306,40 @@ export async function setDomesticOrderCompletionAction(input: {
     };
   }
 
-  try {
-    return await setDomesticOrderCompletion({
-      id: input.id,
-      expectedVersion: input.expectedVersion,
-      completed: input.completed,
-      actorUserId: auth.actingUser.id,
+  const requesterSub = auth.actingUser.ssoSubject?.trim() ?? "";
+  if (requesterSub === "") {
+    console.error("setDomesticOrderCompletionAction: 포털 번호가 없는 계정입니다.", {
+      userId: auth.actingUser.id,
     });
-  } catch (err) {
-    console.error("setDomesticOrderCompletionAction: unexpected DB error", err);
-    return { ok: false, code: "DATABASE_UNAVAILABLE", message: DATABASE_UNAVAILABLE_MESSAGE };
+    return { ok: false, code: "FORBIDDEN", message: NO_PORTAL_SUBJECT_MESSAGE };
   }
+
+  const result = await setAsDomesticOrderCompletion({
+    id: input.id,
+    expectedVersion: input.expectedVersion,
+    completed: input.completed,
+    requesterSub,
+  });
+
+  if (result.ok) {
+    return {
+      ok: true,
+      id: result.id,
+      version: result.version,
+      repairCaseShipmentCompleted: result.repairCaseShipmentCompleted,
+      repairCaseShipmentReverted: result.repairCaseShipmentReverted,
+    };
+  }
+  if (result.kind === "rejected") {
+    // 🔵 저쪽이 쓰는 코드가 이 액션의 코드와 **같은 낱말**이다(SHIPMENT_COMPLETION_BLOCKED
+    //    하나만 이 사이트에 새로 생겼다). 그대로 올리고 글자도 그대로 보여 준다.
+    return { ok: false, code: result.code, message: result.message };
+  }
+  return {
+    ok: false,
+    code: "AS_UNREACHABLE",
+    message: asCompletionUnreachableMessage(result.reason, input.completed),
+  };
 }
 
 /**

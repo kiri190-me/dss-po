@@ -948,3 +948,23 @@ src/components/quotes/quote-archive-folder-number-filter.test.ts
 #    ⚠️ A/S 는 결과 타입을 연락서 쪽 것으로 쓰는데 **이 사이트에 그 모듈이 없어**
 #    같은 모양의 `QuoteFolderOpenOutcome` 을 쓴다(그 까닭은 원본 머리말).
 src/components/repair-cases/files/contact-folder-place-open.test.ts
+
+# ── 조각 PO — 내자 완료가 수리 건의 출하 완료까지 움직인다 (2026-10-18) ──
+# 🔴 **규칙을 이 저장소로 베끼지 않았다.** 출하 완료 판정 · 최종 출하 승인 확인 ·
+#    되돌리기는 전부 A/S 관리 시스템의 서비스가 쥐고 있고, 이 사이트는 저쪽이 연
+#    통로를 HTTP 로 부를 뿐이다(저쪽 API_FOR_INTERNAL_SYSTEMS.md 1-2절 · 4-2절).
+#    베끼면 규칙이 두 벌이 되어 한쪽만 고쳐지는 날이 온다.
+#
+# ① 통로 — 🔴 **못 한 일을 한 것처럼 말하지 않는가.** 설정이 비면 두드리지 않고
+#    (「응답하지 않는다」와 다른 갈래다) · 업무 거절과 못 닿음을 가르고 · 🔴 같은 409 인
+#    CONFLICT 와 SHIPMENT_COMPLETION_BLOCKED 를 **code 로** 가르고 · 🔴 「확실히 안
+#    바뀌었다」와 「바뀌었는지 모른다」를 가른다(시간 초과·못 읽은 답은 단언하지 않는다).
+#    `globalThis.fetch` 를 갈아 끼워 **망 없이** 돈다.
+src/lib/server/as-gateway.test.ts
+# ② 화면과 액션의 약속 — 🔴 액션이 mutation 으로 되돌아가지 않는가 · 🔴 `requester.sub`
+#    가 포털 번호(users.sso_subject)인가 · 🔴 화면이 **코드**로 가르는가 · 🔴 막힘에
+#    showSavePopup(성공 전용·0.5초)을 쓰지 않는가 · 🔴 팝업과 확인 창이 표 칸 **밖**에서
+#    그려지는가 · 🔴 [완료 해제]가 한 번의 클릭으로 되지 않는가 · 🔴 쓰기 토큰을 읽는
+#    자리가 통로 하나뿐인가. 목록 화면은 서버 액션을 부르는 클라이언트 컴포넌트라
+#    이 러너에서 그릴 수 없어 **원본을 글자로** 읽는다(이 저장소의 관례).
+src/components/domestic-orders/domestic-order-completion-screens.test.ts
