@@ -36,11 +36,17 @@ describe("견적서 종류", () => {
     }
   });
 
+  /**
+   * 🔴 이름과 달리 **A/S 를 실제로 보지는 않는다** — 저장소가 달라 들여올 수 없다.
+   * 여기서 재는 것은 공용 묶음(vendor/dss-core)에서 재수출된 값이 기대한 글자인가
+   * 하나뿐이다. 두 벌을 정말로 맞춰 보는 시험은 A/S 쪽에 따로 있다
+   * (RF_Service_System 의 src/lib/validation/quote-kind-labels.test.ts).
+   */
   test("이름표가 A/S 와 같은 글자다 — 같은 견적서가 두 화면에서 다른 이름으로 보이지 않게", () => {
     assert.deepEqual(quoteKindLabels, {
       DOMESTIC: "내자 견적서",
       OVERHAUL: "OH 견적서",
-      CABLE: "케이블 견적서",
+      CABLE: "기타 견적서",
     });
   });
 });
