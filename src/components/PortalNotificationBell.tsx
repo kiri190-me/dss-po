@@ -1,5 +1,6 @@
 import { NotificationBell } from "@dss/ui";
 
+import { dismissNotificationAction } from "@/app/actions/notifications";
 import { fetchPortalNotifications } from "@/lib/auth/oidc";
 
 /**
@@ -35,6 +36,23 @@ import { fetchPortalNotifications } from "@/lib/auth/oidc";
  * 곳은 그 알림을 만든 시스템뿐이고, 이 사이트에는 적을 자리가 없다. 줄을
  * 누르면 그 시스템의 화면으로 건너가고, 거기서 일을 마치면 다음 왕복에서
  * 목록이 줄어든다.
+ *
+ * ── 🔴 지우기(onDismiss)는 **넘긴다** — 확인과 다른 일이다 ──────────────
+ * 「확인했다」는 그 알림을 만든 시스템에만 적을 수 있지만, 「그만 보겠다」는
+ * **포털**에 적힌다(2026-10-19). 그래서 남의 시스템 줄이어도 이 사이트에서
+ * 지울 수 있고, 한 번 지우면 사내 시스템 **전부의 종**에서 사라진다. 적는
+ * 자리는 서버 액션이다 — 평범한 함수는 클라이언트 경계를 건너지 못하고,
+ * 중계 통로를 뚫으면 위 문단에서 피한 「시크릿을 다루는 자리」가 늘어난다
+ * (app/actions/notifications.ts).
+ *
+ * 🔴 `canDismiss` 는 넘기지 않는다 = **모든 줄에 ✕ 가 선다.** 그래도 되는
+ *    까닭: 가려야 하는 것은 「처리해야 사라지는 제 할 일」인데(A/S 가 그렇다)
+ *    여기에는 **제 줄이 아예 없다.** 남의 시스템 줄은 어느 것이든 「내 종에서
+ *    그만 보겠다」가 뜻이 통한다.
+ *
+ * 🔴 「보이는 알림 전부 지우기」는 없다. @dss/ui 가 연 자리는 `onDismiss`(줄
+ *    마다)와 `canDismiss` 둘뿐이고, 한꺼번에 지우는 단추는 A/S 가 제 손으로
+ *    만든 것이다 — 이 사이트에 없는 것이 맞다.
  */
 export async function PortalNotificationBell({ subject }: { subject: string }) {
   // 🔴 던지지 않는다. 포털이 죽었든 우리를 거절했든 빈 목록이 온다.
@@ -54,5 +72,18 @@ export async function PortalNotificationBell({ subject }: { subject: string }) {
   // 🔴 colorScheme 은 넘기지 않는다. 이 사이트는 globals.css 에서
   //    color-scheme: light 로 고정이고, 기본값 "host" 는 조상에 .dark 가 있을
   //    때만 어두워지므로 그대로 두는 것이 옳다(@dss/ui README 4·7절).
-  return <NotificationBell items={feed.items} count={feed.count} />;
+  // 🔴 `onDismiss` 를 **넘겼을 때만** 줄마다 ✕ 가 그려진다(@dss/ui). 넘기는
+  //    것은 서버 액션이라 번들에는 이름표만 나가고 `client_secret` 은 서버에
+  //    남는다 — 이 조각에 "use client" 가 없는 것이 그 판단의 짝이다.
+  //
+  // 🔴 개수(배지)는 **줄이지 않는다.** 지운 뒤의 목록도 개수도 다음 렌더에서
+  //    포털이 다시 세어 준다 — 포털은 지운 줄을 items 에서 빼면서 count 도
+  //    함께 줄여 보낸다. 여기서 미리 빼면 포털이 센 값과 어긋난다.
+  return (
+    <NotificationBell
+      items={feed.items}
+      count={feed.count}
+      onDismiss={dismissNotificationAction}
+    />
+  );
 }

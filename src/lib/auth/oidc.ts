@@ -547,3 +547,123 @@ export async function fetchPortalNotifications(
     return UNREACHABLE;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* 「이 알림은 그만 보겠다」 — 지움을 포털에 적는다                       */
+/*                                                                     */
+/* 2026-10-19 까지 지움은 **각 사이트의 브라우저**에 적혔다. 브라우저     */
+/* 저장소는 주소(포트)별로 갈려서 같은 사람이 시스템마다 다른 목록을 봤다 */
+/* — A/S(3000)에서 지운 줄이 이 사이트(3600)의 종에는 그대로 떴다. 그래서 */
+/* 지움을 포털 한 곳에 모았고, 여기는 그 **쓰는 쪽**이다.               */
+/* 읽는 쪽(fetchPortalNotifications)과 같은 자격증명·같은 거절이다.      */
+/*                                                                     */
+/* 🔴 이 사이트에는 **제 알림이 없다**(위 PortalNotificationFeed 머리말). */
+/*    그래서 여기서 지우는 줄은 전부 남의 시스템 것이고, 지움을 적을 수   */
+/*    있는 곳도 포털뿐이다 — 「확인했다」를 넘기지 않는 것과 같은 사정에서 */
+/*    「그만 보겠다」만은 넘길 수 있는 까닭이다.                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 한 번에 보낼 수 있는 열쇠 수.
+ *
+ * 🔴 **넘으면 포털이 400 으로 통째로 거절한다 — 앞의 200개만 받아 주지
+ *    않는다.** 그래서 자르는 일을 보내는 쪽이 한다. 값의 근거와 「왜 1000이
+ *    아닌가」는 포털 쪽에 있다(dss-auth 의 MAX_DISMISSAL_KEYS_PER_REQUEST,
+ *    2026-10-20 결정). 🔴 여기 값을 올려도 포털이 안 올라가면 소용이 없다 —
+ *    이 숫자는 **저쪽을 따라가는 값**이지 우리가 정하는 값이 아니다.
+ */
+const DISMISSALS_PER_REQUEST = 200;
+
+/**
+ * 열쇠 한 묶음을 포털에 적는다. 🔴 **던지지 않는다** — 돌려주는 것은
+ * 「적혔는가」뿐이고, 까닭은 서버 로그에만 남는다.
+ *
+ * 자격증명을 읽는 자리·머리말에 싣는 방식·시간 상한·no-store 는 모두 읽는
+ * 쪽과 **같은 모양**이다. 둘이 어긋나면 「알림은 오는데 지움은 안 먹히는」
+ * 상태가 되고, 그 어긋남은 신고로만 드러난다.
+ */
+async function recordDismissalChunk(
+  subject: string,
+  keys: readonly string[],
+): Promise<boolean> {
+  let response: Response;
+  try {
+    // env 의 getter 는 값이 없으면 던진다 — 그래서 try 안에서 읽는다.
+    // 설정이 빠진 것 때문에 ✕ 한 번이 화면을 깨면 안 된다.
+    const credentials = `${encodeURIComponent(env.ssoClientId)}:${encodeURIComponent(
+      env.ssoClientSecret,
+    )}`;
+
+    response = await fetch(`${env.ssoIssuer}/api/integration/notification-dismissals`, {
+      method: "POST",
+      headers: {
+        authorization: `Basic ${Buffer.from(credentials, "utf8").toString("base64")}`,
+        "content-type": "application/x-www-form-urlencoded",
+        accept: "application/json",
+      },
+      body: new URLSearchParams({ sub: subject, keys: keys.join(",") }).toString(),
+      cache: "no-store",
+      signal: AbortSignal.timeout(NOTIFICATIONS_TIMEOUT_MS),
+    });
+  } catch (error) {
+    // 🔴 찍는 것은 오류의 **종류**뿐이다. 열쇠에는 견적서 번호 같은 업무
+    //    식별자가 들어 있어 그것도 찍지 않는다(포털이 같은 판단을 한다).
+    console.error(
+      "[sso] 알림 지움을 적지 못했습니다:",
+      error instanceof Error ? error.name : "unknown",
+    );
+    return false;
+  }
+
+  if (!response.ok) {
+    console.error("[sso] 알림 지움 통로 거절:", response.status);
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * 「이 알림들은 그만 보겠다」를 포털에 적는다. 🔴 **어떤 일이 있어도 던지지
+ * 않는다** — 읽는 쪽과 같은 약속이다. 못 적으면 그 줄이 종에 남을 뿐이고,
+ * 그것이 화면이 깨지는 것보다 훨씬 낫다.
+ *
+ * @param subject 포털의 users.id (= ID 토큰의 sub). 이 사이트는 `users.ssoSubject`
+ *                로 들고 있고 그 칸은 **비어 있을 수 있다**(임시 계정).
+ *                🔴 **서버가 제 세션에서 가진 값**이어야 한다 — 브라우저가
+ *                보낸 값을 그대로 넘기면 남의 알림을 지울 수 있는 통로가 된다.
+ * @param keys    `{client_id}:{id}` 모양. 모양이 틀리거나 모르는 시스템의
+ *                것은 포털이 **조용히 버린다** — 한 줄 때문에 묶음이 통째로
+ *                실패하지 않는다.
+ * @returns 보낸 묶음이 **전부** 적혔는가. 하나라도 거절되면 false 다.
+ *
+ * 🔵 몇 번을 다시 보내도 안전하다 — 같은 열쇠를 두 번 지우는 것은 한 번
+ *    지우는 것과 같다(포털이 이미 있는 열쇠를 조용히 넘긴다).
+ */
+export async function dismissPortalNotifications(
+  subject: string,
+  keys: readonly string[],
+): Promise<boolean> {
+  if (!subject) return false;
+
+  // 같은 열쇠가 두 번 실려 와도 한 번만 보낸다. 포털은 어느 쪽이든 같은 답을
+  // 주지만, 겹친 값이 200 칸을 차지해 묶음이 괜히 늘어나지 않게 한다.
+  const wanted = Array.from(
+    new Set(keys.filter((key): key is string => typeof key === "string" && key !== "")),
+  );
+
+  // 🔴 보낼 것이 없으면 **아예 부르지 않는다.** 빈 keys 는 포털이 400
+  //    (no_keys)으로 거절하므로, 부르는 것은 거절 한 줄을 로그에 쌓는 일뿐이다.
+  if (wanted.length === 0) return false;
+
+  // 🔴 묶음을 **차례로** 보낸다(한꺼번에 던지지 않는다). 한 사람의 ✕ 한 번에
+  //    포털로 여러 연결이 동시에 열리면, 인증 실패 세는 통(분당 20번)과 포털의
+  //    DB 에 쓸데없는 봉우리를 만든다. 두 자릿수가 실측이라 묶음은 대개 하나다.
+  let recorded = true;
+  for (let at = 0; at < wanted.length; at += DISMISSALS_PER_REQUEST) {
+    const chunk = wanted.slice(at, at + DISMISSALS_PER_REQUEST);
+    if (!(await recordDismissalChunk(subject, chunk))) recorded = false;
+  }
+
+  return recorded;
+}
