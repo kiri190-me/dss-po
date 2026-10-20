@@ -157,3 +157,12 @@ src/components/quotes/quote-list-approved-check.test.tsx
 # 다음부터 안 읽는다). 창을 부르는 쪽의 약속은 unit 목록의
 # components/domestic-orders/domestic-order-completion-screens.test.ts 가 본다.
 src/components/domestic-orders/DomesticOrderCompletionReleaseDialog.test.tsx
+
+# ── 조각 PO — 「보이는 알림 지우기」를 묶음에서 받는다 (2026-10-20) ─────
+# 단추·글자·개수를 이제 @dss/ui 가 그린다(그쪽 1210d11). 이 사이트가 하는 일은 둘 —
+# 서브모듈 포인터를 올리는 것과 `onDismissAll` 에 **열쇠를 미리 묶은 서버 액션**을
+# 넘기는 것. 🔴 그 둘을 따로 되돌릴 수 있어야 해서 **안 넘겼을 때 마크업이 예전과
+# 같은지**를 여기서 못 박는다. 적히는 수와 보내는 열쇠 수가 같은지도 같은 자리에서 본다.
+# 🔴 종을 **실제로 그려** 보므로 unit 이 아니라 여기다(`react-dom/server`).
+# 액션의 모양·울타리·되살리기는 unit 목록의 lib/auth/notification-dismissal.test.ts 8절이 본다.
+src/components/notification-bell-dismiss-all.test.tsx

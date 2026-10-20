@@ -1,6 +1,10 @@
 import { NotificationBell } from "@dss/ui";
 
-import { dismissNotificationAction } from "@/app/actions/notifications";
+import {
+  dismissAllNotificationsAction,
+  dismissNotificationAction,
+} from "@/app/actions/notifications";
+import { visibleNotificationKeys } from "@/lib/auth/notification-keys";
 import { fetchPortalNotifications } from "@/lib/auth/oidc";
 
 /**
@@ -50,9 +54,15 @@ import { fetchPortalNotifications } from "@/lib/auth/oidc";
  *    여기에는 **제 줄이 아예 없다.** 남의 시스템 줄은 어느 것이든 「내 종에서
  *    그만 보겠다」가 뜻이 통한다.
  *
- * 🔴 「보이는 알림 전부 지우기」는 없다. @dss/ui 가 연 자리는 `onDismiss`(줄
- *    마다)와 `canDismiss` 둘뿐이고, 한꺼번에 지우는 단추는 A/S 가 제 손으로
- *    만든 것이다 — 이 사이트에 없는 것이 맞다.
+ * ── 🔴 「보이는 알림 지우기」(onDismissAll)도 **넘긴다** (2026-10-20) ─────
+ * 줄이 여럿이면 ✕ 를 여러 번 눌러야 했다. 그 단추는 A/S 에만 있었는데(제 손으로
+ * 만든 것이었다), 이제 @dss/ui 가 **단추도 글자도 개수도** 그린다 — 사이트가
+ * 하는 일은 함수를 넘기는 것뿐이다(그쪽 README 「보이는 알림 지우기」 절).
+ *
+ * 🔴 그 자리는 `() => void` 로 **인자를 안 받는데** 지울 열쇠 목록을 아는 것은
+ *    이쪽이다. 그래서 **값을 미리 묶어** 넘긴다(`…bind(null, 열쇠들)`). 묶은
+ *    것도 여전히 서버 액션이라 경계를 건넌다 — 평범한 화살표 함수는 못 건넌다
+ *    (이 조각에 "use client" 가 없는 것이 그 짝이다).
  */
 export async function PortalNotificationBell({ subject }: { subject: string }) {
   // 🔴 던지지 않는다. 포털이 죽었든 우리를 거절했든 빈 목록이 온다.
@@ -79,11 +89,27 @@ export async function PortalNotificationBell({ subject }: { subject: string }) {
   // 🔴 개수(배지)는 **줄이지 않는다.** 지운 뒤의 목록도 개수도 다음 렌더에서
   //    포털이 다시 세어 준다 — 포털은 지운 줄을 items 에서 빼면서 count 도
   //    함께 줄여 보낸다. 여기서 미리 빼면 포털이 센 값과 어긋난다.
+  // ── 🔴 일괄 지우기에 넘길 열쇠 — **지금 그리는 줄 전부** ────────────────
+  // 🔵 이 사이트에는 제 알림이 없으므로(바로 위) 포털에서 온 이 목록이 곧
+  //    종에 있는 전부다. 자체 알림이 생기면 이어 붙인 뒤의 목록으로 묶어야
+  //    한다 — 안 그러면 단추가 제 알림은 안 지운다.
+  //
+  // 🔴 `visibleNotificationKeys` 가 **그릴 수 없는 주소의 줄을 뺀다.** 종도
+  //    그 줄을 안 그리고 단추에 적는 수도 그렇게 남은 줄 수라, 여기서 빼지
+  //    않으면 「3건」을 눌렀는데 4건이 지워진다(그 함수 주석).
+  // 🔴 묶는 일은 **그릴 때마다** 한다 — 이 조각이 그려지는 순간의 목록이
+  //    곧 사람이 보는 목록이다.
+  const dismissAll = dismissAllNotificationsAction.bind(
+    null,
+    visibleNotificationKeys(feed.items),
+  );
+
   return (
     <NotificationBell
       items={feed.items}
       count={feed.count}
       onDismiss={dismissNotificationAction}
+      onDismissAll={dismissAll}
     />
   );
 }
