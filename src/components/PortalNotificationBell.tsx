@@ -1,6 +1,7 @@
 import { NotificationBell } from "@dss/ui";
 
 import {
+  acknowledgeNotificationAction,
   dismissAllNotificationsAction,
   dismissNotificationAction,
 } from "@/app/actions/notifications";
@@ -35,11 +36,35 @@ import { fetchPortalNotifications } from "@/lib/auth/oidc";
  * 순간 위에서 피한 중계 통로가 도로 필요해진다. 종은 화면을 새로 열 때
  * 갱신된다.
  *
- * ── 확인(onAcknowledge)을 넘기지 않는 이유 ──────────────────────────────
- * 여기 오는 알림은 **전부 남의 시스템 것**이다. 「확인했다」를 적을 수 있는
- * 곳은 그 알림을 만든 시스템뿐이고, 이 사이트에는 적을 자리가 없다. 줄을
- * 누르면 그 시스템의 화면으로 건너가고, 거기서 일을 마치면 다음 왕복에서
- * 목록이 줄어든다.
+ * ── 🔴 확인(onAcknowledge)도 **넘긴다** (2026-10-22) ────────────────────
+ * 2026-10-22 까지 여기에는 「**넘기지 않는 이유**」가 적혀 있었다: 여기 오는
+ * 알림은 전부 남의 시스템 것이고, 「확인했다」를 적을 수 있는 곳은 그 알림을
+ * 만든 시스템뿐이라 **이 사이트에는 적을 자리가 없다**는 것이었다.
+ *
+ * 🔴 **그 전제가 사라졌다.** 포털에 확인을 적는 통로가 생겼다
+ *    (dss-auth 의 /api/integration/notification-acknowledgements, 2026-10-22).
+ *    지움과 똑같이 **남의 시스템 줄이어도 여기서 적을 수 있다.**
+ *
+ * 🔴 **무엇을 없앨지 이 사이트는 판단하지 않는다.** 나가는 것은 열쇠뿐이고,
+ *    포털이 제 목록에서 그 줄을 찾아 **내용 지문을 직접 계산**해 적는다.
+ *    종에서 빠지는 것은 (기록이 있고 · 지문이 지금 내용과 같고 · 분류가
+ *    「정보 확인용」) 셋이 다 맞을 때뿐이다 — 결재 승인·부품 요청처럼
+ *    **동작이 필요한 줄은 확인을 적어도 남는다.**
+ *
+ * 🔴 ✕(onDismiss)와 **다른 일**이다. ✕ 는 「지금은 그만 보겠다」라
+ *    재로그인하면 돌아오고, 누름은 「해소됐다」라 돌아오지 않는다.
+ *    **두 단추를 한쪽으로 합치지 말 것** — 포털의 표도 통로도 둘이다.
+ *
+ * 🔵 여기서는 **제 줄과 남의 줄을 가르지 않는다.** 이 사이트에는 제 알림이
+ *    한 건도 없어서 오는 줄이 전부 포털 것이다(아래 본문 주석).
+ *    🔴 **제 알림이 생기면 여기서 갈라야 한다** — 제 줄의 확인은 포털이
+ *    아니라 이 사이트에 적어야 한다(포털은 부른 사이트 자신의 알림을
+ *    모른다). 지금 그대로 두면 제 줄의 확인이 포털에서 조용히 버려진다.
+ *
+ * 🔴 확인이 **실패해도 그 줄이 향하던 화면으로 가는 것을 막지 않는다.**
+ *    이동은 평범한 <a href> 가 하고, @dss/ui 가 이 함수를 try 로 감싸
+ *    던져도 밖으로 내보내지 않는다(BellBehavior.tsx 의 notifyAcknowledged).
+ *    서버 액션 쪽도 제 손으로 한 번 더 삼킨다 — 그 성질에 기대지 않는다.
  *
  * ── 🔴 지우기(onDismiss)는 **넘긴다** — 확인과 다른 일이다 ──────────────
  * 「확인했다」는 그 알림을 만든 시스템에만 적을 수 있지만, 「그만 보겠다」는
@@ -108,6 +133,7 @@ export async function PortalNotificationBell({ subject }: { subject: string }) {
     <NotificationBell
       items={feed.items}
       count={feed.count}
+      onAcknowledge={acknowledgeNotificationAction}
       onDismiss={dismissNotificationAction}
       onDismissAll={dismissAll}
     />

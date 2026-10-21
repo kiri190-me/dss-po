@@ -5,7 +5,10 @@ import { revalidatePath } from "next/cache";
 import type { NotificationBellItem } from "@dss/ui";
 
 import { vetDismissKeys } from "@/lib/auth/notification-keys";
-import { dismissPortalNotifications } from "@/lib/auth/oidc";
+import {
+  acknowledgePortalNotification,
+  dismissPortalNotifications,
+} from "@/lib/auth/oidc";
 import { getSessionUser } from "@/lib/auth/session";
 
 /**
@@ -90,6 +93,67 @@ export async function dismissNotificationAction(item: NotificationBellItem): Pro
     // 🔴 오류의 **종류**만 남긴다 — 열쇠에는 업무 식별자가 들어 있다.
     console.error(
       "[notify] 알림 지움 처리에서 넘어졌습니다:",
+      error instanceof Error ? error.name : "unknown",
+    );
+  }
+}
+
+/**
+ * 머리말의 알림 종에서 **줄을 눌렀을 때** — 「확인했다」를 포털에 적는다.
+ * (2026-10-22)
+ *
+ * 🔵 위 `dismissNotificationAction` 과 **같은 약속 위에 있다.** 서버 액션인
+ *    까닭도, 사람 번호를 제 세션에서 읽는 것도, 포털과 안 이어진 사람을
+ *    가르는 것도, 던지지 않는 것도, 열쇠를 로그에 안 찍는 것도, 되살리는
+ *    자리가 사내 구간 **레이아웃**인 것도 같다 — 까닭은 거기 적혀 있다.
+ *    여기서는 **다른 점 셋**만 적는다.
+ *
+ * ── 🔴 ① ✕ 와 **다른 일**이다 ──────────────────────────────────────────
+ * ✕ 는 「지금은 그만 보겠다」라 재로그인하면 돌아오고, 누름은 「해소됐다」라
+ * 돌아오지 않는다. 포털의 표도 둘이고 통로도 둘이다. 🔴 **두 단추를 한쪽으로
+ * 합치지 말 것** — 쓰는 분이 「[X] 는 지금대로」라고 못 박았다(2026-10-22).
+ *
+ * ── 🔴 ② 무엇을 없앨지 **이 사이트는 판단하지 않는다** ──────────────────
+ * 보내는 것은 열쇠뿐이다. 「그때 본 내용과 같은가(지문)」도, 「동작이 필요한
+ * 알림인가」도 포털이 제 목록을 보고 정한다. 결재 승인·부품 요청처럼 동작이
+ * 필요한 줄은 확인을 적어도 **종에 남는다.** 그래서 이 함수에는 종류를 가리는
+ * 갈래가 한 줄도 없다 — 있으면 두 곳이 서로 다른 규칙을 들게 된다.
+ *
+ * ── 🔴 ③ 이 함수는 **화면이 넘어가는 한가운데서** 불린다 ────────────────
+ * 줄을 누르면 평범한 <a href> 가 그 시스템의 화면으로 건너간다. 확인을 적는
+ * 일은 그 옆에서 따로 일어나므로, 여기서 느려지거나 실패해도 **이동을 막으면
+ * 안 된다.** @dss/ui 가 이 함수를 try 로 감싸 던져도 밖으로 내보내지 않고
+ * (BellBehavior.tsx 의 notifyAcknowledged), 여기서도 제 손으로 한 번 더
+ * 삼킨다 — 그 성질에 기대지 않는다.
+ *
+ * 🔵 되살리기는 ✕ 한 줄짜리와 같은 셈이다(적혔을 때만). 누른 줄의 주소가
+ *    이 사이트 것이면 어차피 화면이 통째로 다시 뜨지만, 새 탭으로 열었거나
+ *    이동이 막힌 경우에는 이 한 줄이 있어야 종이 맞는다.
+ */
+export async function acknowledgeNotificationAction(item: NotificationBellItem): Promise<void> {
+  try {
+    const user = await getSessionUser();
+    if (!user) return;
+
+    // 🔴 포털 계정과 아직 안 이어진 사람은 `ssoSubject` 가 **비어 있다**
+    //    (위 ✕ 와 같은 갈래다 — 이 사이트의 users.sso_subject 는 nullable 이다).
+    const subject = user.ssoSubject ?? "";
+    if (subject === "") return;
+
+    const key = typeof item?.key === "string" ? item.key : "";
+    if (key === "") return;
+
+    const recorded = await acknowledgePortalNotification(subject, key);
+
+    // 🔴 적히지 않았으면 다시 그리지 않는다 — 목록이 똑같을 것이므로 하는
+    //    일이라고는 사이트 전체의 캐시를 버리는 것뿐이다(✕ 와 같은 셈).
+    if (!recorded) return;
+
+    revalidatePath("/", "layout");
+  } catch (error) {
+    // 🔴 오류의 **종류**만 남긴다 — 열쇠에는 업무 식별자가 들어 있다.
+    console.error(
+      "[notify] 알림 확인 처리에서 넘어졌습니다:",
       error instanceof Error ? error.name : "unknown",
     );
   }
