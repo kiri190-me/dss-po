@@ -68,6 +68,28 @@ const globalsCss = read("src/app/globals.css");
    그 판에 있는지 본다 — 포인터가 옛 커밋이면 여기서 걸린다. */
 const menuCss = read("vendor/dss-ui/src/service-menu/service-menu.css");
 
+/**
+ * 🔴 2026-10-22 — 머리말이 **두 구역**이 됐다. 좁은 화면용 ☰ 서랍이 머리말 줄의
+ * 첫 자식으로 들어오면서, **같은 글자가 두 곳에** 나온다(화면 메뉴 · 사용자명).
+ *
+ * 그래서 글 전체에 `indexOf` 를 거는 옛 단언들은 **서랍 쪽을 먼저 집는다** — 「머리말
+ * 줄에서 이름 다음, 사용자명 앞」 같은 차례를 재던 것이 조용히 딴 것을 재게 된다.
+ * 아래 두 함수로 구역을 갈라 **재려는 쪽만** 본다.
+ */
+function headerDrawer(): string {
+  const open = appHeaderBare.indexOf("<details");
+  const close = appHeaderBare.indexOf("</details>");
+  assert.ok(open > 0 && close > open, "☰ 서랍(<details>)을 찾지 못했다 — 모양이 바뀌었으면 시험도 함께 고쳐라");
+  return appHeaderBare.slice(open, close);
+}
+
+/** 서랍을 들어낸 **머리말 줄**. 넓은 화면에서 눈에 보이는 바로 그 줄이다. */
+function headerRow(): string {
+  const close = appHeaderBare.indexOf("</details>");
+  assert.ok(close > 0, "☰ 서랍의 닫는 태그를 찾지 못했다");
+  return appHeaderBare.slice(close);
+}
+
 /* ── 0. 🔴 쿠키 이름 ──────────────────────────────────────────────────── */
 
 test("🔴 쿠키 셋이 모두 po_ 다 — A/S 이름을 쓰면 한쪽 로그인이 다른 쪽을 덮는다", () => {
@@ -244,12 +266,23 @@ test("🔴 목록과 「지금 여기」는 서버에서 풀어 내린다", () =
 });
 
 test("🔴 머리말이 그리는 자리 — 시스템 이름 다음, 사용자명 앞", () => {
-  const nameAt = appHeaderBare.indexOf("DSS PO / 내자");
-  const menuAt = appHeaderBare.indexOf("{serviceMenu}");
-  const userAt = appHeaderBare.indexOf("{user.name}");
+  // 🔴 2026-10-22: **머리말 줄만** 본다(위 headerRow). 그 전에는 글 전체에서 쟀는데,
+  //    ☰ 서랍이 줄의 첫 자식으로 들어오면서 서랍 안의 사용자명이 먼저 걸려 이 차례가
+  //    조용히 거짓이 됐다. 재려는 것은 예나 지금이나 **넓은 화면에 보이는 그 줄**의
+  //    차례다 — 뜻은 그대로 두고 재는 범위만 좁혔다.
+  const row = headerRow();
+  const nameAt = row.indexOf("DSS PO / 내자");
+  const menuAt = row.indexOf("{serviceMenu}");
+  const userAt = row.indexOf("{user.name}");
   assert.ok(menuAt > 0, "머리말이 메뉴바를 그리지 않는다");
   assert.ok(nameAt > 0 && nameAt < menuAt, "시스템 이름보다 앞에 그린다");
   assert.ok(menuAt < userAt, "사용자명보다 뒤에 그린다 — 가운데 빈 자리가 메뉴바 몫이다");
+
+  // 🔴 ☰ 는 그 모두보다 **앞**이다 — 머리말 맨 왼쪽(2026-10-22 쓰는 분 기준 4).
+  assert.ok(
+    appHeaderBare.indexOf("<details") < appHeaderBare.indexOf("DSS PO / 내자"),
+    "☰ 가 시스템 이름보다 뒤에 적혀 있다 — 맨 왼쪽이 아니다",
+  );
 
   // 받는 것은 다 그려진 노드다 — 이 파일이 @dss/ui 를 몰라야 한다.
   assert.equal(
@@ -319,56 +352,84 @@ test("🔴 이 줄은 flex-wrap 이다 — 없으면 폰에서 단추 안 글자
     /<div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 md:px-6">/,
   );
 
-  // 🔴 폰(360px) 속폭 328 에서 **윗줄**이 들어간다: 메뉴 단추 59 + gap-x-3 12 +
-  //    화면 메뉴 단추 셋 242 = 313. 나가는 단추 둘(222)은 아랫줄로 내려간다.
-  //    (이름과 사용자명은 폰에서 sr-only 라 position:absolute — flex 항목에서
-  //     빠지므로 앞뒤 여백까지 함께 사라진다. 아래 시험이 그것을 못 박는다.)
+  // 🔴 **2026-10-22 에 이 셈이 통째로 바뀌었다.** 그 전의 폰 윗줄은 「메뉴 단추 +
+  //    화면 메뉴 셋」(59+12+242=313)이었고 이름·사용자명은 sr-only 로 빠져 있었다.
+  //    쓰는 분이 ☰ 서랍을 쓰기로 정하면서(AppHeader.tsx 머리말의 기준 다섯)
+  //    **화면 메뉴 셋이 서랍으로 들어가고 시스템 이름이 눈에 돌아왔다.**
+  //    숫자를 고치지 않고 두면 단언은 그대로 통과하면서 **없는 모양을 재게 된다.**
   const INNER = 360 - 16 * 2;
   const GAP = 12; // gap-x-3
+  const HAMBURGER = 36; // ☰ 단추, h-9 w-9
+  const TITLE = 104; // "DSS PO / 내자" 16px semibold
   const BUTTON = 24 + 19 + 6 + 8 + 2; // @dss/ui .dss-menu__summary, pointer: coarse
-  // 알약 단추 = 글자(14px·한글 1em) + px-3 24. 「내자 정리」·「작업 비용」은
-  // 빈칸까지 5칸, 「견적서」는 3칸. 사이 여백은 gap-1 4px 두 번.
-  const SCREEN_NAV = 84 + 66 + 84 + 4 * 2;
   const EXITS = 128 + 12 + 82; // 통합 로그인으로 + gap-3 + 로그아웃
+  const BELL = 40; // @dss/ui 는 손가락 화면에서 36 → 40 으로 키운다
 
+  // ① 윗줄 — ☰ · 시스템 이름 · 오가기 메뉴 단추.
+  const TOP = HAMBURGER + GAP + TITLE + GAP + BUTTON;
+  assert.ok(TOP <= INNER, `폰 윗줄이 ${TOP}px 이라 속폭 ${INNER}px 을 넘는다`);
+
+  // ② 아랫줄 — 나가는 단추 둘과 알림 종. (사용자명은 폰에서 서랍 안이라 빠진다.)
+  const BOTTOM = EXITS + GAP + BELL;
+  assert.ok(BOTTOM <= INNER, `나가는 묶음과 종이 ${BOTTOM}px 이라 한 줄에 못 들어간다`);
+
+  // ③ 둘이 한 줄에 다 들어가지는 않는다 — 그래서 flex-wrap 이 **여전히** 필요하다.
+  //    들어가게 되는 날이 오면 이 시험이 알려 준다.
   assert.ok(
-    BUTTON + GAP + SCREEN_NAV <= INNER,
-    `폰 윗줄이 ${BUTTON + GAP + SCREEN_NAV}px 이라 속폭 ${INNER}px 을 넘는다`,
-  );
-  assert.ok(EXITS <= INNER, `나가는 묶음이 ${EXITS}px 이라 한 줄에 못 들어간다`);
-  // 셋이 한 줄에 다 들어가지는 않는다 — 그래서 flex-wrap 이 필요하다는 것을
-  // 함께 못 박는다. 들어가게 되는 날이 오면 이 시험이 알려 준다.
-  assert.ok(
-    BUTTON + GAP + SCREEN_NAV + GAP + EXITS > INNER,
+    TOP + GAP + BOTTOM > INNER,
     "폰에서 한 줄에 다 들어간다 — flex-wrap 이 필요한 까닭을 다시 적어라",
   );
 });
 
-test("🔴 폰에서는 시스템 이름과 사용자명을 **눈에서만** 감춘다 — 되돌리면 글자가 접힌다", () => {
-  // 360px 속폭 328 에 이름 ~104 · 사용자명 ~42 · 단추 둘 ~210 · 단추 59 ·
-  // 여백 44 라 그대로 두면 131px 넘친다(AppHeader.tsx 머리말의 폭 계산).
-  // 이 머리말에는 flex-wrap 이 없어서 넘치면 줄이 바뀌는 대신 단추 안에서
-  // 글자가 접힌다("통합 / 로그인으로").
-  for (const [what, pattern] of [
-    ["시스템 이름", /<h1 className="([^"]*)">\s*DSS PO \/ 내자/],
-    ["사용자명", /<span className="([^"]*)">\{user\.name\}/],
-  ] as const) {
-    const found = appHeaderBare.match(pattern);
-    assert.ok(found, `머리말에서 ${what} 을 그리는 자리를 찾지 못했다`);
-    const classes = found[1].split(/\s+/);
+test("🔴 폰에서도 **시스템 이름은 눈에 보인다** — 사용자명만 ☰ 서랍으로 간다", () => {
+  // 🔴 **2026-09-21 의 결정을 뒤집은 자리다.** 그때는 한 줄에 다섯이 안 들어가서
+  //    시스템 이름과 사용자명을 **둘 다** sr-only 로 눈에서 감췄다(「눌러서 갈 곳이
+  //    없는 정보를 먼저 내준다」). 2026-10-22 에 쓰는 분이 좁은 화면의 기준 다섯을
+  //    직접 정하시면서 그 가운데 하나가 **「시스템 이름이 눈으로 보이게 적혀 있다」**
+  //    였다. 화면 메뉴 셋(~242px)이 ☰ 서랍으로 들어가 그 자리가 비었으므로 셈도 맞는다
+  //    (위 시험의 윗줄 223px ≤ 328px).
+  //    🔵 사용자명은 반대 방향으로 갔다 — 머리말에서 사라지고 **서랍 안에 글자로**
+  //       선다. 그래서 여기서는 `sr-only` 가 아니라 `hidden` 이 맞다: 같은 글자가
+  //       서랍에 있어 낭독기가 거기서 읽는다(마크업에 두 번 남길 까닭이 없다).
+  const row = headerRow();
 
-    assert.ok(classes.includes("sr-only"), `폰에서 ${what} 이 그대로 보인다 — 메뉴 칸이 0 이 된다`);
-    assert.ok(
-      classes.includes("md:not-sr-only"),
-      `넓은 화면에서 ${what} 이 되돌아오지 않는다`,
-    );
-    // 🔴 마크업에서 사라지지는 않는다 — 낭독기에는 남아야 한다.
-    assert.equal(
-      classes.includes("hidden"),
-      false,
-      `${what} 을 display:none 으로 지웠다 — 낭독기에서도 사라진다`,
-    );
-  }
+  const title = row.match(/<h1 className="([^"]*)">\s*DSS PO \/ 내자/);
+  assert.ok(title, "머리말에서 시스템 이름을 그리는 자리를 찾지 못했다");
+  const titleClasses = title[1].split(/\s+/);
+  assert.equal(
+    titleClasses.includes("sr-only"),
+    false,
+    "🔴 시스템 이름을 다시 눈에서 감췄다 — 2026-10-22 에 쓰는 분이 보이게 정하셨다",
+  );
+  assert.equal(
+    titleClasses.includes("hidden"),
+    false,
+    "🔴 시스템 이름을 display:none 으로 지웠다 — 폰에서도 보여야 한다",
+  );
+  // 🔴 보이게 둔 대신 **세로로 쪼개지지 않게** 막아야 한다. 울타리가 없으면 폭이
+  //    모자랄 때 min-content 가 한글 한 자가 되어 "D / S / S" 가 된다.
+  assert.ok(
+    titleClasses.includes("whitespace-nowrap"),
+    "시스템 이름에 줄바꿈 울타리가 없다 — 좁은 폭에서 글자가 세로로 선다",
+  );
+
+  const name = row.match(/<span className="([^"]*)">\{user\.name\}/);
+  assert.ok(name, "머리말 줄에서 사용자명을 그리는 자리를 찾지 못했다");
+  const nameClasses = name[1].split(/\s+/);
+  assert.ok(
+    nameClasses.includes("hidden"),
+    "폰 머리말에 사용자명이 그대로 남아 있다 — 2026-10-22 에 ☰ 서랍으로 옮겼다",
+  );
+  assert.ok(
+    nameClasses.includes("md:inline"),
+    "넓은 화면에서 사용자명이 되돌아오지 않는다",
+  );
+
+  // 🔴 서랍 안에 **실제로** 있어야 위 `hidden` 이 「감춘 것」이 아니라 「옮긴 것」이 된다.
+  assert.ok(
+    headerDrawer().includes("{user.name}"),
+    "사용자명이 머리말에서도 서랍에서도 사라졌다 — 누구로 들어와 있는지 알 길이 없어진다",
+  );
 
   // 글자 자체는 마크업에 그대로 있다.
   assert.ok(appHeaderBare.includes("DSS PO / 내자"), "이름 글자를 통째로 뺐다");
@@ -377,6 +438,11 @@ test("🔴 폰에서는 시스템 이름과 사용자명을 **눈에서만** 감
 test("🔴 나가는 길(통합 로그인으로 · 로그아웃)은 폰에서도 감추지 않는다", () => {
   // 이 둘 말고 이 사이트를 떠날 길이 없다. 폰에서 가장 넓은 자리(222px)를
   // 먹지만 감추면 나갈 수가 없다 — 메뉴가 단추 하나로 줄어든 쪽이 낫다.
+  //
+  // 🔴 **2026-10-22 에 다시 확인한 결정이다.** 그날 ☰ 서랍이 생기면서 화면 메뉴와
+  //    사용자명은 서랍으로 들어갔지만 이 둘은 **머리말에 남겼다.** 본보기인
+  //    재고관리는 둘을 서랍에 넣었는데 저쪽은 머리말 메뉴가 여섯이라 자리 사정이
+  //    다르다 — 「본보기와 다르다」는 까닭으로 되돌리지 마라.
   for (const label of ["통합 로그인으로", "로그아웃"] as const) {
     const at = appHeaderBare.indexOf(label);
     assert.ok(at > 0, `머리말에서 「${label}」 이 사라졌다`);
@@ -385,6 +451,15 @@ test("🔴 나가는 길(통합 로그인으로 · 로그아웃)은 폰에서도
     const tag = appHeaderBare.slice(openTag, at);
     assert.equal(/\bsr-only\b/.test(tag), false, `「${label}」 을 눈에서 감췄다`);
     assert.equal(/\bhidden\b/.test(tag), false, `「${label}」 을 감췄다`);
+
+    // 🔴 서랍 안으로 옮기면 위 단언이 **서랍 쪽 태그를 재게 되어** 조용히 뜻을
+    //    잃는다(거기에는 hidden 이 붙을 일이 없으니 영영 통과한다). 그래서
+    //    「서랍에 없다」를 따로 못 박는다 — 이 둘은 접힌 뒤에 있으면 안 된다.
+    assert.equal(
+      headerDrawer().includes(label),
+      false,
+      `「${label}」 이 ☰ 서랍 안으로 들어갔다 — 나가려고 메뉴를 먼저 열어야 하게 된다`,
+    );
   }
 });
 

@@ -166,3 +166,17 @@ src/components/domestic-orders/DomesticOrderCompletionReleaseDialog.test.tsx
 # 🔴 종을 **실제로 그려** 보므로 unit 이 아니라 여기다(`react-dom/server`).
 # 액션의 모양·울타리·되살리기는 unit 목록의 lib/auth/notification-dismissal.test.ts 8절이 본다.
 src/components/notification-bell-dismiss-all.test.tsx
+
+# ── 조각 PO — 좁은 화면의 머리말을 ☰ 서랍으로 (2026-10-22) ──────────────
+# ☰ 서랍이 **저절로 접히는** 규칙. 서랍 안의 메뉴를 눌러 화면을 옮겼을 때 · 검은
+# 바탕이나 바깥을 눌렀을 때 · Esc.
+# 🔴 **여기(components)인 까닭**: `react-dom/server` 로 조각을 실제로 그려 「아무것도
+#    안 그린다」를 재는데, unit 목록은 `--conditions=react-server` 라 거기 두면
+#    import 에서 터진다.
+# 보는 것: 🔴 바깥은 pointerdown · 서랍 안은 click(반대로 하면 눌린 링크가 사라져
+#    click 이 아예 안 난다) · ☰ 단추를 누른 것은 어느 쪽으로도 안 접는다 ·
+#    🔴 선택자를 넓게 잡지 않는다(오가기 단추와 알림 종이 둘 다 <details> 다) ·
+#    🔴 **두 파일을 맞대어** 표식 이름과 검은 바탕의 태그가 짝이 맞는지.
+# 머리말 쪽의 배치(☰ 가 맨 왼쪽인가 · 화면 메뉴가 서랍 안인가 · 고정과 z)는 unit
+# 목록의 components/app-header-drawer.test.ts 가 본다.
+src/components/header-menu-dismiss.test.ts
