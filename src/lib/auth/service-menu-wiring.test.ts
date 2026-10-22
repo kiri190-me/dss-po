@@ -90,6 +90,23 @@ function headerRow(): string {
   return appHeaderBare.slice(close);
 }
 
+/**
+ * 머리말 줄의 **계정 묶음** — 사용자명 · 통합 로그인으로 · 로그아웃이 한 상자에 든다.
+ *
+ * 🔴 2026-10-22 오후부터 셋에 `hidden` 을 따로따로 붙이지 않고 **이 묶음 하나**로
+ * 가른다(세 벌이면 한쪽만 고쳐지는 날이 온다). 그래서 「폰에서 감춰지는가」를 재는
+ * 자리도 하나다.
+ */
+function headerAccountGroup(): { classes: string[]; inner: string } {
+  const row = headerRow();
+  const open = row.match(/<div className="([^"]*\bmd:flex\b[^"]*)">/);
+  assert.ok(open, "머리말 줄의 계정 묶음(md:flex)을 찾지 못했다 — 모양이 바뀌었으면 시험도 함께 고쳐라");
+  const at = row.indexOf(open[0]);
+  const close = row.indexOf("</div>", at);
+  assert.ok(close > at, "계정 묶음이 안 닫힌다");
+  return { classes: open[1].split(/\s+/).filter(Boolean), inner: row.slice(at, close) };
+}
+
 /* ── 0. 🔴 쿠키 이름 ──────────────────────────────────────────────────── */
 
 test("🔴 쿠키 셋이 모두 po_ 다 — A/S 이름을 쓰면 한쪽 로그인이 다른 쪽을 덮는다", () => {
@@ -352,33 +369,48 @@ test("🔴 이 줄은 flex-wrap 이다 — 없으면 폰에서 단추 안 글자
     /<div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 md:px-6">/,
   );
 
-  // 🔴 **2026-10-22 에 이 셈이 통째로 바뀌었다.** 그 전의 폰 윗줄은 「메뉴 단추 +
-  //    화면 메뉴 셋」(59+12+242=313)이었고 이름·사용자명은 sr-only 로 빠져 있었다.
-  //    쓰는 분이 ☰ 서랍을 쓰기로 정하면서(AppHeader.tsx 머리말의 기준 다섯)
-  //    **화면 메뉴 셋이 서랍으로 들어가고 시스템 이름이 눈에 돌아왔다.**
-  //    숫자를 고치지 않고 두면 단언은 그대로 통과하면서 **없는 모양을 재게 된다.**
-  const INNER = 360 - 16 * 2;
+  // 🔴 **이 셈은 하루에 두 번 낡았다 — 두 번 다 「통과하면서 없는 모양을 재는」
+  //    상태였다.** 기록해 둔다:
+  //      2026-09-21     폰 윗줄 = 메뉴 단추 59 + 12 + 화면 메뉴 셋 242 = 313
+  //                     (이름·사용자명은 sr-only 로 빠져 있었다)
+  //      2026-10-22 오전 ☰ 서랍이 생겨 화면 메뉴가 빠지고 이름이 돌아왔다
+  //                     → 윗줄 223 / 아랫줄 274, 합 509 > 328 이라 **두 줄**
+  //      2026-10-22 오후 나가는 단추 둘까지 서랍으로 갔다 → **폰은 한 줄**(275)
+  //
+  // 🔴 그래서 이제 「폰에서 넘친다」로는 flex-wrap 의 까닭을 댈 수 없다. 대신
+  //    **768px 바로 위**에서 잰다 — 거기서는 ☰ 가 사라지고 화면 메뉴와 계정 묶음이
+  //    한꺼번에 서서 가장 빡빡해진다. 그 폭이 이 줄의 진짜 최악이다.
   const GAP = 12; // gap-x-3
-  const HAMBURGER = 36; // ☰ 단추, h-9 w-9
   const TITLE = 104; // "DSS PO / 내자" 16px semibold
-  const BUTTON = 24 + 19 + 6 + 8 + 2; // @dss/ui .dss-menu__summary, pointer: coarse
-  const EXITS = 128 + 12 + 82; // 통합 로그인으로 + gap-3 + 로그아웃
   const BELL = 40; // @dss/ui 는 손가락 화면에서 36 → 40 으로 키운다
 
-  // ① 윗줄 — ☰ · 시스템 이름 · 오가기 메뉴 단추.
-  const TOP = HAMBURGER + GAP + TITLE + GAP + BUTTON;
-  assert.ok(TOP <= INNER, `폰 윗줄이 ${TOP}px 이라 속폭 ${INNER}px 을 넘는다`);
+  /* ── ① 폰 360px, 좌우 px-4 를 뺀 속폭 328 — **한 줄에 들어간다** ───────── */
+  const PHONE_INNER = 360 - 16 * 2;
+  const HAMBURGER = 36; // ☰ 단추, h-9 w-9
+  const MENU_ICON = 24 + 19 + 6 + 8 + 2; // @dss/ui .dss-menu__summary, pointer: coarse(아이콘만)
+  const PHONE_ROW = HAMBURGER + GAP + TITLE + GAP + MENU_ICON + GAP + BELL;
 
-  // ② 아랫줄 — 나가는 단추 둘과 알림 종. (사용자명은 폰에서 서랍 안이라 빠진다.)
-  const BOTTOM = EXITS + GAP + BELL;
-  assert.ok(BOTTOM <= INNER, `나가는 묶음과 종이 ${BOTTOM}px 이라 한 줄에 못 들어간다`);
-
-  // ③ 둘이 한 줄에 다 들어가지는 않는다 — 그래서 flex-wrap 이 **여전히** 필요하다.
-  //    들어가게 되는 날이 오면 이 시험이 알려 준다.
   assert.ok(
-    TOP + GAP + BOTTOM > INNER,
-    "폰에서 한 줄에 다 들어간다 — flex-wrap 이 필요한 까닭을 다시 적어라",
+    PHONE_ROW <= PHONE_INNER,
+    `폰 한 줄이 ${PHONE_ROW}px 이라 속폭 ${PHONE_INNER}px 을 넘는다 — 서랍으로 더 옮길 것을 찾아라`,
   );
+
+  /* ── ② 768px, 좌우 md:px-6 를 뺀 속폭 720 — **여기서 넘친다** ─────────── */
+  const MD_INNER = 768 - 24 * 2;
+  const MENU_WIDE = 113; // 같은 단추, 768px 이상에서는 이름까지 싣는다
+  // 알약 단추 = 글자(14px·한글 1em) + px-3 24. 「내자 정리」·「작업 비용」은
+  // 빈칸까지 5칸, 「견적서」는 3칸. 사이 여백은 md:gap-1 4px 두 번.
+  const SCREEN_NAV = 84 + 66 + 84 + 4 * 2;
+  // 계정 묶음(hidden md:flex) — 이름 42 + gap-3 + 통합 로그인으로 128 + gap-3 + 로그아웃 82.
+  const ACCOUNT = 42 + GAP + 128 + GAP + 82;
+  const MD_ROW = TITLE + MENU_WIDE + SCREEN_NAV + ACCOUNT + BELL + GAP * 4;
+
+  assert.ok(
+    MD_ROW > MD_INNER,
+    `768px 에서 ${MD_ROW}px 이라 속폭 ${MD_INNER}px 에 다 들어간다 — flex-wrap 이 필요한 까닭을 다시 적어라`,
+  );
+  // 🔵 **폰에서 한 줄이 됐다고 flex-wrap 을 걷지 마라.** 걷으면 이 폭에서 줄이
+  //    바뀌는 대신 flex 가 칸을 min-content 까지 눌러 단추 안에서 글자를 접는다.
 });
 
 test("🔴 폰에서도 **시스템 이름은 눈에 보인다** — 사용자명만 ☰ 서랍으로 간다", () => {
@@ -413,17 +445,17 @@ test("🔴 폰에서도 **시스템 이름은 눈에 보인다** — 사용자�
     "시스템 이름에 줄바꿈 울타리가 없다 — 좁은 폭에서 글자가 세로로 선다",
   );
 
-  const name = row.match(/<span className="([^"]*)">\{user\.name\}/);
-  assert.ok(name, "머리말 줄에서 사용자명을 그리는 자리를 찾지 못했다");
-  const nameClasses = name[1].split(/\s+/);
+  // 🔵 2026-10-22 **오후**에 사용자명을 재는 방식이 바뀌었다. 그때까지는 이 칸 하나에
+  //    `hidden md:inline` 이 붙어 있었는데, 나가는 단추 둘까지 서랍으로 가면서 셋이
+  //    **묶음 하나**(hidden … md:flex)로 묶였다 — 가르는 자리가 하나라야 한쪽만
+  //    고쳐지는 날이 안 온다. 그래서 묶음을 재고, 사용자명이 그 안인지를 본다.
+  const account = headerAccountGroup();
   assert.ok(
-    nameClasses.includes("hidden"),
-    "폰 머리말에 사용자명이 그대로 남아 있다 — 2026-10-22 에 ☰ 서랍으로 옮겼다",
+    account.classes.includes("hidden"),
+    "폰 머리말에 계정 묶음이 그대로 남아 있다 — 2026-10-22 에 ☰ 서랍으로 옮겼다",
   );
-  assert.ok(
-    nameClasses.includes("md:inline"),
-    "넓은 화면에서 사용자명이 되돌아오지 않는다",
-  );
+  assert.ok(account.classes.includes("md:flex"), "넓은 화면에서 계정 묶음이 되돌아오지 않는다");
+  assert.ok(account.inner.includes("{user.name}"), "사용자명이 그 묶음 밖에 있다 — 폰에서 혼자 남는다");
 
   // 🔴 서랍 안에 **실제로** 있어야 위 `hidden` 이 「감춘 것」이 아니라 「옮긴 것」이 된다.
   assert.ok(
@@ -435,32 +467,52 @@ test("🔴 폰에서도 **시스템 이름은 눈에 보인다** — 사용자�
   assert.ok(appHeaderBare.includes("DSS PO / 내자"), "이름 글자를 통째로 뺐다");
 });
 
-test("🔴 나가는 길(통합 로그인으로 · 로그아웃)은 폰에서도 감추지 않는다", () => {
-  // 이 둘 말고 이 사이트를 떠날 길이 없다. 폰에서 가장 넓은 자리(222px)를
-  // 먹지만 감추면 나갈 수가 없다 — 메뉴가 단추 하나로 줄어든 쪽이 낫다.
+test("🔴 나가는 길(통합 로그인으로 · 로그아웃)은 폰에서 **☰ 서랍 안**에 있다", () => {
+  // ══ 🔴 이 자리는 **세 번** 바뀌었다 — 적어 두지 않으면 또 뒤집힌다 ══════════
+  //  · 2026-09-21        머리말에 그대로. 「그 둘 말고 떠날 길이 없으니 폰에서도
+  //                      감추지 않는다」가 까닭이었고, 이 시험이 그것을 지켰다.
+  //  · 2026-10-22 오전    ☰ 서랍을 만들면서도 **그 까닭을 그대로 받아** 머리말에
+  //                      남겼다. 그래서 폰 머리말이 **두 줄**이었다.
+  //  · 2026-10-22 오후    쓰는 분이 눈으로 보시고 **서랍 안으로 옮기라고** 하셨다.
+  //                      까닭은 나머지 **세 시스템(재고관리 · 휴가 관리 · 계측기)이
+  //                      전부 서랍에 넣어서 PO 만 두 줄**이었기 때문이다.
   //
-  // 🔴 **2026-10-22 에 다시 확인한 결정이다.** 그날 ☰ 서랍이 생기면서 화면 메뉴와
-  //    사용자명은 서랍으로 들어갔지만 이 둘은 **머리말에 남겼다.** 본보기인
-  //    재고관리는 둘을 서랍에 넣었는데 저쪽은 머리말 메뉴가 여섯이라 자리 사정이
-  //    다르다 — 「본보기와 다르다」는 까닭으로 되돌리지 마라.
-  for (const label of ["통합 로그인으로", "로그아웃"] as const) {
-    const at = appHeaderBare.indexOf(label);
-    assert.ok(at > 0, `머리말에서 「${label}」 이 사라졌다`);
-    // 그 글자를 감싼 여는 태그(바로 앞의 `<a …>` 또는 `<button …>`).
-    const openTag = appHeaderBare.slice(0, at).lastIndexOf("<");
-    const tag = appHeaderBare.slice(openTag, at);
-    assert.equal(/\bsr-only\b/.test(tag), false, `「${label}」 을 눈에서 감췄다`);
-    assert.equal(/\bhidden\b/.test(tag), false, `「${label}」 을 감췄다`);
+  // 🔴 그러므로 네 시스템이 **같은 모양**이다. 「본보기와 다르다」로도, 「나갈 길이
+  //    가려진다」로도 되돌리지 마라 — 서랍은 ☰ 한 번으로 열린다.
+  // 🔴 **「감춘 것이 아니라 옮긴 것」임을 아래 ①이 지킨다.** 그것이 없으면 나중에
+  //    누가 서랍에서 지워도 「폰 머리말에 없다」만 보고 통과한다.
+  const row = headerRow();
+  const drawer = headerDrawer();
+  const account = headerAccountGroup();
 
-    // 🔴 서랍 안으로 옮기면 위 단언이 **서랍 쪽 태그를 재게 되어** 조용히 뜻을
-    //    잃는다(거기에는 hidden 이 붙을 일이 없으니 영영 통과한다). 그래서
-    //    「서랍에 없다」를 따로 못 박는다 — 이 둘은 접힌 뒤에 있으면 안 된다.
-    assert.equal(
-      headerDrawer().includes(label),
-      false,
-      `「${label}」 이 ☰ 서랍 안으로 들어갔다 — 나가려고 메뉴를 먼저 열어야 하게 된다`,
+  for (const label of ["통합 로그인으로", "로그아웃"] as const) {
+    // ① 🔴 서랍 안에 **실제로** 있다 — 폰에서 이 사이트를 떠나는 유일한 길이다.
+    assert.ok(
+      drawer.includes(label),
+      `「${label}」 이 ☰ 서랍에서 사라졌다 — 폰에서 이 사이트를 떠날 길이 없어진다`,
     );
+
+    // ② 머리말 줄 쪽은 **계정 묶음 안**이다. 묶음 밖에 두면 폰에서 혼자 남는다.
+    assert.ok(
+      account.inner.includes(label),
+      `「${label}」 이 머리말 줄의 계정 묶음 밖에 있다 — 폰에서 함께 감춰지지 않는다`,
+    );
+
+    // ③ 단추 **자신**에는 감추는 클래스가 없다 — 가르는 자리는 묶음 하나뿐이다.
+    const at = row.indexOf(label);
+    assert.ok(at > 0, `머리말 줄에서 「${label}」 이 사라졌다 — 넓은 화면에서도 나갈 길이 없어진다`);
+    const openTag = row.slice(0, at).lastIndexOf("<");
+    const tag = row.slice(openTag, at);
+    assert.equal(/\bsr-only\b/.test(tag), false, `「${label}」 단추 자신에 sr-only 가 붙었다`);
+    assert.equal(/\bhidden\b/.test(tag), false, `「${label}」 단추 자신에 hidden 이 붙었다 — 가르는 자리가 둘이 된다`);
   }
+
+  // ④ 서랍의 [로그아웃]은 여전히 **서버 액션 폼**이다 — 자바스크립트 없이도 나가진다.
+  assert.match(
+    drawer,
+    /<form action=\{logoutAction\}>/,
+    "서랍의 로그아웃이 평범한 폼이 아니다 — 스크립트가 늦게 붙는 동안 눌러도 나가져야 한다",
+  );
 });
 
 test("🔴 폰에서 아이콘만 남는 것은 **단추**다 — 펼친 목록은 이름을 그대로 보인다", () => {

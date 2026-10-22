@@ -278,10 +278,25 @@ test("🔴 <Suspense> 가 감싼다 — 포털이 느려도 모든 화면 이동
 test("🔴 종은 줄의 **맨 오른쪽 끝**이다 — 아니면 폰에서 펼친 목록이 잘린다", () => {
   // 펼친 목록은 종에 오른쪽 끝을 맞춰 왼쪽으로 펼쳐지고(아래 CSS 시험) 폭이
   // 폰에서 320px 이다. 종이 가운데쯤 앉으면 목록 왼쪽이 화면 밖으로 나간다.
-  const logoutAt = appHeader.indexOf("로그아웃");
-  const bellAt = appHeader.indexOf("{notificationBell}");
+  //
+  // 🔴 **머리말 줄만 본다**(2026-10-22). 그 전에는 글 전체에서 쟀는데, 좁은 화면용
+  //    ☰ 서랍이 줄의 첫 자식으로 들어오고 거기에도 [로그아웃]이 생기면서 `indexOf`
+  //    가 **서랍 쪽을 먼저 집게** 됐다. 그러면 이 단언은 「종이 서랍보다 뒤인가」를
+  //    재는 셈이라 **영영 통과하면서 아무것도 지키지 못한다.**
+  const rowAt = appHeader.indexOf("</details>");
+  assert.ok(rowAt > 0, "☰ 서랍의 닫는 태그를 찾지 못했다 — 모양이 바뀌었으면 시험도 함께 고쳐라");
+  const row = appHeader.slice(rowAt);
+
+  const logoutAt = row.indexOf("로그아웃");
+  const bellAt = row.indexOf("{notificationBell}");
+  assert.ok(logoutAt > 0, "머리말 줄에 나가는 단추가 없다");
   assert.ok(bellAt > 0, "머리말이 종을 그리지 않는다");
   assert.ok(bellAt > logoutAt, "🔴 종이 나가는 단추보다 앞에 있다 — 목록이 화면 밖으로 잘린다");
+
+  // 🔴 종 **뒤에 아무 요소도 서지 않는다** — 하나라도 서면 그만큼 목록이 왼쪽으로
+  //    밀려 잘린다. 폰에서는 이 줄의 오른쪽 끝에 남는 것이 종 하나뿐이라 더 그렇다.
+  const tail = row.slice(bellAt + "{notificationBell}".length);
+  assert.equal(/<[A-Za-z]/.test(tail), false, "종 오른쪽에 무언가가 더 섰다");
 
   // 🔴 그 묶음이 줄의 오른쪽 끝에 붙어 있어야 위 차례가 뜻을 갖는다. 이 줄은
   //    flex-wrap 이라 묶음이 통째로 아랫줄로 갈 수 있는데, ml-auto 와

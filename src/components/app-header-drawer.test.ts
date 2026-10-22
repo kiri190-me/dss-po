@@ -142,14 +142,20 @@ describe("② 🔴 접는 경계는 `md`(768px) 하나다 — 오가기 단추�
     );
   });
 
-  it("사용자명도 `md` 이상에서만 머리말 줄에 선다", () => {
-    assert.match(code, /<span className="hidden text-slate-600 md:inline">\{user\.name\}<\/span>/);
+  it("계정 묶음(이름 · 통합 로그인으로 · 로그아웃)도 `md` 이상에서만 머리말 줄에 선다", () => {
+    // 🔵 2026-10-22 **오후**에 셋이 묶음 하나가 됐다(그 전에는 사용자명만 혼자
+    //    `hidden md:inline` 이었다). 가르는 자리가 하나라야 한쪽만 고쳐지는 날이 안 온다.
+    assert.match(
+      code,
+      /<div className="hidden items-center gap-3 md:flex">/,
+      "계정 묶음이 폰에서도 머리말 줄에 선다 — ☰ 서랍과 함께 두 벌이 보인다",
+    );
   });
 
   it("🔴 경계가 **그 셋에만** 쓰인다 — 늘면 넓은 화면이 예전과 달라진다", () => {
     assert.equal(count("md:hidden"), 1, "md:hidden 이 늘었다");
     assert.equal(count("md:block"), 1, "md:block 이 늘거나 줄었다");
-    assert.equal(count("md:inline"), 1, "md:inline 이 늘거나 줄었다");
+    assert.equal(count("md:flex"), 1, "md:flex 가 늘거나 줄었다");
     // 🔵 `md:px-6` 은 2026-09-21 부터 있던 좌우 여백이다 — 접는 것과 무관하다.
     assert.equal(count("md:px-6"), 1);
   });
@@ -260,7 +266,11 @@ describe("⑤ 🔴 서랍은 **화면에 매달려** 왼쪽에서 나온다", ()
     const open = panel.lastIndexOf("<", at);
     const tag = panel.slice(open, panel.indexOf(">", at) + 1);
     assert.match(tag, /^<button\b/, "검은 바탕이 <button> 이 아니다");
-    assert.match(tag, /\stype="button"/, '기본값이 submit 이다 — 서랍에 폼이 들어오는 날 누를 때마다 보내진다');
+    // 🔴 2026-10-22 **오후부터 이것이 진짜 위험이다.** 로그아웃 폼이 같은 서랍 안으로
+    //    들어왔다 — type 이 빠지면 기본값이 submit 이라 **검은 바탕을 누를 때마다
+    //    로그아웃된다.** 오전까지는 「폼이 들어오는 날」의 예방이었다.
+    assert.match(tag, /\stype="button"/, '기본값이 submit 이다 — 같은 서랍의 로그아웃 폼이 날아간다');
+    assert.ok(panel.includes("<form action={logoutAction}>"), "이 단언의 전제(같은 서랍에 폼이 있다)가 깨졌다");
     assert.match(tag, /className="absolute inset-0 /, "검은 바탕이 서랍 바깥 상자를 다 덮지 않는다");
   });
 
@@ -288,15 +298,40 @@ describe("⑤ 🔴 서랍은 **화면에 매달려** 왼쪽에서 나온다", ()
     assert.match(/<div className="(mt-3[^"]*border-t[^"]*)">/.exec(panel)?.[1] ?? "", /\bmt-3\b/, "구분선 위 12px 간격이 사라졌다");
   });
 
-  it("🔵 폰에서 사용자명이 글자로 보이는 자리는 서랍 안 **하나**다", () => {
-    assert.equal(count("{user.name}"), 2, "사용자명이 한 자리에만 있거나 셋이 됐다");
-    assert.ok(drawer().includes("{user.name}"), "서랍에 사용자명이 없다 — 폰에서 누구로 들어와 있는지 알 길이 없다");
+  it("🔴 서랍 안 계정 묶음의 차례 — 이름 → 통합 로그인으로 → 로그아웃", () => {
+    // 🔴 **2026-10-22 오후에 바뀐 자리다.** 오전까지 이 묶음에는 사용자명 하나뿐이었고,
+    //    나가는 단추 둘은 머리말에 남아 있었다(그래서 폰 머리말이 두 줄이었다). 쓰는 분이
+    //    눈으로 보시고 옮기라고 하셨다 — 나머지 세 시스템(재고관리 · 휴가 관리 · 계측기)이
+    //    전부 서랍에 넣어서 PO 만 두 줄이었기 때문이다.
+    // 🔵 차례는 **넓은 화면의 오른쪽 끝과 같다.** 사람이 시스템을 옮겨도 손이 같은 자리를
+    //    짚는다 — 「서랍이니 다르게」로 흔들지 마라.
+    const panel = drawer();
+    const group = panel.slice(panel.indexOf("border-t"));
+    const order = ["{user.name}", "href={portalUrl}", "logoutAction"].map((needle) => {
+      const at = group.indexOf(needle);
+      assert.ok(at > 0, `서랍의 계정 묶음에서 ${needle} 를 찾지 못했다 — 폰에서 그 길이 사라졌다`);
+      return at;
+    });
+    assert.deepEqual([...order].sort((a, b) => a - b), order, "서랍 안 계정 묶음의 차례가 어긋났다");
   });
 
-  it("🔴 나가는 단추 둘은 서랍에 넣지 않았다 — 접힌 뒤에 있으면 나갈 길이 가려진다", () => {
+  it("🔴 나가는 길과 사용자명은 **두 자리**에 있다 — 머리말 줄(넓은 화면)과 서랍(폰)", () => {
+    // 🔴 폰 쪽이 사라져도 **넓은 화면만 보면 멀쩡해 보인다.** 그래서 둘 다 센다.
+    assert.equal(count("{user.name}"), 2, "사용자명이 한 자리에만 있거나 셋이 됐다");
+    assert.equal(count("통합 로그인으로"), 2, "「통합 로그인으로」가 한 자리에만 있거나 셋이 됐다");
+    assert.equal(count("<form action={logoutAction}>"), 2, "로그아웃 폼이 한 자리에만 있거나 셋이 됐다");
+
     const panel = drawer();
-    assert.ok(!panel.includes("통합 로그인으로"), "「통합 로그인으로」가 서랍 안으로 들어갔다");
-    assert.ok(!panel.includes("logoutAction"), "로그아웃 폼이 서랍 안으로 들어갔다");
+    for (const needle of ["{user.name}", "통합 로그인으로", "<form action={logoutAction}>"]) {
+      assert.ok(panel.includes(needle), `서랍에 ${needle} 가 없다 — 폰에서 그 길이 사라진다`);
+    }
+  });
+
+  it("🔵 두 자리가 **같은 생김새 값**을 쓴다 — 글자로 베끼면 한쪽만 고쳐진다", () => {
+    assert.match(code, /const EXIT_BUTTON =/, "나가는 단추의 생김새가 상수로 묶여 있지 않다");
+    // 머리말 줄은 값을 그대로, 서랍은 폭 한 낱말만 덧붙여 쓴다.
+    assert.equal(count("className={EXIT_BUTTON}"), 2, "머리말 줄의 두 단추가 같은 값을 쓰지 않는다");
+    assert.equal(count("${EXIT_BUTTON}"), 2, "서랍의 두 단추가 그 값을 덧붙여 쓰지 않는다");
   });
 
   it("🔴 인쇄물에는 ☰ 도 서랍도 나오지 않는다 — 바깥 <details> 하나로 통째로", () => {
