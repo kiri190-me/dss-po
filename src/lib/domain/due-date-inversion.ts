@@ -1,9 +1,17 @@
 import { foldBlankToNull } from "./domestic-order-list";
-import { isRepairCaseShipmentFinished } from "./notifications";
 import {
   resolveDomesticOrderDueDateForComparison,
   resolveRepairCaseRequestedDueDate,
 } from "./requested-due-date-link";
+/**
+ * 🔴 **이 함수를 `./notifications` 에서 가져오지 마라 — 고리(circular import)가 된다.**
+ * 2026-10-30 까지 실제로 거기 있었고, 저쪽은 이 파일의 DUE_DATE_INVERSION_NOTE 를
+ * 가져다 쓴다(종 알림 한 줄의 글자). 서로를 보는 동안에는 「저 상수를 모듈 최상위에서
+ * 읽지 마라」라는 **기억 하나**가 앱이 서는 유일한 근거였다 — 한 줄만 함수 밖으로
+ * 올리면 이 파일의 시험이 통째로 ReferenceError 로 죽었다. 그래서 출하 판정을 제3의
+ * 파일로 내보내 사슬을 한 방향으로 폈다(그 파일 머리말에 전말이 적혀 있다).
+ */
+import { isRepairCaseShipmentFinished } from "./shipment-finished";
 import type { RepairStatus } from "./types";
 
 /**
@@ -23,9 +31,14 @@ import type { RepairStatus } from "./types";
  *    그래도 주석을 고쳐 적지 않는다 — 「왜 이 판정만 『오늘』을 안 보는가」는 그
  *    둘과 견주어야만 설명되고, 이 사이트도 **같은 잣대**를 써야 한다.
  * ② 들여오는 이웃 둘은 **발췌본**이다 — `./types` 는 상태 축 하나만,
- *    `./notifications` 는 isRepairCaseShipmentFinished 하나만 떼어 온 사본이다
+ *    `./shipment-finished` 는 isRepairCaseShipmentFinished 하나만 떼어 온 사본이다
  *    (각 파일 머리말). 이름과 경로를 저쪽과 같게 둔 까닭이 곧 이 파일의 바이트
- *    동일이다.
+ *    동일이다. 🔵 2026-10-30 저녁에 저쪽이 그 함수를 `notifications.ts` 에서
+ *    `shipment-finished.ts` 로 옮겨(저쪽 커밋 05e9806) 이쪽 사본도 같은 날 따라
+ *    옮겼다. 🔴 아래 import 위에 붙은 경고(「`./notifications` 에서 가져오지 마라 —
+ *    고리가 된다」)는 **저쪽의 사정**이다. 이 사이트에는 그런 파일이 아예 없어
+ *    고리가 설 수 없지만 글자를 지우지 않는다 — 지우는 순간 바이트 동일이 깨지고,
+ *    저쪽에서 그 경고가 사라졌는지를 맞대어 볼 길도 함께 사라진다.
  * ③ 🔴 **isRepairCaseDueDateInverted 를 부르는 곳이 이 사이트에는 없다** —
  *    수리 건 상세가 A/S 의 화면이기 때문이다. 그래도 **지우지 않았다**: 지우면
  *    이 파일은 그날로 바이트 동일이 아니게 되고, 아래 두 껍데기가 「빌려 오는
@@ -241,7 +254,7 @@ export function isDueDateInverted(dates: {
  *
  * 🔴 **맨 먼저 출하 완료를 거른다**(2026-10-30 사용자 결정 — 파일 머리말). 조건을
  * 새로 적지 않고 「납기 임박」·「납기 지연」이 쓰는 그 함수를 그대로 부른다
- * (notifications.ts 의 isRepairCaseShipmentFinished): 보는 사실이 **둘**이고
+ * (shipment-finished.ts 의 isRepairCaseShipmentFinished): 보는 사실이 **둘**이고
  * — 평탄화 상태가 `SHIPMENT_COMPLETED` 이거나 실제 출하일이 찍혔거나 — 둘 중
  * 하나면 나간 것이다. 상태 하나만 보면 **출하일은 찍혔는데 워크플로 단계가 따라가지
  * 못한 건**에 경보가 남고, 날짜 하나만 보면 그 반대가 샌다. 잣대를 베껴 적지 않는

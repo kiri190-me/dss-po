@@ -36,7 +36,7 @@ test("🔴 접수 건 상태 축이 DB 의 repair_status 와 글자도 차례도
 });
 
 test("🔴 「이미 나갔다」를 가르는 그 글자가 양쪽에 실제로 있다", () => {
-  // 이 한 글자가 「납기 역전」의 출하 거르기 전부다(domain/notifications.ts 의
+  // 이 한 글자가 「납기 역전」의 출하 거르기 전부다(domain/shipment-finished.ts 의
   // isRepairCaseShipmentFinished). 위 대조가 통과해도 **양쪽이 함께 틀렸다면**
   // 알 수 없으므로, 글자 자체를 여기 한 번 적어 둔다.
   assert.ok(REPAIR_STATUS_CODES.includes("SHIPMENT_COMPLETED"));
