@@ -1010,3 +1010,27 @@ src/lib/auth/notification-acknowledgement.test.ts
 #    고정(sticky·인쇄 되돌림·position 하나) · 🔴 **z 실측**(src/ 를 훑어 머리말 밖의
 #    최대가 머리말보다 작은지 — 2026-10-22 에는 10 둘뿐이다).
 src/components/app-header-drawer.test.ts
+
+# ── 조각 PO — 내자 정리 `납기요청일` 의 「납기 역전」 (2026-10-30) ─────────
+# 사내 목표 출하일이 그 칸에 보이는 날짜보다 늦으면 날짜가 굵은 붉은색이 되고
+# 「협의 필요」가 붙는다. 🔴 A/S 가 같은 날 같은 일을 했고(저쪽 커밋 4516021),
+#    판정·말·옷은 **두 시스템이 한 규칙을 쓴다** — 갈리면 같은 줄이 사이트마다
+#    다른 색이 된다. 그래서 셋 다 저쪽 시험을 그대로 가져왔다.
+#
+# 🔴 **세 줄이 각각 다른 것을 잰다 — 하나라도 빠지면 조용히 샌다.**
+#  · domain/due-date-inversion.test.ts  값으로 도는 판정(경계 · 미기재 · 가장 이른
+#    하루 · 이미 나간 건). 🔴 분할 납품 표본은 **가장 이른 날이 가운데**다 — 끝에
+#    두면 「마지막 날짜」로 바꿔도 전부 초록색으로 남는다(저쪽이 실제로 겪었다).
+#  · domain/types.test.ts  상태 축 사본이 DB 이넘과 같은 글자인가. 어긋나면 오류
+#    없이 비교가 영영 거짓이 되어 **지난 건에 붉은 글이 남는다**.
+#  · components/domestic-orders/domestic-order-due-date-inversion.test.ts  그 판정이
+#    표·카드까지 닿는 사슬과 **조회가 재료 넷을 싣는가**. 🔴 저쪽에는 이 뒤에 DB
+#    시험이 한 겹 더 있는데 이 사이트에는 없다(조각 2 주석의 그 넷) — 지금은
+#    「질의에 칸이 적혀 있는가」가 마지막 울타리다.
+#
+# ⚠️ 저쪽은 셋째를 **components 목록**에 적는다. 이 사이트는 내자 쪽 원본 읽기
+#    시험 둘이 이미 여기 있어(위 조각 2) 같은 자리에 둔다 — 원본을 글자로 읽기만
+#    하는 시험이라 어느 목록에서든 돈다(이 파일 머리말).
+src/lib/domain/due-date-inversion.test.ts
+src/lib/domain/types.test.ts
+src/components/domestic-orders/domestic-order-due-date-inversion.test.ts

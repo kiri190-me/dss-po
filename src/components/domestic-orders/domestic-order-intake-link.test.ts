@@ -55,6 +55,22 @@ const link = flat(sliceBetween(listScreen, "function IntakeNumberLink(", "functi
 const codeOf = (source: string) =>
   flat(source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^[ \t]*\/\/.*$/gm, " "));
 const screenCode = codeOf(listScreen);
+/**
+ * 들여오는 **모듈 경로만** 지운 코드 — 아래 「주소를 손으로 짓지 않는다」 하나만 쓴다
+ * (2026-10-30).
+ *
+ * 🔴 **들여오기 경로는 주소가 아니다.** 2026-10-30 에 이 화면이
+ * `@/components/repair-cases/due-date-near`(납기 역전일 때 날짜가 입는 옷)를 들여오게
+ * 되면서 그 한 줄이 아래 걷기에 걸렸다 — 폴더 이름이 `repair-cases` 라서다. 화면은
+ * 그 전과 똑같이 주소를 한 글자도 짓지 않는데 시험만 깨진 것이고, 그대로 두면
+ * **다음 사람이 멀쩡한 import 를 지우는 쪽으로** 움직인다.
+ *
+ * 🔴 **걷어 내는 것은 `from "…"` 의 따옴표 안뿐이다.** 걷기 자체는 한 글자도 약해지지
+ * 않는다 — 그 밖의 모든 글자, 특히 `href` 에 들어가는 문자열은 전부 그대로 재어진다.
+ * 🔵 아래 다른 단언들은 여전히 `screenCode`(경로가 살아 있는 쪽)를 쓴다 — `next/link`
+ *    를 들여오지 않는다는 것은 **바로 그 경로**로만 잴 수 있다.
+ */
+const screenCodeWithoutImportPaths = screenCode.replace(/ from "[^"]*"/g, " from <경로>");
 
 test("🔴 갈 곳을 모르면 링크를 만들지 않는다 — 갈래 둘 다 글자만 그린다", () => {
   // ① 그 줄에 수리 건 연결이 없다(전부터 있던 갈래).
@@ -79,10 +95,17 @@ test("🔴 주소를 짓는 규칙은 한 벌이다 — 이 화면이 문자열�
     "공용 규칙을 들여오지 않는다"
   );
   // 🔴 주소를 손으로 짓는 자리가 없다 — 견적서 목록(QuoteListSlots)과 갈라지는 날을 막는다.
+  // 🔵 들여오기 경로만 빼고 본다(위 그 상수) — 폴더 이름이 `repair-cases` 인 모듈을
+  //    들여오는 것과 주소를 짓는 것은 다른 일이다.
   assert.equal(
-    /["'`][^"'`]*\/repair-cases/.test(screenCode),
+    /["'`][^"'`]*\/repair-cases/.test(screenCodeWithoutImportPaths),
     false,
     "화면이 수리 건 주소를 직접 짓고 있다 — 규칙은 as-app-link.ts 한 곳이다"
+  );
+  // 표본 확인 — 걷어 낸 뒤에도 잴 글자가 남아 있다(빈 글자를 뒤지다 통과하는 일을 막는다).
+  assert.ok(
+    screenCodeWithoutImportPaths.includes("const href = buildRepairCaseUrl("),
+    "경로를 걷어 내면서 코드까지 지워졌다"
   );
 });
 
