@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   DOMESTIC_ORDER_DUE_DATE_LINK_NOTE,
   DUE_DATE_FROM_DOMESTIC_ORDER_LABEL,
+  DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_LABEL,
+  DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_NOTE,
   DUE_DATE_FROM_REPAIR_CASE_LABEL,
   REPAIR_CASE_DUE_DATE_LINK_NOTE,
   resolveDomesticOrderDueDateDisplay,
@@ -11,6 +13,30 @@ import {
 } from "./requested-due-date-link";
 import { buildDomesticOrderCellUpdateFields } from "./domestic-order-cell-edit";
 import { pickEarliestDueDate } from "./weekly-report-delivery";
+
+/**
+ * ============================================================================
+ * 🔴 A/S 에서 가져온 시험이다 — 가져오지 **않은** 묶음이 하나 있다 (2026-10-30)
+ * ============================================================================
+ * 원본은 A/S 관리 시스템의 `src/lib/domain/requested-due-date-link.test.ts`
+ * (커밋 `3851693` 기준 499줄). 잰 대상 파일이 저쪽과 머리말 아래 바이트 동일이라
+ * (requested-due-date-link.ts 머리말), 그 울타리인 이 시험도 저쪽을 따라간다.
+ *
+ * ── 저쪽과 다른 점 둘 ──────────────────────────────────────────────────────
+ * ① 🔴 **저쪽 ⑦ 묶음(「목록 조회가 빌려 올 재료를 실제로 싣고 오는가」)은 안 가져왔다.**
+ *    그 셋은 `db/queries/repair-cases.ts` · `repair-cases-mine.ts` ·
+ *    `repair-case-domestic-order-due-dates.ts` 의 **소스 글자를 읽어** 단언하는데,
+ *    세 파일 다 이 사이트에 없다(전체 A/S 현황 · 내 작업은 저쪽 화면이다). 그대로
+ *    가져오면 readFileSync 가 없는 파일을 열어 **결함과 무관하게 늘 빨간 시험**이 된다.
+ *    🔵 그래서 번호를 당겨 메우지 않았다 — ⑦ 자리를 비워 두어야 저쪽과 맞대어 볼 때
+ *    「빠진 것이 있다」가 눈에 보인다.
+ * ② 아래 ⑧ 은 **이 사이트 전용**이다(저쪽에 없다). 까닭은 그 묶음 머리말에 적었다.
+ *
+ * 🔵 ⑥ 이 재는 상수 둘은 **이 사이트에서 부르는 화면이 없다.** 그래도 잰다 —
+ * 상수가 이 저장소에 있는 한 재어져야 하고, 저쪽과 줄을 맞대어 볼 수 있어야 한다
+ * (due-date-inversion.test.ts 머리말이 같은 말을 한다).
+ * ============================================================================
+ */
 
 /**
  * ============================================================================
@@ -385,4 +411,71 @@ test("이 줄에 적힌 납기요청일은 그대로 되실려 나간다 — 칸
   );
   assert.deepEqual(fields.dueDates, [{ dueDate: "2026-01-20", note: "1차분" }]);
   assert.equal(Object.keys(fields).length, 24);
+});
+
+// ── ⑥ 목록용 짧은 표시 ──────────────────────────────────────────────────
+
+test("목록용 짧은 표시는 상세정보의 긴 이름표와 다른 글자다 — 자리가 다르기 때문이다", () => {
+  // 표에서 이 값이 사는 곳은 출하일 칸 안의 보조 줄 하나이고 줄바꿈을 하지
+  // 않는다. 긴 이름표를 그대로 쓰면 그 열만 넓어져 표가 옆으로 길어진다.
+  assert.notEqual(DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_LABEL, DUE_DATE_FROM_DOMESTIC_ORDER_LABEL);
+  assert.ok(
+    DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_LABEL.length < DUE_DATE_FROM_DOMESTIC_ORDER_LABEL.length,
+    "좁은 자리에 쓰려고 만든 표시가 긴 쪽보다 짧지 않다"
+  );
+});
+
+test("짧은 표시의 설명도 화면에 실제로 붙는 글자를 가리킨다", () => {
+  assert.ok(
+    DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_NOTE.includes(DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_LABEL),
+    "목록 설명이 그 화면의 꼬리표 글자를 말하지 않는다"
+  );
+});
+
+// ── ⑦ 는 이 사이트에 없다 (이 파일 머리말 ①) ────────────────────────────
+
+// ── ⑧ 🔴 이 사이트 전용 — 베낀 글자가 저쪽과 갈라졌는지 ─────────────────
+
+/**
+ * ============================================================================
+ * 왜 글자를 **값째로** 박아 두는가 — 보통은 하지 않는 일이다
+ * ============================================================================
+ * 2026-10-30 에 이 사본이 저쪽보다 뒤처져 있던 것이 드러났다. 저쪽이 2026-10-19 에
+ * 상수 둘을 더하고 2026-10-30 에 …_LABEL 의 글자를 바꾸는 동안 이 파일은 그대로였고,
+ * **그 몇 주 동안 아무 시험도 깨지지 않았다.** 위 ④ 가 그 자리를 지키는 것처럼
+ * 보이지만 실제로 재는 것은 「설명이 이름표를 끼워 넣었는가」뿐이고, 그 설명은
+ * 템플릿으로 이름표를 끼워 넣으므로 **이름표를 무엇으로 바꾸든 통과한다.**
+ *
+ * 🔴 시험이 **두 저장소를 맞대어 볼 수는 없다** — 시험이 도는 자리에 저쪽 저장소가
+ * 없다. 이 저장소 안에서 할 수 있는 것은 **값을 바꾸려면 이 줄도 함께 고치게 만드는
+ * 것**뿐이다. 고치는 사람이 이 머리말을 읽고 「저쪽도 같이 고쳤나」를 한 번 묻게 하는
+ * 것이 이 묶음의 전부이고, 그것이 지난번에 없었던 바로 그 한 번이다.
+ *
+ * 🔵 그러므로 **이 시험이 깨졌다고 코드가 틀린 것이 아니다.** 깨지면 할 일은 하나다:
+ * A/S 의 `src/lib/domain/requested-due-date-link.ts` 를 열어 그쪽 값과 맞춘 뒤, 맞는
+ * 값으로 이 줄을 고쳐라. 🔴 **이 줄을 지워서 통과시키지 마라** — 그러면 사본이 갈라진
+ * 채 아무도 모르는, 고치기 전의 그 상태로 정확히 되돌아간다.
+ * ============================================================================
+ */
+test("🔴 빌려 온 곳을 알리는 글자 셋이 A/S 사본의 값 그대로다", () => {
+  // 저쪽 2026-10-30 판의 값이다. 바꾸려면 저쪽을 먼저 고쳐라(위 머리말).
+  assert.equal(DUE_DATE_FROM_REPAIR_CASE_LABEL, "수리 건 요청일");
+  assert.equal(DUE_DATE_FROM_DOMESTIC_ORDER_LABEL, "내자 정리에서 작성됨");
+  assert.equal(DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_LABEL, "(내자)");
+});
+
+test("🔴 …_LABEL 은 칸 이름이 아니라 **어디서 왔는지**를 말한다", () => {
+  // 2026-10-30 사용자 요청의 알맹이다. 칸 이름("내자 납기요청일")을 그대로 적으면
+  // 바로 위에 날짜가 있어서 그 자체가 **또 하나의 값**처럼 읽힌다. 값을 박아 둔
+  // 위 시험과 달리 이쪽은 **왜 그 글자인지**를 재므로, 다른 말로 바꿔 적더라도
+  // 「어디서 왔는가」를 말하는 한 통과한다.
+  assert.notEqual(
+    DUE_DATE_FROM_DOMESTIC_ORDER_LABEL,
+    "내자 납기요청일",
+    "칸 이름으로 되돌아갔다 — 2026-10-30 에 일부러 버린 글자다"
+  );
+  assert.ok(
+    DUE_DATE_FROM_DOMESTIC_ORDER_LABEL.includes("내자"),
+    "어디서 온 값인지가 이름표에 없다"
+  );
 });

@@ -16,7 +16,7 @@ import type { RepairStatus } from "./types";
  * 종류라(아래 머리말의 「네 자리」), 글자가 갈리는 날 같은 건이 사이트마다 다른
  * 말을 한다.
  *
- * ── 이 사이트가 저쪽과 다른 점 넷 ──────────────────────────────────────────
+ * ── 이 사이트가 저쪽과 다른 점 셋 ──────────────────────────────────────────
  * ① 아래 머리말이 견주는 **「납기 지연」·「납기 임박」이 이 사이트에 없다**
  *    (저쪽 types.ts 의 isRepairCaseOverdue · notifications.ts 의
  *    isRepairCaseDueDateNear). 그 둘은 A/S 수리 건 화면과 종 알림의 것이다.
@@ -32,12 +32,18 @@ import type { RepairStatus } from "./types";
  *    방향이 서로 반대」라는 사실을 한 자리에서 읽을 수 없게 된다
  *    (domain/shipment-approval-route.ts 가 쓰지 않는 편집 도우미 넷을 남겨 둔
  *    것과 같은 판단이다). 시험은 저쪽과 함께 왔으므로 그 함수도 계속 재어진다.
- * ④ ⚠️ 아래 주석이 두 번 가리키는 `DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_LABEL` ·
- *    `DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_NOTE` 는 **이 사이트에 없다.** 저쪽이
- *    2026-10-19 에 제 목록 화면들(전체 A/S 현황 · 내 작업) 때문에 더한 상수이고,
- *    이 사이트의 `requested-due-date-link.ts` 사본은 그 전 판이다. 여기서 찾지
- *    마라 — 이 파일의 어느 코드도 그것을 부르지 않는다. 🔵 그 화면들이 이 사이트에
- *    오는 날 그 사본을 맞추면 저절로 풀린다.
+ * 🔵 **한때 넷이었다 — ④ 는 2026-10-30 에 풀렸다.** 그 ④ 는 「아래 주석이 두 번
+ * 가리키는 `DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_LABEL` ·
+ * `DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_NOTE` 가 이 사이트에 없다」였다. 없던 까닭은
+ * 이 사이트의 `requested-due-date-link.ts` **사본이 저쪽보다 뒤처져 있던 것**이고,
+ * 같은 날 그 사본을 저쪽 판에 맞추면서 상수 둘이 들어왔다. 이제 아래 주석이 가리키는
+ * 이름은 **이 저장소에서 찾으면 나온다.**
+ *
+ * 🔴 그 둘을 **부르는 곳은 여전히 이 사이트에 없다**(저쪽 목록 화면들의 것이다).
+ * 그래도 사본을 맞춘 까닭은 ③ 과 같다 — 갈라진 채 아무도 모르는 사본이 더 위험하다.
+ * 기록을 지우지 않고 남겨 두는 것은, 「없다」가 「이제 있다」로 바뀐 자리를 통째로
+ * 지워 버리면 다음에 같은 물음이 또 서고 그때는 그 둘이 왜 들어와 있는지 — 부르는
+ * 곳도 없는데 — 아무도 설명하지 못하기 때문이다.
  *
  * 🔵 이 사이트에서 이 파일을 쓰는 자리는 **내자 정리 목록 하나**다
  * (components/domestic-orders/DomesticOrderListScreen 의 DueDateCellContent —
