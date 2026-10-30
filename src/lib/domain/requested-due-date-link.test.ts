@@ -2,14 +2,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   DOMESTIC_ORDER_DUE_DATE_LINK_NOTE,
+  DOMESTIC_ORDER_DUE_DATE_NOT_LINKED_MESSAGE,
   DUE_DATE_FROM_DOMESTIC_ORDER_LABEL,
   DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_LABEL,
   DUE_DATE_FROM_DOMESTIC_ORDER_SHORT_NOTE,
   DUE_DATE_FROM_REPAIR_CASE_LABEL,
+  REPAIR_CASE_DUE_DATE_BLOCKED_BY_RECEIVED_AT_MESSAGE,
   REPAIR_CASE_DUE_DATE_LINK_NOTE,
+  REPAIR_CASE_DUE_DATE_NOT_LINKED_MESSAGE,
   resolveDomesticOrderDueDateDisplay,
   resolveDomesticOrderDueDateForComparison,
+  resolveDomesticOrderDueDateWriteThrough,
+  resolveRepairCaseDueDateWriteThrough,
   resolveRepairCaseRequestedDueDate,
+  resolveRequestedDueDateLinkShape,
 } from "./requested-due-date-link";
 import { buildDomesticOrderCellUpdateFields } from "./domestic-order-cell-edit";
 import { pickEarliestDueDate } from "./weekly-report-delivery";
@@ -19,10 +25,10 @@ import { pickEarliestDueDate } from "./weekly-report-delivery";
  * 🔴 A/S 에서 가져온 시험이다 — 가져오지 **않은** 묶음이 하나 있다 (2026-10-30)
  * ============================================================================
  * 원본은 A/S 관리 시스템의 `src/lib/domain/requested-due-date-link.test.ts`
- * (커밋 `3851693` 기준 499줄). 잰 대상 파일이 저쪽과 머리말 아래 바이트 동일이라
+ * (커밋 `8ae38e3` 기준 794줄). 잰 대상 파일이 저쪽과 머리말 아래 바이트 동일이라
  * (requested-due-date-link.ts 머리말), 그 울타리인 이 시험도 저쪽을 따라간다.
  *
- * ── 저쪽과 다른 점 둘 ──────────────────────────────────────────────────────
+ * ── 저쪽과 다른 점 셋 ──────────────────────────────────────────────────────
  * ① 🔴 **저쪽 ⑦ 묶음(「목록 조회가 빌려 올 재료를 실제로 싣고 오는가」)은 안 가져왔다.**
  *    그 셋은 `db/queries/repair-cases.ts` · `repair-cases-mine.ts` ·
  *    `repair-case-domestic-order-due-dates.ts` 의 **소스 글자를 읽어** 단언하는데,
@@ -30,7 +36,15 @@ import { pickEarliestDueDate } from "./weekly-report-delivery";
  *    가져오면 readFileSync 가 없는 파일을 열어 **결함과 무관하게 늘 빨간 시험**이 된다.
  *    🔵 그래서 번호를 당겨 메우지 않았다 — ⑦ 자리를 비워 두어야 저쪽과 맞대어 볼 때
  *    「빠진 것이 있다」가 눈에 보인다.
- * ② 아래 ⑧ 은 **이 사이트 전용**이다(저쪽에 없다). 까닭은 그 묶음 머리말에 적었다.
+ * ② 🔴 **⑧(묶기)은 저쪽 ⑧ 을 글자 그대로 가져왔다**(2026-10-30). 저쪽과 번호까지 같다.
+ *    🔵 그 묶음이 재는 **두 방향 가운데 한쪽**(resolveDomesticOrderDueDateWriteThrough,
+ *    수리 건 → 내자)은 이 사이트에서 **부르는 곳이 없다** — 그 방향은 수리 건 상세에서
+ *    도는데 이 사이트에 그 화면도 저장 통로도 없다. 그래도 잰다: 두 방향이 **같은 모양
+ *    판정**을 쓴다는 사실이 묶기의 알맹이라, 한쪽을 빼면 그 사실을 여기서 맞대어 볼 수
+ *    없게 된다(대상 파일 머리말 ③과 같은 판단이다 — ⑥ 의 상수 둘도 같은 까닭으로 잰다).
+ * ③ 아래 ⑨ 는 **이 사이트 전용**이다(저쪽에 없다). 까닭은 그 묶음 머리말에 적었다.
+ *    🔴 저쪽 번호를 밀어내지 않으려고 ⑨ 로 두었다 — 저쪽이 ⑧ 을 더한 2026-10-30 에
+ *    이 번호를 ⑧ 에서 ⑨ 로 옮겼다.
  *
  * 🔵 ⑥ 이 재는 상수 둘은 **이 사이트에서 부르는 화면이 없다.** 그래도 잰다 —
  * 상수가 이 저장소에 있는 한 재어져야 하고, 저쪽과 줄을 맞대어 볼 수 있어야 한다
@@ -434,7 +448,296 @@ test("짧은 표시의 설명도 화면에 실제로 붙는 글자를 가리킨�
 
 // ── ⑦ 는 이 사이트에 없다 (이 파일 머리말 ①) ────────────────────────────
 
-// ── ⑧ 🔴 이 사이트 전용 — 베낀 글자가 저쪽과 갈라졌는지 ─────────────────
+/**
+ * ============================================================================
+ * ⑧ 🔴 묶기 — 한쪽을 고치면 상대 칸도 같은 날짜가 되는가 (2026-10-30)
+ * ============================================================================
+ * 지키는 것은 다섯이다.
+ *
+ *  1. **안 바뀐 저장은 아무 일도 하지 않는다** — 두 화면 다 「칸 하나를 고쳐도 묶음
+ *     전체를 다시 보내는」 폼이라, 이것이 깨지면 발주서번호 하나 고친 저장이 상대
+ *     쪽 날짜를 덮는다.
+ *  2. **빌려 그리는 쪽에는 쓰지 않는다** — 비어 있는 칸은 이미 상대 값을 보여 주고
+ *     있어 **보이는 날짜가 같다.** 채워 넣으면 아무도 적지 않은 값이 박제된다.
+ *  3. **행을 만들지도 지우지도 않는다** — 내자 쪽 날짜는 행이고 비고가 딸려 있다.
+ *  4. **여럿이면 멈추고, 그 사실을 글로 내놓는다** — 조용히 건너뛰지 않는다.
+ *  5. **인수일 잣대는 한 방향에만 있고, 우회하지 않는다**(내자 → 수리 건).
+ * ============================================================================
+ */
+
+/** 그 건에 붙은 내자 줄들의 모양. 날짜 수만 적는다. */
+function lines(...dueDateCounts: number[]) {
+  return dueDateCounts.map((dueDateCount) => ({ dueDateCount }));
+}
+
+test("🔴 묶임이 성립하는 모양은 **줄 하나 · 날짜 하나**뿐이다", () => {
+  assert.deepEqual(resolveRequestedDueDateLinkShape(lines(1)), { kind: "SINGLE" });
+  assert.deepEqual(resolveRequestedDueDateLinkShape(lines(2)), {
+    kind: "AMBIGUOUS",
+    lineCount: 1,
+    dueDateCount: 2,
+  });
+  assert.deepEqual(resolveRequestedDueDateLinkShape(lines(1, 1)), {
+    kind: "AMBIGUOUS",
+    lineCount: 2,
+    dueDateCount: 2,
+  });
+  // 줄이 여럿인데 날짜는 하나 — 수리 건 상세의 「내자 정리 발행일」이 줄이 여럿일 때
+  // 아예 막는 것과 같은 자리에 선다. 어느 줄의 날짜를 고르는 규칙을 새로 만들지 않는다.
+  assert.deepEqual(resolveRequestedDueDateLinkShape(lines(1, 0)), {
+    kind: "AMBIGUOUS",
+    lineCount: 2,
+    dueDateCount: 1,
+  });
+});
+
+test("🔴 날짜 행이 하나도 없으면 **줄이 몇이든** 「없음」이지 「여럿」이 아니다", () => {
+  // 이 갈림이 뒤집히면, 날짜를 한 번도 적지 않은 건을 고칠 때마다 「못 맞췄습니다」가
+  // 뜬다 — 그 줄들은 전부 수리 건의 날짜를 빌려 그리는 중이라 보이는 날짜가 같다.
+  assert.deepEqual(resolveRequestedDueDateLinkShape([]), { kind: "NO_ROW" });
+  assert.deepEqual(resolveRequestedDueDateLinkShape(lines(0)), { kind: "NO_ROW" });
+  assert.deepEqual(resolveRequestedDueDateLinkShape(lines(0, 0, 0)), { kind: "NO_ROW" });
+});
+
+// ── ⑧-a 수리 건 → 내자 ─────────────────────────────────────────────────
+
+test("수리 건의 날짜를 고치면 내자의 그 한 행을 같은 날짜로 바꾼다", () => {
+  assert.deepEqual(
+    resolveDomesticOrderDueDateWriteThrough({
+      previousCustomerRequestedDueDate: "2026-03-31",
+      nextCustomerRequestedDueDate: "2026-04-15",
+      lines: lines(1),
+    }),
+    { kind: "WRITE", dueDate: "2026-04-15" }
+  );
+});
+
+test("🔴 안 바뀐 저장은 내자를 건드리지 않는다 — 공백만 다른 값도 같은 값이다", () => {
+  // 인수정보 폼은 고칠 수 있는 칸을 늘 함께 보낸다. 여기가 깨지면 연락처 하나 고친
+  // 저장이 내자의 날짜를 덮어쓴다.
+  assert.deepEqual(
+    resolveDomesticOrderDueDateWriteThrough({
+      previousCustomerRequestedDueDate: "2026-03-31",
+      nextCustomerRequestedDueDate: "2026-03-31",
+      lines: lines(1),
+    }),
+    { kind: "NONE" }
+  );
+  assert.deepEqual(
+    resolveDomesticOrderDueDateWriteThrough({
+      previousCustomerRequestedDueDate: "  ",
+      nextCustomerRequestedDueDate: null,
+      lines: lines(1),
+    }),
+    { kind: "NONE" }
+  );
+});
+
+test("🔴 수리 건의 날짜를 **지워도** 내자 행을 지우지 않는다 — 비고가 함께 사라진다", () => {
+  assert.deepEqual(
+    resolveDomesticOrderDueDateWriteThrough({
+      previousCustomerRequestedDueDate: "2026-03-31",
+      nextCustomerRequestedDueDate: null,
+      lines: lines(1),
+    }),
+    { kind: "NONE" }
+  );
+});
+
+test("🔴 내자에 날짜 행이 없으면 **만들지 않는다** — 그 줄은 이미 이 날짜를 빌려 그린다", () => {
+  const plan = resolveDomesticOrderDueDateWriteThrough({
+    previousCustomerRequestedDueDate: null,
+    nextCustomerRequestedDueDate: "2026-04-15",
+    lines: lines(0),
+  });
+  assert.deepEqual(plan, { kind: "NONE" });
+  // 전제를 함께 못 박는다 — 그 줄이 정말 이 날짜를 그리고 있어야 「같은 날짜를 보고
+  // 있다」가 참이다. 아니라면 이 결정은 그냥 안 맞춘 것이 된다.
+  const display = resolveDomesticOrderDueDateDisplay({
+    dueDates: [],
+    repairCaseCustomerRequestedDueDate: "2026-04-15",
+  });
+  assert.deepEqual(display.lines, ["2026-04-15"]);
+  assert.equal(display.borrowed, true);
+});
+
+test("🔴 내자 줄이나 날짜가 여럿이면 멈추고 **까닭을 내놓는다**", () => {
+  const plan = resolveDomesticOrderDueDateWriteThrough({
+    previousCustomerRequestedDueDate: "2026-03-31",
+    nextCustomerRequestedDueDate: "2026-04-15",
+    lines: lines(1, 2),
+  });
+  assert.equal(plan.kind, "NOT_LINKED");
+  if (plan.kind !== "NOT_LINKED") return;
+  assert.equal(plan.outcome.linked, false);
+  assert.equal(plan.outcome.reason, "AMBIGUOUS");
+  assert.equal(plan.outcome.message, DOMESTIC_ORDER_DUE_DATE_NOT_LINKED_MESSAGE);
+  // 🔵 사람이 읽을 글이다 — **무엇이 저장됐고 무엇이 그대로인지**를 둘 다 말해야
+  // 한다. 「안 됐습니다」만 적으면 저장 자체가 실패한 줄 안다.
+  assert.match(plan.outcome.message, /고객 요청 납기일은 저장했습니다/);
+  assert.match(plan.outcome.message, /내자 정리의 납기요청일은 그대로/);
+});
+
+// ── ⑧-b 내자 → 수리 건 ─────────────────────────────────────────────────
+
+/** 이 방향의 기본 표본 — 수리 건에 날짜가 적혀 있고, 그 건의 줄은 이것 하나다. */
+function toRepairCase(overrides: {
+  previousDueDates?: readonly string[];
+  nextDueDates: readonly string[];
+  otherLines?: readonly { dueDateCount: number }[];
+  customerRequestedDueDate?: string | null;
+  receivedAt?: string;
+}) {
+  return resolveRepairCaseDueDateWriteThrough({
+    editedLine: {
+      previousDueDates: overrides.previousDueDates ?? ["2026-01-20"],
+      nextDueDates: overrides.nextDueDates,
+    },
+    otherLines: overrides.otherLines ?? [],
+    customerRequestedDueDate:
+      overrides.customerRequestedDueDate === undefined
+        ? "2026-03-31"
+        : overrides.customerRequestedDueDate,
+    receivedAt: overrides.receivedAt ?? "2026-01-05",
+  });
+}
+
+test("내자의 날짜를 고치면 수리 건의 고객 요청 납기일이 같은 날짜가 된다", () => {
+  assert.deepEqual(toRepairCase({ nextDueDates: ["2026-02-10"] }), {
+    kind: "WRITE",
+    dueDate: "2026-02-10",
+  });
+});
+
+test("🔴 날짜가 안 바뀐 저장은 수리 건을 건드리지 않는다 — 차례와 비고는 보지 않는다", () => {
+  // 내자 정리는 **어느 칸을 고쳐도 줄 전체를 다시 보낸다.** 여기가 깨지면 현황 메모
+  // 하나 고친 저장이 수리 건의 날짜를 덮는다. 🔴 표본의 두 날짜를 **서로 다르게**
+  // 둔다(수리 건 2026-03-31 ↔ 내자 2026-01-20) — 같게 두면 규칙이 깨져 WRITE 가 되어도
+  // 「값이 같아서 NONE」과 구분되지 않는다.
+  assert.deepEqual(
+    toRepairCase({ previousDueDates: ["2026-01-20"], nextDueDates: ["2026-01-20"] }),
+    { kind: "NONE" }
+  );
+  // 차례만 바꾼 저장도 「안 바뀐 저장」이다(1차분·2차분 순서를 바꾼 경우).
+  assert.deepEqual(
+    toRepairCase({
+      previousDueDates: ["2026-01-20", "2026-02-15"],
+      nextDueDates: ["2026-02-15", "2026-01-20"],
+    }),
+    { kind: "NONE" }
+  );
+  // 같은 날짜가 두 행에 적혀 있다가 하나를 지운 저장은 **바뀐 저장**이다 —
+  // 중복을 접어 견주면 이것을 놓친다.
+  assert.notDeepEqual(
+    toRepairCase({ previousDueDates: ["2026-02-10", "2026-02-10"], nextDueDates: ["2026-02-10"] }),
+    { kind: "NONE" }
+  );
+});
+
+test("🔴 수리 건 쪽이 비어 있으면 **채우지 않는다** — 그 건은 이 날짜를 빌려 그린다", () => {
+  const plan = toRepairCase({ nextDueDates: ["2026-02-10"], customerRequestedDueDate: null });
+  assert.deepEqual(plan, { kind: "NONE" });
+  // 전제를 함께 못 박는다 — 그 건이 정말 이 날짜를 그리고 있어야 한다.
+  const display = resolveRepairCaseRequestedDueDate({
+    customerRequestedDueDate: null,
+    domesticOrderDueDates: ["2026-02-10"],
+  });
+  assert.equal(display.dueDate, "2026-02-10");
+  assert.equal(display.borrowed, true);
+  // 공백만 적힌 값도 「비어 있다」로 본다(화면이 그렇게 읽는다).
+  assert.deepEqual(
+    toRepairCase({ nextDueDates: ["2026-02-10"], customerRequestedDueDate: "   " }),
+    { kind: "NONE" }
+  );
+});
+
+test("🔴 내자의 날짜를 모두 지워도 수리 건의 날짜를 지우지 않는다", () => {
+  // 지운 뒤에는 이 줄이 수리 건의 날짜를 빌려 그린다 — 두 화면이 같은 날짜를 본다.
+  assert.deepEqual(toRepairCase({ nextDueDates: [] }), { kind: "NONE" });
+});
+
+test("같은 날짜면 할 일이 없다", () => {
+  assert.deepEqual(
+    toRepairCase({ nextDueDates: ["2026-03-31"], customerRequestedDueDate: "2026-03-31" }),
+    { kind: "NONE" }
+  );
+});
+
+test("🔴 인수일보다 이른 날짜는 수리 건에 넣지 않고 **알린다** — 잣대를 우회하지 않는다", () => {
+  const plan = toRepairCase({ nextDueDates: ["2026-01-04"], receivedAt: "2026-01-05" });
+  assert.equal(plan.kind, "NOT_LINKED");
+  if (plan.kind !== "NOT_LINKED") return;
+  assert.equal(plan.outcome.reason, "BLOCKED_BY_RECEIVED_AT");
+  assert.equal(plan.outcome.message, REPAIR_CASE_DUE_DATE_BLOCKED_BY_RECEIVED_AT_MESSAGE);
+  assert.match(plan.outcome.message, /납기요청일은 저장했습니다/);
+  assert.match(plan.outcome.message, /인수일/);
+});
+
+test("인수일과 **같은 날**은 통과한다 — 저쪽 저장이 받아 주는 날짜와 한 글자도 다르지 않다", () => {
+  assert.deepEqual(toRepairCase({ nextDueDates: ["2026-01-05"], receivedAt: "2026-01-05" }), {
+    kind: "WRITE",
+    dueDate: "2026-01-05",
+  });
+});
+
+test("🔴 수리 건에 내자 줄이 여럿이면 멈추고 까닭을 내놓는다", () => {
+  const plan = toRepairCase({ nextDueDates: ["2026-02-10"], otherLines: lines(1) });
+  assert.equal(plan.kind, "NOT_LINKED");
+  if (plan.kind !== "NOT_LINKED") return;
+  assert.equal(plan.outcome.reason, "AMBIGUOUS");
+  assert.equal(plan.outcome.message, REPAIR_CASE_DUE_DATE_NOT_LINKED_MESSAGE);
+  assert.match(plan.outcome.message, /납기요청일은 저장했습니다/);
+  assert.match(plan.outcome.message, /수리 건의 고객 요청 납기일은 그대로/);
+  // 한 줄에 날짜가 여럿일 때도 같다(분할 납품).
+  const split = toRepairCase({ nextDueDates: ["2026-02-10", "2026-03-10"] });
+  assert.equal(split.kind, "NOT_LINKED");
+});
+
+test("🔴 다른 줄이 **비어 있기만 해도** 줄이 여럿이면 묶지 않는다", () => {
+  // 날짜는 통틀어 하나지만 줄이 둘이다 — 그 둘째 줄은 수리 건의 날짜를 빌려 그리고
+  // 있어서, 여기서 수리 건을 고치면 첫째 줄과 둘째 줄이 서로 다른 날짜를 보이게 된다.
+  // 어느 쪽이 맞는지는 사람만 안다.
+  const plan = toRepairCase({ nextDueDates: ["2026-02-10"], otherLines: lines(0) });
+  assert.equal(plan.kind, "NOT_LINKED");
+});
+
+test("🔴 두 방향이 **같은 모양 판정**을 쓴다 — 한쪽만 고쳐지면 어느 쪽에서 고치느냐로 갈린다", () => {
+  // 같은 줄 모양을 두 방향에 넣어 「묶이는가」가 언제나 같은지 본다. 표본에는
+  // 묶이는 모양과 안 묶이는 모양이 둘 다 들어 있어야 한다(공짜 통과 막기).
+  const shapes = [lines(1), lines(2), lines(1, 1), lines(1, 0)];
+  let linked = 0;
+  let blocked = 0;
+  for (const shape of shapes) {
+    const toDomestic = resolveDomesticOrderDueDateWriteThrough({
+      previousCustomerRequestedDueDate: "2026-03-31",
+      nextCustomerRequestedDueDate: "2026-04-15",
+      lines: shape,
+    });
+    // 거울 쪽은 「고친 줄 하나 + 나머지」로 받는다 — 같은 모양이 되도록 첫 줄을 고친
+    // 줄로 삼는다. 날짜 값은 여기서 중요하지 않다(모양만 본다).
+    const edited = shape[0];
+    const toCase = resolveRepairCaseDueDateWriteThrough({
+      editedLine: {
+        previousDueDates: [],
+        nextDueDates: Array.from({ length: edited.dueDateCount }, (_, i) => `2026-02-${10 + i}`),
+      },
+      otherLines: shape.slice(1),
+      customerRequestedDueDate: "2026-03-31",
+      receivedAt: "2026-01-05",
+    });
+    assert.equal(
+      toDomestic.kind === "WRITE",
+      toCase.kind === "WRITE",
+      `같은 모양인데 방향마다 답이 다르다: ${JSON.stringify(shape)}`
+    );
+    if (toDomestic.kind === "WRITE") linked += 1;
+    if (toDomestic.kind === "NOT_LINKED") blocked += 1;
+  }
+  assert.equal(linked, 1, "묶이는 모양이 표본에 하나는 있어야 한다");
+  assert.equal(blocked, 3, "안 묶이는 모양이 표본에 셋 있어야 한다");
+});
+
+// ── ⑨ 🔴 이 사이트 전용 — 베낀 글자가 저쪽과 갈라졌는지 ─────────────────
 
 /**
  * ============================================================================

@@ -70,6 +70,18 @@ src/lib/domain/quote-list.test.ts
 src/components/common/responsive-list.test.ts
 src/components/domestic-orders/domestic-order-inline-cells.test.ts
 src/components/domestic-orders/domestic-order-trash.test.ts
+# 🔴 내자 정리 쪽 「수리 건이 못 따라갔다」 알림(2026-10-30). 저장할 때 납기요청일을
+# 수리 건의 고객 요청 납기일에 밀어 넣는 일은 서버가 하고
+# (db/mutations/domestic-orders.ts), 화면이 할 일은 **못 맞췄다는 답을 읽고 닫아야
+# 하는 알림으로 띄우는 것** 하나다. 재는 것 넷: 두 저장 통로(납기요청일 칸 ·
+# `줄 수정` 폼)가 **둘 다** 그 답을 읽는가 · 그때 0.5초 저장 팝업을 건너뛰는가(두
+# 상자가 겹치면 읽어야 하는 글이 가린다) · 🔴 팝업을 표 칸 안에서 그리지 않는가(칸의
+# 정렬·줄바꿈을 물려받는다) · 글자 칸 열둘은 이 길을 타지 않는가(날짜를 안 바꾼다).
+# 🔴 저쪽에도 **같은 이름의 시험**이 있고 단언 넷 중 셋이 글자 그대로다 — 다른 하나는
+#    NoticePopup 의 프롭 이름이다(이 사이트는 message · 저쪽은 lines).
+# 갈림 자체는 바로 위 domain/requested-due-date-link.test.ts 의 ⑧ 이, DB 에 정말
+# 쓰이는지는 db 목록의 mutations/requested-due-date-link.integration.test.ts 가 본다.
+src/components/domestic-orders/requested-due-date-link-notice.test.ts
 
 # ── 조각 3a — 견적서 목록 · 휴지통(A/S 에서 옮겨 옴) ──────────────────────
 # 🔴 목록 **화면 자체**는 이 저장소에 없다. `vendor/dss-core` 에 한 벌로 두고
